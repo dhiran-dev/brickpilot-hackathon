@@ -1,0 +1,23 @@
+# --- planning & reference (PRIVATE: judges must not see these) ---
+docs/
+reference/
+
+# --- env & secrets ---
+.env
+.env.local
+.env*.local
+
+# --- next.js / node ---
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- misc ---
+.DS_Store
+*.log
+.vercel
+coverage/
