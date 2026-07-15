@@ -23,7 +23,7 @@ export const designStatus = pgEnum("design_status", [
 ]);
 export const generationKind = pgEnum("generation_kind", ["design", "render"]);
 export const generationStatus = pgEnum("generation_status", ["queued", "processing", "completed", "failed", "canceled"]);
-export const generationProvider = pgEnum("generation_provider", ["fireworks", "replicate"]);
+export const generationProvider = pgEnum("generation_provider", ["brickpilot", "fireworks", "replicate"]);
 export const assetKind = pgEnum("asset_kind", ["floor_plan", "render", "report", "source"]);
 export const webhookProvider = pgEnum("webhook_provider", ["replicate"]);
 
@@ -109,18 +109,41 @@ export const projects = pgTable(
   (table) => [index("projects_owner_id_idx").on(table.ownerId)],
 );
 
-export const designVersions = pgTable(
-  "design_versions",
+export const projectRequirements = pgTable(
+  "project_requirements",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    inputJson: jsonb("input_json").$type<Record<string, unknown>>().notNull(),
+    version: integer("version").notNull(),
+    source: text("source").notNull().default("prompt"),
+    editPrompt: text("edit_prompt"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("project_requirements_project_version_unique").on(table.projectId, table.version),
+    index("project_requirements_project_id_idx").on(table.projectId),
+  ],
+);
+
+export const layoutVersions = pgTable(
+  "layout_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    requirementVersionId: uuid("requirement_version_id")
+      .notNull()
+      .references(() => projectRequirements.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     prompt: text("prompt").notNull(),
     status: designStatus("status").notNull().default("queued"),
     intent: jsonb("intent").$type<Record<string, unknown>>(),
-    floorPlan: jsonb("floor_plan").$type<Record<string, unknown>>(),
+    layoutJson: jsonb("layout_json").$type<Record<string, unknown>>(),
     validation: jsonb("validation").$type<Record<string, unknown>>(),
     costEstimate: jsonb("cost_estimate").$type<Record<string, unknown>>(),
     failureReason: text("failure_reason"),
@@ -128,9 +151,10 @@ export const designVersions = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    unique("design_versions_project_version_unique").on(table.projectId, table.version),
-    index("design_versions_project_id_idx").on(table.projectId),
-    index("design_versions_status_idx").on(table.status),
+    unique("layout_versions_project_version_unique").on(table.projectId, table.version),
+    index("layout_versions_project_id_idx").on(table.projectId),
+    index("layout_versions_requirement_version_id_idx").on(table.requirementVersionId),
+    index("layout_versions_status_idx").on(table.status),
   ],
 );
 
@@ -138,9 +162,9 @@ export const generationJobs = pgTable(
   "generation_jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    designVersionId: uuid("design_version_id")
+    layoutVersionId: uuid("layout_version_id")
       .notNull()
-      .references(() => designVersions.id, { onDelete: "cascade" }),
+      .references(() => layoutVersions.id, { onDelete: "cascade" }),
     kind: generationKind("kind").notNull(),
     provider: generationProvider("provider").notNull(),
     providerJobId: text("provider_job_id"),
@@ -155,28 +179,38 @@ export const generationJobs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("generation_jobs_design_version_id_idx").on(table.designVersionId),
+    index("generation_jobs_layout_version_id_idx").on(table.layoutVersionId),
     index("generation_jobs_provider_job_id_idx").on(table.provider, table.providerJobId),
     index("generation_jobs_status_idx").on(table.status),
   ],
 );
 
-export const assets = pgTable(
-  "assets",
+export const generatedAssets = pgTable(
+  "generated_assets",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    designVersionId: uuid("design_version_id")
+    projectId: uuid("project_id")
       .notNull()
-      .references(() => designVersions.id, { onDelete: "cascade" }),
-    kind: assetKind("kind").notNull(),
+      .references(() => projects.id, { onDelete: "cascade" }),
+    layoutVersionId: uuid("layout_version_id")
+      .notNull()
+      .references(() => layoutVersions.id, { onDelete: "cascade" }),
+    type: assetKind("type").notNull(),
+    provider: generationProvider("provider").notNull(),
+    status: generationStatus("status").notNull().default("queued"),
+    providerJobId: text("provider_job_id"),
     storageKey: text("storage_key").notNull().unique(),
-    publicUrl: text("public_url").notNull(),
+    url: text("url").notNull(),
     contentType: text("content_type").notNull(),
     width: integer("width"),
     height: integer("height"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("assets_design_version_id_idx").on(table.designVersionId)],
+  (table) => [
+    index("generated_assets_project_id_idx").on(table.projectId),
+    index("generated_assets_layout_version_id_idx").on(table.layoutVersionId),
+    index("generated_assets_status_idx").on(table.status),
+  ],
 );
 
 export const webhookEvents = pgTable(

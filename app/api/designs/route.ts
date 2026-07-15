@@ -1,42 +1,92 @@
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { generateDesign, DesignGenerationError } from "@/lib/ai/fireworks";
+import { BuildingGenerationError, generateBuilding } from "@/lib/building/generate";
+import { buildingRequirementsSchema } from "@/lib/building/requirements";
 import { requireUser } from "@/lib/auth";
+import { estimateBuildingCost } from "@/lib/cost";
 import { db } from "@/lib/db";
-import { designVersions, generationJobs, projects } from "@/lib/db/schema";
-import { generateDesignInputSchema } from "@/lib/design/schema";
+import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 
 const DAILY_GENERATION_LIMIT = Number(process.env.RATE_LIMIT_GEN_PER_DAY ?? 30);
 
-function errorResponse(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+function errorResponse(message: string, status: number, code?: string, details?: unknown) {
+  return NextResponse.json({ error: message, code, details }, { status });
+}
+
+function jsonRecord(value: unknown) {
+  return value as Record<string, unknown>;
+}
+
+export async function GET(request: Request) {
+  const user = await requireUser(request);
+  if (!user) return errorResponse("Authentication is required.", 401, "AUTH_REQUIRED");
+
+  const studies = await db
+    .select({
+      projectId: projects.id,
+      designId: layoutVersions.id,
+      title: projects.title,
+      status: layoutVersions.status,
+      createdAt: layoutVersions.createdAt,
+      requirements: projectRequirements.inputJson,
+      building: layoutVersions.layoutJson,
+      validation: layoutVersions.validation,
+      costEstimate: layoutVersions.costEstimate,
+    })
+    .from(layoutVersions)
+    .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
+    .innerJoin(projectRequirements, eq(layoutVersions.requirementVersionId, projectRequirements.id))
+    .where(eq(projects.ownerId, user.id))
+    .orderBy(desc(layoutVersions.createdAt))
+    .limit(12);
+
+  return NextResponse.json({ studies });
 }
 
 export async function POST(request: Request) {
   const user = await requireUser(request);
-  if (!user) return errorResponse("Authentication is required.", 401);
+  if (!user) return errorResponse("Authentication is required.", 401, "AUTH_REQUIRED");
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return errorResponse("Request body must be valid JSON.", 400);
+    return errorResponse("Request body must be valid JSON.", 400, "INVALID_JSON");
   }
 
-  const input = generateDesignInputSchema.safeParse(body);
-  if (!input.success) return errorResponse("Provide a title and a design request between 20 and 2,000 characters.", 400);
+  const candidate = body && typeof body === "object" && "requirements" in body
+    ? (body as { requirements: unknown }).requirements
+    : body;
+  const parsed = buildingRequirementsSchema.safeParse(candidate);
+  if (!parsed.success) {
+    const code = parsed.error.issues.some((issue) => issue.message === "BUILDING_TYPE_COMING_SOON")
+      ? "BUILDING_TYPE_COMING_SOON"
+      : parsed.error.issues.some((issue) => issue.message === "IRREGULAR_SITE_NOT_SUPPORTED")
+        ? "IRREGULAR_SITE_NOT_SUPPORTED"
+        : "INVALID_REQUIREMENTS";
+    return errorResponse(
+      code === "BUILDING_TYPE_COMING_SOON"
+        ? "Apartments and corporate/commercial projects are coming soon. Choose Detached house to continue."
+        : code === "IRREGULAR_SITE_NOT_SUPPORTED"
+          ? "Irregular-site generation is not supported yet. Save the site details and use a rectangular envelope for this study."
+          : "Some required project details are missing or inconsistent.",
+      400,
+      code,
+      parsed.error.flatten(),
+    );
+  }
+  const requirements = parsed.data;
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const [usage] = await db
     .select({ total: count() })
-    .from(designVersions)
-    .innerJoin(projects, eq(designVersions.projectId, projects.id))
-    .where(and(eq(projects.ownerId, user.id), gte(designVersions.createdAt, today)));
-
+    .from(layoutVersions)
+    .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
+    .where(and(eq(projects.ownerId, user.id), gte(layoutVersions.createdAt, today)));
   if (usage.total >= DAILY_GENERATION_LIMIT) {
-    return errorResponse("Daily design-generation limit reached. Try again tomorrow.", 429);
+    return errorResponse("Daily design-generation limit reached. Try again tomorrow.", 429, "RATE_LIMITED");
   }
 
   const now = new Date();
@@ -44,19 +94,32 @@ export async function POST(request: Request) {
     .insert(projects)
     .values({
       ownerId: user.id,
-      title: input.data.title ?? "Untitled design",
-      description: input.data.description,
+      title: requirements.projectName,
+      description: `${requirements.floors.length}-floor detached residential concept in ${requirements.region.locality ?? requirements.region.adminArea}`,
       status: "generating",
       updatedAt: now,
     })
     .returning();
 
-  const [design] = await db
-    .insert(designVersions)
+  const [requirement] = await db
+    .insert(projectRequirements)
     .values({
       projectId: created.id,
       version: 1,
-      prompt: input.data.prompt,
+      inputJson: jsonRecord(requirements),
+      source: "guided",
+      updatedAt: now,
+    })
+    .returning();
+
+  const summary = `Structured residential requirements v${requirements.requirementSchemaVersion}; ${requirements.floors.length} floor(s); ${requirements.rooms.length} requested rooms.`;
+  const [layout] = await db
+    .insert(layoutVersions)
+    .values({
+      projectId: created.id,
+      requirementVersionId: requirement.id,
+      version: 1,
+      prompt: summary,
       status: "planning",
       updatedAt: now,
     })
@@ -65,36 +128,60 @@ export async function POST(request: Request) {
   const [job] = await db
     .insert(generationJobs)
     .values({
-      designVersionId: design.id,
+      layoutVersionId: layout.id,
       kind: "design",
-      provider: "fireworks",
+      provider: "brickpilot",
       idempotencyKey: crypto.randomUUID(),
       status: "processing",
-      requestPayload: { prompt: input.data.prompt },
+      requestPayload: jsonRecord(requirements),
       startedAt: now,
       updatedAt: now,
     })
     .returning();
 
   try {
-    const output = await generateDesign(input.data.prompt);
+    const generated = generateBuilding(requirements);
+    const costEstimate = estimateBuildingCost(generated.building, requirements);
     const completedAt = new Date();
+    const intent = {
+      requirementSchemaVersion: requirements.requirementSchemaVersion,
+      buildingSchemaVersion: generated.building.buildingSchemaVersion,
+      rendererVersion: generated.building.rendererVersion,
+      evaluatedCandidateCount: generated.evaluatedCandidateCount,
+      assumptions: [
+        "Concept feasibility geometry uses rectangular planning cells and baseline residential heuristics.",
+        "Validation is not permit, structural, MEP, or jurisdictional approval.",
+        costEstimate.status === "available"
+          ? `Cost uses ${costEstimate.selection.ratePackName} (${costEstimate.selection.ratePackVersion}).`
+          : "No native regional rate pack was available; cost is intentionally unavailable.",
+      ],
+    };
+    const response = {
+      projectId: created.id,
+      designId: layout.id,
+      title: requirements.projectName,
+      requirements,
+      building: generated.building,
+      validation: generated.validation,
+      costEstimate,
+      intent,
+    };
 
     await db.transaction(async (transaction) => {
       await transaction
-        .update(designVersions)
+        .update(layoutVersions)
         .set({
           status: "completed",
-          intent: output.intent,
-          floorPlan: output.floorPlan,
-          validation: output.validation,
-          costEstimate: output.costEstimate,
+          intent: jsonRecord(intent),
+          layoutJson: jsonRecord(generated.building),
+          validation: jsonRecord(generated.validation),
+          costEstimate: jsonRecord(costEstimate),
           updatedAt: completedAt,
         })
-        .where(eq(designVersions.id, design.id));
+        .where(eq(layoutVersions.id, layout.id));
       await transaction
         .update(generationJobs)
-        .set({ status: "completed", responsePayload: output, completedAt, updatedAt: completedAt })
+        .set({ status: "completed", responsePayload: jsonRecord(response), completedAt, updatedAt: completedAt })
         .where(eq(generationJobs.id, job.id));
       await transaction
         .update(projects)
@@ -102,25 +189,26 @@ export async function POST(request: Request) {
         .where(eq(projects.id, created.id));
     });
 
-    return NextResponse.json({ projectId: created.id, designId: design.id, ...output }, { status: 201 });
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
     const failedAt = new Date();
+    const generationError = error instanceof BuildingGenerationError ? error : undefined;
+    const code = generationError?.code ?? "GENERATION_FAILED";
+    const message = generationError?.message ?? "Unable to create a deterministic concept for these requirements.";
     await db.transaction(async (transaction) => {
       await transaction
-        .update(designVersions)
-        .set({ status: "failed", failureReason: "Generation failed", updatedAt: failedAt })
-        .where(eq(designVersions.id, design.id));
+        .update(layoutVersions)
+        .set({ status: "failed", failureReason: `${code}: ${message}`, validation: generationError ? jsonRecord({ conflicts: generationError.conflicts }) : undefined, updatedAt: failedAt })
+        .where(eq(layoutVersions.id, layout.id));
       await transaction
         .update(generationJobs)
-        .set({ status: "failed", failureReason: "Generation failed", completedAt: failedAt, updatedAt: failedAt })
+        .set({ status: "failed", failureReason: `${code}: ${message}`, completedAt: failedAt, updatedAt: failedAt })
         .where(eq(generationJobs.id, job.id));
       await transaction
         .update(projects)
         .set({ status: "failed", updatedAt: failedAt })
         .where(eq(projects.id, created.id));
     });
-
-    const message = error instanceof DesignGenerationError ? error.message : "Unable to create a design right now.";
-    return errorResponse(message, 502);
+    return errorResponse(message, generationError ? 422 : 500, code, generationError?.conflicts);
   }
 }

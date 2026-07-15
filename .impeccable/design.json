@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-15T00:00:00.000Z",
+  "title": "Design System: BrickPilot",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "neutral", "displayName": "Graphite Ink", "canonical": "#090908", "tonalRamp": ["#090908", "#171512", "#2d2823", "#4a4035", "#6b5948", "#8d735b", "#b5a697", "#fff6ea"] },
+      "copper": { "role": "secondary", "displayName": "Drafting Copper", "canonical": "#c97940", "tonalRamp": ["#21130a", "#472613", "#6e3d1c", "#925321", "#b86a32", "#c97940", "#de9e68", "#f5d4b6"] },
+      "orange": { "role": "primary", "displayName": "Decision Orange", "canonical": "#ff4e00", "tonalRamp": ["#2d0a00", "#581500", "#861f00", "#b52c00", "#d93b00", "#ff4e00", "#ff8b57", "#ffd4c2"] },
+      "ivory": { "role": "neutral", "displayName": "Warm Ivory", "canonical": "#fff6ea", "tonalRamp": ["#342f29", "#5c5348", "#827568", "#a99b8a", "#cbbdac", "#e6d8c7", "#f4eadc", "#fff6ea"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Architectural Display", "purpose": "Hero promises and named project moments." },
+      "body": { "displayName": "Measured Body", "purpose": "Explanations and feasibility context." },
+      "label": { "displayName": "Decision Label", "purpose": "Actions, measurements, and compact metadata." }
+    },
+    "shadows": [
+      { "name": "pinned-board", "value": "10px 11px 0 rgba(20, 18, 16, 0.82)", "purpose": "Featured concept board only." }
+    ],
+    "motion": [
+      { "name": "state-shift", "value": "180ms ease", "purpose": "Hover and focus feedback only." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "900px" },
+      { "name": "mobile", "value": "600px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single decisive action on a screen.",
+      "html": "<button class=\"ds-btn-primary\">START A PROJECT <span aria-hidden=\"true\">↗</span></button>",
+      "css": ".ds-btn-primary { display:inline-flex; gap:2.6rem; align-items:center; background:#ff4e00; color:#fff6ea; border:0; border-radius:0; padding:1.05rem 1.35rem; font-family:'Avenir Next','Helvetica Neue','Gill Sans',sans-serif; font-size:.78rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; transition:background-color 180ms ease,transform 180ms ease; } .ds-btn-primary:hover { background:#e94500; transform:translateY(-2px); } .ds-btn-primary:focus-visible { outline:2px solid #fff6ea; outline-offset:3px; }"
+    },
+    {
+      "name": "Secondary Navigation Button",
+      "kind": "nav",
+      "description": "A low-emphasis sign-in or utility action.",
+      "html": "<a class=\"ds-nav-button\" href=\"#\">SIGN IN</a>",
+      "css": ".ds-nav-button { display:inline-block; border:1px solid #c97940; border-radius:0; padding:.75rem 1rem; color:#fff6ea; font-family:'Avenir Next','Helvetica Neue','Gill Sans',sans-serif; font-size:.76rem; letter-spacing:.08em; text-decoration:none; text-transform:uppercase; transition:background-color 180ms ease,color 180ms ease; } .ds-nav-button:hover { background:#c97940; color:#090908; } .ds-nav-button:focus-visible { outline:2px solid #fff6ea; outline-offset:3px; }"
+    },
+    {
+      "name": "Pinned Concept Board",
+      "kind": "custom",
+      "description": "A featured floor-plan or site-plan artifact with physical presence.",
+      "html": "<section class=\"ds-plan-board\"><span>CONCEPT BOARD / 01</span><strong>128 m²</strong></section>",
+      "css": ".ds-plan-board { display:grid; gap:2rem; min-height:220px; padding:1.25rem; background:#171512; color:#fff6ea; border:1px solid rgba(201,121,64,.58); border-radius:0; box-shadow:10px 11px 0 rgba(20,18,16,.82); font-family:'Avenir Next','Gill Sans',sans-serif; } .ds-plan-board span { color:#c97940; font-size:.65rem; font-weight:700; letter-spacing:.12em; } .ds-plan-board strong { align-self:end; font-family:'Iowan Old Style','Palatino Linotype',Palatino,serif; font-size:2rem; font-weight:400; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The After-Hours Drafting Table",
+    "overview": "BrickPilot is a dark-only residential feasibility studio. It should feel like an architect’s calm final review: black drafting material, warm ivory type, copper geometry, and one decisive orange action.",
+    "keyCharacteristics": ["Quiet black surfaces with structural copper rules.", "A classical display serif against a precise humanist sans.", "Plan boards and measurements used as real product artifacts, never decoration.", "Orange reserved for the primary action and the most important decision."],
+    "rules": [
+      { "name": "The One Orange Rule", "body": "Orange must occupy less than 10% of a screen. It is a decision signal, never a background theme.", "section": "colors" },
+      { "name": "The Drafting Hierarchy Rule", "body": "Display serif carries the human promise; labels and measurements carry the proof.", "section": "typography" },
+      { "name": "The Pinned Artifact Rule", "body": "Never put a wide soft shadow behind a bordered card. A surface is either flat or physically pinned.", "section": "elevation" }
+    ],
+    "dos": ["Do use #ff4e00 only for a primary decision, active constraint, or a single headline terminal mark.", "Do keep every surface square, measured, and materially distinct.", "Do preserve high contrast: Warm Ivory on Graphite Ink."],
+    "donts": ["Don't reintroduce light, cream, sand, or paper page backgrounds. BrickPilot is dark-only.", "Don't use purple gradients, neon accents, glassmorphism, or pill-shaped SaaS controls.", "Don't use rounded cards, soft ghost shadows, decorative grid overlays, or colored side stripes."]
+  }
+}
