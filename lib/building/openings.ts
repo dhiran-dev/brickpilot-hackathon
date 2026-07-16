@@ -1,9 +1,10 @@
 import type { Building, Floor, Opening, Space, WallSegment } from "@/lib/building/schema";
-import { isCirculationBackboneSpace, wallAdjacencyEdges } from "@/lib/building/circulation";
+import { isCirculationBackboneSpace, spaceAccessSemantics, wallAdjacencyEdges } from "@/lib/building/circulation";
 import { EXTERIOR, wallLength } from "@/lib/building/topology";
 
 type OpeningOptions = {
   entranceSide: Building["site"]["facing"];
+  roadEdges?: Building["site"]["roadEdges"];
   isGroundFloor: boolean;
   requiredConnections?: Array<[string, string]>;
 };
@@ -23,9 +24,10 @@ function openingOnWall(
   kind: Opening["kind"],
   connects: [string, string],
   desiredWidth: number,
+  usage: NonNullable<Opening["usage"]> = kind === "window" ? "daylight" : "pedestrian",
 ): Opening {
   const length = wallLength(wall);
-  const clearance = kind === "window" ? 250 : 150;
+  const clearance = kind === "window" ? 250 : 50;
   const maximum = Math.max(100, length - clearance * 2);
   const width = Math.min(desiredWidth, maximum);
   const resolvedKind = kind;
@@ -53,9 +55,10 @@ function openingOnWall(
     floorId: floor.id,
     wallId: wall.id,
     kind: resolvedKind,
+    usage,
     offsetMm: Math.max(50, Math.floor((length - width) / 2)),
     widthMm: width,
-    heightMm: resolvedKind === "window" ? 1200 : 2100,
+    heightMm: usage === "vehicle" ? 2400 : resolvedKind === "window" ? 1200 : 2100,
     sillHeightMm: resolvedKind === "window" ? 900 : 0,
     connects,
     hinge: resolvedKind === "door" ? "start" : "none",
@@ -105,14 +108,14 @@ function spanningDoorOpenings(floor: Floor, rootId: string, requiredConnections:
 
   const addDoor = (from: string, to: string, edge: (typeof edges)[number]) => {
     const accessible = bySpace.get(from)?.accessible || bySpace.get(to)?.accessible;
-    openings.push(openingOnWall(floor, edge.wall, `${floor.id}-door-${openings.length + 1}`, "door", [from, to], accessible ? 900 : 820));
+    openings.push(openingOnWall(floor, edge.wall, `${floor.id}-door-${openings.length + 1}`, "door", [from, to], accessible ? 900 : 800));
     reached.add(to);
   };
   const usableEdgesFrom = (current: string) => [...(byNode.get(current) ?? [])]
     .filter((edge) => {
       const next = edge.from === current ? edge.to : edge.from;
-      const desiredWidth = bySpace.get(current)?.accessible || bySpace.get(next)?.accessible ? 900 : 820;
-      return wallLength(edge.wall) >= desiredWidth + 300;
+      const desiredWidth = bySpace.get(current)?.accessible || bySpace.get(next)?.accessible ? 900 : 800;
+      return wallLength(edge.wall) >= desiredWidth + 100;
     })
     .sort((left, right) => wallLength(right.wall) - wallLength(left.wall) || left.wall.id.localeCompare(right.wall.id));
 
@@ -132,14 +135,14 @@ function spanningDoorOpenings(floor: Floor, rootId: string, requiredConnections:
 
   // Then hang every ordinary room directly from the common spine as a destination leaf.
   for (const space of [...floor.spaces].sort((left, right) => left.id.localeCompare(right.id))) {
-    if (reached.has(space.id) || attachedBedroomByBathroom.has(space.id)) continue;
+    if (!spaceAccessSemantics(space).pedestrian || reached.has(space.id) || attachedBedroomByBathroom.has(space.id)) continue;
     const edge = edges
       .filter((candidate) => candidate.from === space.id || candidate.to === space.id)
       .filter((candidate) => {
         const other = candidate.from === space.id ? candidate.to : candidate.from;
         return reached.has(other) && isCirculationBackboneSpace(bySpace.get(other) as Space);
       })
-      .filter((candidate) => wallLength(candidate.wall) >= ((space.accessible ? 900 : 820) + 300))
+      .filter((candidate) => wallLength(candidate.wall) >= ((space.accessible ? 900 : 800) + 100))
       .sort((left, right) => wallLength(right.wall) - wallLength(left.wall) || left.wall.id.localeCompare(right.wall.id))[0];
     if (!edge) continue;
     const backboneId = edge.from === space.id ? edge.to : edge.from;
@@ -176,6 +179,42 @@ function windowOpenings(floor: Floor, occupiedWallIds: Set<string>) {
   return openings;
 }
 
+function vehicleRoadOpenings(
+  floor: Floor,
+  roadEdges: Building["site"]["roadEdges"],
+  preferredSide: Building["site"]["facing"],
+  occupiedWallIds: Set<string>,
+) {
+  const openings: Opening[] = [];
+  for (const parking of floor.spaces.filter((space) => spaceAccessSemantics(space).vehicleRoad)) {
+    const wall = floor.walls
+      .filter((candidate) =>
+        candidate.type === "exterior" &&
+        candidate.adjacentSpaceIds.includes(parking.id) &&
+        roadEdges.includes(exteriorSide(candidate, floor) as Building["site"]["facing"]) &&
+        !occupiedWallIds.has(candidate.id) &&
+        wallLength(candidate) >= 2900
+      )
+      .sort((left, right) =>
+        Number(exteriorSide(right, floor) === preferredSide) - Number(exteriorSide(left, floor) === preferredSide) ||
+        wallLength(right) - wallLength(left) ||
+        left.id.localeCompare(right.id)
+      )[0];
+    if (!wall) continue;
+    openings.push(openingOnWall(
+      floor,
+      wall,
+      `${floor.id}-vehicle-entry-${openings.length + 1}`,
+      "open_connection",
+      [EXTERIOR, parking.id],
+      2400,
+      "vehicle",
+    ));
+    occupiedWallIds.add(wall.id);
+  }
+  return openings;
+}
+
 export function placeFloorOpenings(floor: Floor, options: OpeningOptions): Floor {
   let rootId: string;
   const openings: Opening[] = [];
@@ -197,7 +236,7 @@ export function placeFloorOpenings(floor: Floor, options: OpeningOptions): Floor
     if (!wall) continue;
     const bySpace = new Map(floor.spaces.map((space) => [space.id, space]));
     const desiredWidth = bySpace.get(leftId)?.accessible || bySpace.get(rightId)?.accessible ? 900 : 700;
-    if (wallLength(wall) < desiredWidth + 300) continue;
+    if (wallLength(wall) < desiredWidth + 100) continue;
     openings.push(openingOnWall(
       floor,
       wall,
@@ -208,6 +247,7 @@ export function placeFloorOpenings(floor: Floor, options: OpeningOptions): Floor
     ));
   }
   const occupiedWallIds = new Set(openings.map((opening) => opening.wallId));
+  openings.push(...vehicleRoadOpenings(floor, options.roadEdges ?? [options.entranceSide], options.entranceSide, occupiedWallIds));
   openings.push(...windowOpenings(floor, occupiedWallIds));
   return { ...floor, openings };
 }

@@ -21,6 +21,7 @@ export const openingSchema = z.object({
   floorId: z.string(),
   wallId: z.string(),
   kind: z.enum(["door", "window", "open_connection"]),
+  usage: z.enum(["pedestrian", "vehicle", "daylight"]).optional(),
   offsetMm: z.number().int().nonnegative(),
   widthMm: z.number().int().positive(),
   heightMm: z.number().int().positive(),

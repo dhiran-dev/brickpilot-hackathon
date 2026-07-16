@@ -1,7 +1,8 @@
 import type { ValidationCategory, ValidationFinding, ValidationSeverity } from "@/lib/validation/types";
 
-export const RULE_PACK_VERSION = "residential-baseline-2026.3";
+export const RULE_PACK_VERSION = "residential-baseline-2026.4";
 export const MIN_CONCEPT_PASSAGE_WIDTH_MM = 700;
+export const MIN_VEHICLE_ACCESS_WIDTH_MM = 2400;
 
 export const RULES = {
   geometryOverlap: "GEOMETRY_NO_OVERLAP",
@@ -16,6 +17,8 @@ export const RULES = {
   openingClearance: "OPENING_CLEARANCE",
   accessibilityClearance: "ACCESSIBILITY_OPENING_CLEARANCE",
   windowExterior: "WINDOW_EXTERIOR_ONLY",
+  parkingRoadAccess: "PARKING_ROAD_ACCESS_REQUIRED",
+  vehicleOpening: "OPENING_VEHICLE_ACCESS_INVALID",
   stairRequired: "VERTICAL_STAIR_REQUIRED",
   stairContinuous: "VERTICAL_STAIR_CONTINUOUS",
   stairGeometry: "VERTICAL_STAIR_GEOMETRY",

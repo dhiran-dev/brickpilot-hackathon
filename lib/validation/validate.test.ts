@@ -65,6 +65,68 @@ function linearBuilding(types: [Space["type"], Space["type"], Space["type"]]): B
 }
 
 describe("architecture-aware circulation validation", () => {
+  test("treats requested minimum area and exterior placement as hard requirements", () => {
+    const undersized = linearBuilding(["foyer", "living", "study"]);
+    const minimumRequirements = {
+      rooms: [{ id: "study-2", minAreaMm2: 10_000_000, mustBeExterior: false }],
+      relationships: [],
+    } as unknown as BuildingRequirements;
+    const minimumReport = validateBuilding(undersized, minimumRequirements);
+    expect(minimumReport.valid).toBe(false);
+    expect(minimumReport.findings.find((item) => item.ruleId === "PLANNING_ROOM_MIN_AREA")?.severity).toBe("error");
+
+    const envelope = { x: 0, y: 0, width: 9000, depth: 9000 };
+    const spaces: Space[] = Array.from({ length: 9 }, (_, index) => {
+      const column = index % 3;
+      const row = Math.floor(index / 3);
+      const bounds = { x: column * 3000, y: row * 3000, width: 3000, depth: 3000 };
+      return {
+        id: index === 4 ? "interior-study" : `room-${index}`,
+        floorId: "F0",
+        name: index === 4 ? "Interior study" : `Room ${index}`,
+        type: index === 4 ? "study" : "living",
+        planningCellPolygon: rectanglePolygon(bounds),
+        bounds,
+        areaMm2: 9_000_000,
+        occupied: true,
+        accessible: false,
+      };
+    });
+    const interiorBuilding = structuredClone(undersized);
+    interiorBuilding.site.widthMm = envelope.width;
+    interiorBuilding.site.depthMm = envelope.depth;
+    interiorBuilding.site.buildableEnvelope = envelope;
+    interiorBuilding.floors[0] = {
+      ...interiorBuilding.floors[0],
+      envelope,
+      spaces,
+      walls: buildCanonicalWalls("F0", envelope, spaces),
+      openings: [],
+    };
+    const exteriorRequirements = {
+      rooms: [{ id: "interior-study", minAreaMm2: 9_000_000, mustBeExterior: true }],
+      relationships: [],
+    } as unknown as BuildingRequirements;
+    const exteriorReport = validateBuilding(interiorBuilding, exteriorRequirements);
+    expect(exteriorReport.valid).toBe(false);
+    expect(exteriorReport.findings.find((item) => item.ruleId === "PLANNING_EXTERIOR_ROOM")?.severity).toBe("error");
+  });
+
+  test("requires pedestrian balcony access and a road-facing vehicle opening for parking", () => {
+    const balconyBuilding = linearBuilding(["foyer", "living", "balcony"]);
+    balconyBuilding.floors[0].spaces[2].occupied = false;
+    balconyBuilding.floors[0].openings = balconyBuilding.floors[0].openings.filter((opening) => opening.id !== "door-2");
+    const balconyReport = validateBuilding(balconyBuilding);
+    expect(balconyReport.findings.some((item) => item.ruleId === "OPENING_REQUIRED" && item.objectIds.includes("balcony-2"))).toBe(true);
+    expect(balconyReport.findings.some((item) => item.ruleId === "CIRCULATION_REACHABLE" && item.objectIds.includes("balcony-2"))).toBe(true);
+
+    const parkingBuilding = linearBuilding(["foyer", "living", "parking"]);
+    parkingBuilding.floors[0].spaces[2].occupied = false;
+    const parkingReport = validateBuilding(parkingBuilding);
+    expect(parkingReport.valid).toBe(false);
+    expect(parkingReport.findings.find((item) => item.ruleId === "PARKING_ROAD_ACCESS_REQUIRED")?.severity).toBe("error");
+  });
+
   test("rejects a destination that can only be reached through a private room", () => {
     const building = linearBuilding(["foyer", "bedroom", "study"]);
     const report = validateBuilding(building);

@@ -140,6 +140,22 @@ export const buildingRequirementsSchema = z
     if (floorIds.size !== requirements.floors.length) {
       context.addIssue({ code: "custom", path: ["floors"], message: "Floor IDs must be unique." });
     }
+    const floorLevels = new Set<number>();
+    for (const [index, floor] of requirements.floors.entries()) {
+      if (floorLevels.has(floor.level)) {
+        context.addIssue({ code: "custom", path: ["floors", index, "level"], message: "Floor levels must be unique." });
+      }
+      floorLevels.add(floor.level);
+      if (floor.id !== `F${floor.level}`) {
+        context.addIssue({ code: "custom", path: ["floors", index, "id"], message: "Floor ID must match its level." });
+      }
+    }
+    for (let level = 0; level < requirements.floors.length; level += 1) {
+      if (!floorLevels.has(level)) {
+        context.addIssue({ code: "custom", path: ["floors"], message: "Floor levels must be contiguous from 0." });
+        break;
+      }
+    }
     const roomIds = new Set<string>();
     for (const [index, room] of requirements.rooms.entries()) {
       if (!floorIds.has(room.floorId)) {

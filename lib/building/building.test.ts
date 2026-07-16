@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { generateBuilding, BuildingGenerationError } from "@/lib/building/generate";
-import { squareMetresToMm2, type BuildingRequirements, type RoomRequirement, type RoomType } from "@/lib/building/requirements";
+import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomRequirement, type RoomType } from "@/lib/building/requirements";
 import { analyzeCoverage, deriveClearSpaceBounds } from "@/lib/building/topology";
 import { circulationPassageConflicts, unreachableOccupiedSpaces } from "@/lib/building/circulation";
 import { validateBuilding } from "@/lib/validation";
@@ -145,6 +145,26 @@ function denseMultiStoryRecoveryRequirements(seed: number): BuildingRequirements
 }
 
 describe("topology-first residential generator", () => {
+  test("rejects duplicate, skipped, or mismatched canonical floors", () => {
+    const duplicateLevel = structuredClone(requirements(2));
+    duplicateLevel.floors[1].level = 0;
+    expect(buildingRequirementsSchema.safeParse(duplicateLevel).success).toBe(false);
+
+    const skippedLevel = structuredClone(requirements(2));
+    skippedLevel.floors[1] = { ...skippedLevel.floors[1], id: "F2", level: 2 };
+    skippedLevel.rooms.filter((room) => room.floorId === "F1").forEach((room) => { room.floorId = "F2"; });
+    expect(buildingRequirementsSchema.safeParse(skippedLevel).success).toBe(false);
+
+    const mismatchedId = structuredClone(requirements(1));
+    mismatchedId.floors[0].id = "F1";
+    mismatchedId.rooms.forEach((room) => { room.floorId = "F1"; });
+    expect(buildingRequirementsSchema.safeParse(mismatchedId).success).toBe(false);
+
+    const reversedButCanonical = structuredClone(requirements(2));
+    reversedButCanonical.floors.reverse();
+    expect(buildingRequirementsSchema.safeParse(reversedButCanonical).success).toBe(true);
+  });
+
   test("generates an exact, deterministic and reachable ground-floor topology", () => {
     const input = requirements(1);
     const first = generateBuilding(input);

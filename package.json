@@ -7,7 +7,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "test": "bun test lib/layout-engine/layout-engine.test.ts lib/building/building.test.ts lib/validation/validate.test.ts lib/cost/cost.test.ts lib/drawing/build-drawing.test.ts components/guided-intake/model.test.ts",
+    "test": "bun test lib/layout-engine/layout-engine.test.ts lib/building/building.test.ts lib/validation/validate.test.ts lib/cost/cost.test.ts lib/drawing/build-drawing.test.ts lib/design/persisted-study.test.ts components/guided-intake/model.test.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "preflight": "bun scripts/preflight.ts",

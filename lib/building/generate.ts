@@ -39,8 +39,8 @@ export type GeneratedBuilding = {
 
 const MAX_CANDIDATES_PER_SEARCH_FAMILY = 256;
 const SEARCH_SEED_SALTS = [0, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35] as const;
-const RECOVERY_CANDIDATES_PER_FAMILY = 64;
-const RECOVERY_ANCHOR_SEEDS = [31, 42] as const;
+const RECOVERY_CANDIDATES_PER_FAMILY = 1;
+const RECOVERY_ANCHOR_SEEDS = [31] as const;
 
 type SearchFamily = {
   searchSeed: number;
@@ -55,10 +55,19 @@ type SearchFamily = {
  * bank, a particular random seed cannot incorrectly make the same brief look impossible.
  */
 function searchFamilies(seed: number): SearchFamily[] {
-  const raw = [
-    ...SEARCH_SEED_SALTS.map((salt) => ({ searchSeed: (seed ^ salt) >>> 0, candidateLimit: MAX_CANDIDATES_PER_SEARCH_FAMILY, generatorMode: "mixed" as const })),
-    ...RECOVERY_ANCHOR_SEEDS.map((anchor) => ({ searchSeed: (anchor ^ 0x9e3779b9) >>> 0, candidateLimit: RECOVERY_CANDIDATES_PER_FAMILY, generatorMode: "backbone" as const })),
-  ];
+  const userRelative = SEARCH_SEED_SALTS.map((salt) => ({
+    searchSeed: (seed ^ salt) >>> 0,
+    candidateLimit: MAX_CANDIDATES_PER_SEARCH_FAMILY,
+    generatorMode: "mixed" as const,
+  }));
+  const recovery = RECOVERY_ANCHOR_SEEDS.map((anchor) => ({
+    searchSeed: (anchor ^ 0x9e3779b9) >>> 0,
+    candidateLimit: RECOVERY_CANDIDATES_PER_FAMILY,
+    generatorMode: "backbone" as const,
+  }));
+  // Preserve seeded variety first, then recover immediately before spending three more
+  // equivalent search banks on a brief the rich family cannot satisfy.
+  const raw = [userRelative[0], ...recovery, ...userRelative.slice(1)];
   const unique = [...new Map(raw.map((family) => [`${family.generatorMode}:${family.searchSeed}`, family])).values()];
   let ordinalOffset = 0;
   return unique.map((family) => {
@@ -110,17 +119,26 @@ function recoveryGroups(rooms: BuildingRequirements["rooms"], requiredConnection
   return groups;
 }
 
-function sliceRecoveryBand(rooms: BuildingRequirements["rooms"], bounds: Rectangle): CandidateRoom[] {
+function sliceRecoveryBand(
+  rooms: BuildingRequirements["rooms"],
+  bounds: Rectangle,
+  roadSide: Building["site"]["facing"],
+): CandidateRoom[] {
   if (rooms.length === 0) return [];
-  const minimumWidth = 1120;
-  if (bounds.width < rooms.length * minimumWidth) throw new Error("RECOVERY_BAND_TOO_NARROW");
-  const remaining = bounds.width - rooms.length * minimumWidth;
+  const minimumWidths = rooms.map((room) => Math.max(
+    room.accessible ? 1200 : 900,
+    room.type === "parking" && (roadSide === "north" || roadSide === "south") ? 2900 : 0,
+    Math.ceil(room.minAreaMm2 / bounds.depth),
+  ));
+  const minimumTotal = minimumWidths.reduce((sum, width) => sum + width, 0);
+  if (bounds.width < minimumTotal) throw new Error("RECOVERY_BAND_TOO_NARROW");
+  const remaining = bounds.width - minimumTotal;
   const totalWeight = rooms.reduce((sum, room) => sum + room.targetAreaMm2, 0);
   let x = bounds.x;
   return rooms.map((room, index) => {
     const width = index === rooms.length - 1
       ? bounds.x + bounds.width - x
-      : minimumWidth + Math.floor(remaining * room.targetAreaMm2 / Math.max(1, totalWeight));
+      : minimumWidths[index] + Math.floor(remaining * room.targetAreaMm2 / Math.max(1, totalWeight));
     const output = candidateRoom(room, { x, y: bounds.y, width, depth: bounds.depth });
     x += width;
     return output;
@@ -135,12 +153,23 @@ function sliceRecoveryBand(rooms: BuildingRequirements["rooms"], bounds: Rectang
 function generateBackboneRecoveryCandidate(
   options: CandidateGeneratorOptions,
   requiredConnections: Array<[string, string]>,
+  roadSide: Building["site"]["facing"],
 ): FloorCandidate {
   const circulation = options.rooms.find((room) => room.type === "circulation");
-  if (!circulation) return generateRecursiveSlicingCandidate(options);
-  const ordinaryRooms = options.rooms.filter((room) => room.id !== circulation.id);
-  const stripDepth = Math.max(900, Math.min(1400, Math.round(circulation.targetAreaMm2 / options.envelope.width)));
-  const topDepth = options.stairCore?.bounds.depth ?? Math.floor((options.envelope.depth - stripDepth) * 0.36);
+  const living = options.rooms.find((room) => room.type === "living");
+  const accessSpine = living ?? circulation;
+  if (!accessSpine) return generateRecursiveSlicingCandidate(options);
+  const stairPocketCirculation = living && circulation && options.stairCore ? circulation : undefined;
+  const ordinaryRooms = options.rooms.filter((room) => room.id !== accessSpine.id && room.id !== stairPocketCirculation?.id);
+  const stripDepth = accessSpine.type === "living"
+    ? Math.max(1000, Math.ceil(accessSpine.minAreaMm2 / options.envelope.width))
+    : Math.max(900, Math.min(1400, Math.round(accessSpine.targetAreaMm2 / options.envelope.width)));
+  const pocketDepth = stairPocketCirculation && options.stairCore
+    ? Math.max(1000, Math.ceil(stairPocketCirculation.targetAreaMm2 / options.stairCore.bounds.width) + 300)
+    : 0;
+  const topDepth = options.stairCore
+    ? options.stairCore.bounds.depth + pocketDepth
+    : Math.floor((options.envelope.depth - stripDepth) * 0.36);
   const stripY = options.envelope.y + topDepth;
   const bottomDepth = options.envelope.depth - topDepth - stripDepth;
   if (bottomDepth < 1200) throw new Error("RECOVERY_STRIP_EXCEEDS_ENVELOPE");
@@ -159,31 +188,63 @@ function generateBackboneRecoveryCandidate(
     return 2;
   };
   const orderedGroups = [...groups].sort((left, right) => groupPriority(left) - groupPriority(right) || left[0].id.localeCompare(right[0].id));
-  const minimumWidth = 1120;
-  const topCapacity = Math.floor(topBounds.width / minimumWidth);
-  const bottomCapacity = Math.floor(bottomBounds.width / minimumWidth);
-  const desiredTopCount = Math.max(1, Math.round(ordinaryRooms.length * (topBounds.width * topBounds.depth) / Math.max(1, topBounds.width * topBounds.depth + bottomBounds.width * bottomBounds.depth)));
-  const requiredTopCount = Math.max(desiredTopCount, ordinaryRooms.length - bottomCapacity);
-  const topGroups: typeof groups = [];
-  const bottomGroups: typeof groups = [];
-  let topCount = 0;
-  for (const group of orderedGroups) {
-    if (topCount < requiredTopCount && topCount + group.length <= topCapacity && !group.some((room) => room.id === "foyer")) {
-      topGroups.push(group);
-      topCount += group.length;
-    } else {
-      bottomGroups.push(group);
+  const groupWidth = (group: BuildingRequirements["rooms"], bounds: Rectangle) => group.reduce(
+    (sum, room) => sum + Math.max(
+      room.accessible ? 1200 : 900,
+      room.type === "parking" && (roadSide === "north" || roadSide === "south") ? 2900 : 0,
+      Math.ceil(room.minAreaMm2 / bounds.depth),
+    ),
+    0,
+  );
+  let selected: { topGroups: typeof groups; bottomGroups: typeof groups; score: number } | undefined;
+  for (let mask = 0; mask < 2 ** orderedGroups.length; mask += 1) {
+    const topGroups: typeof groups = [];
+    const bottomGroups: typeof groups = [];
+    let topWidth = 0;
+    let bottomWidth = 0;
+    for (const [index, group] of orderedGroups.entries()) {
+      const roadAnchored = group.some((room) => room.type === "parking" || room.type === "foyer");
+      const forceTop = roadAnchored && roadSide === "north";
+      const forceBottom = roadAnchored && (roadSide === "south" || (roadSide === "west" && Boolean(options.stairCore)));
+      const top = forceTop || (!forceBottom && Boolean(mask & (1 << index)));
+      if (top) {
+        topGroups.push(group);
+        topWidth += groupWidth(group, topBounds);
+      } else {
+        bottomGroups.push(group);
+        bottomWidth += groupWidth(group, bottomBounds);
+      }
     }
+    if (topWidth > topBounds.width || bottomWidth > bottomBounds.width) continue;
+    const topWeight = topGroups.flat().reduce((sum, room) => sum + room.targetAreaMm2, 0);
+    const bottomWeight = bottomGroups.flat().reduce((sum, room) => sum + room.targetAreaMm2, 0);
+    const score = Math.abs(
+      topWeight / Math.max(1, topBounds.width * topBounds.depth) -
+      bottomWeight / Math.max(1, bottomBounds.width * bottomBounds.depth),
+    );
+    if (!selected || score < selected.score) selected = { topGroups, bottomGroups, score };
   }
-  if (bottomGroups.flat().length > bottomCapacity || topGroups.flat().length > topCapacity) throw new Error("RECOVERY_BAND_CAPACITY");
+  if (!selected) throw new Error("RECOVERY_BAND_CAPACITY");
+  const { topGroups, bottomGroups } = selected;
   const orderBand = (bandGroups: typeof groups) => [...bandGroups]
-    .sort((left, right) => Number(left.some((room) => room.id === "foyer")) - Number(right.some((room) => room.id === "foyer")) || left[0].id.localeCompare(right[0].id))
+    .sort((left, right) => {
+      const leftParking = left.some((room) => room.type === "parking") ? 1 : 0;
+      const rightParking = right.some((room) => room.type === "parking") ? 1 : 0;
+      if (leftParking !== rightParking) return roadSide === "west" ? rightParking - leftParking : leftParking - rightParking;
+      return left[0].id.localeCompare(right[0].id);
+    })
     .flat();
   const cells: CandidateRoom[] = [
     ...(options.stairCore ? [options.stairCore] : []),
-    candidateRoom(circulation, { x: options.envelope.x, y: stripY, width: options.envelope.width, depth: stripDepth }),
-    ...sliceRecoveryBand(orderBand(topGroups), topBounds),
-    ...sliceRecoveryBand(orderBand(bottomGroups), bottomBounds),
+    ...(stairPocketCirculation && options.stairCore ? [candidateRoom(stairPocketCirculation, {
+      x: options.stairCore.bounds.x,
+      y: options.stairCore.bounds.y + options.stairCore.bounds.depth,
+      width: options.stairCore.bounds.width,
+      depth: pocketDepth,
+    })] : []),
+    candidateRoom(accessSpine, { x: options.envelope.x, y: stripY, width: options.envelope.width, depth: stripDepth }),
+    ...sliceRecoveryBand(orderBand(topGroups), topBounds, roadSide),
+    ...sliceRecoveryBand(orderBand(bottomGroups), bottomBounds, roadSide),
   ];
   return { floor: options.floor, cells };
 }
@@ -211,7 +272,7 @@ function geometryHash(floors: Floor[]) {
     id: floor.id,
     spaces: floor.spaces.map((space) => ({ id: space.id, bounds: space.bounds })),
     walls: floor.walls.map((wall) => ({ start: wall.start, end: wall.end, adjacent: wall.adjacentSpaceIds })),
-    openings: floor.openings.map((opening) => ({ wallId: opening.wallId, kind: opening.kind, offset: opening.offsetMm, width: opening.widthMm })),
+    openings: floor.openings.map((opening) => ({ wallId: opening.wallId, kind: opening.kind, usage: opening.usage, connects: opening.connects, offset: opening.offsetMm, width: opening.widthMm })),
   }))));
 }
 
@@ -272,13 +333,15 @@ function generateCandidate(
       .filter((relationship) => relationship.type === "must_connect")
       .filter((relationship) => rooms.some((room) => room.id === relationship.fromRoomId) && rooms.some((room) => room.id === relationship.toRoomId))
       .map((relationship) => [relationship.fromRoomId, relationship.toRoomId] as [string, string]);
+    const entranceSide = requirements.site.roadEdges.includes(requirements.site.facing) ? requirements.site.facing : requirements.site.roadEdges[0];
     const candidate = generatorMode === "backbone"
-      ? generateBackboneRecoveryCandidate(generatorOptions, requiredConnections)
+      ? generateBackboneRecoveryCandidate(generatorOptions, requiredConnections, entranceSide)
       : generator(generatorOptions);
     const normalized = normalizeFloorTopology(candidate, envelope, elevations.get(floorRequirement.id) ?? 0);
     return placeFloorOpenings(normalized, {
       isGroundFloor: floorRequirement.level === 0,
-      entranceSide: requirements.site.roadEdges.includes(requirements.site.facing) ? requirements.site.facing : requirements.site.roadEdges[0],
+      entranceSide,
+      roadEdges: requirements.site.roadEdges,
       requiredConnections,
     });
   });

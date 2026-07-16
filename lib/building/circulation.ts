@@ -10,8 +10,19 @@ export function wallAdjacencyEdges(floor: Floor): AdjacencyEdge[] {
     .map((wall) => ({ wall, from: wall.adjacentSpaceIds[0], to: wall.adjacentSpaceIds[1] }));
 }
 
+export function openingUsage(opening: Opening) {
+  return opening.usage ?? (opening.kind === "window" ? "daylight" : "pedestrian");
+}
+
 function openingPassable(opening: Opening) {
-  return opening.kind === "door" || opening.kind === "open_connection";
+  return openingUsage(opening) === "pedestrian" && (opening.kind === "door" || opening.kind === "open_connection");
+}
+
+export function spaceAccessSemantics(space: Pick<Space, "occupied" | "type">) {
+  return {
+    pedestrian: space.occupied || ["balcony", "courtyard", "parking"].includes(space.type),
+    vehicleRoad: space.type === "parking",
+  };
 }
 
 const CIRCULATION_BACKBONE_TYPES = new Set<RoomType>([
@@ -70,12 +81,15 @@ export function reachableFrom(graph: Map<string, Set<string>>, start = EXTERIOR)
 export function unreachableOccupiedSpaces(building: Building) {
   const graph = connectVerticalCirculation(buildReachabilityGraph(building.floors), building);
   const reached = reachableFrom(graph);
-  return building.floors.flatMap((floor) => floor.spaces.filter((space) => space.occupied && !reached.has(space.id)));
+  return building.floors.flatMap((floor) => floor.spaces.filter((space) => spaceAccessSemantics(space).pedestrian && !reached.has(space.id)));
 }
 
 export function spacesWithNoPassableOpening(floor: Floor): Space[] {
   return floor.spaces.filter((space) =>
-    space.occupied && !floor.openings.some((opening) => openingPassable(opening) && opening.connects.includes(space.id)),
+    spaceAccessSemantics(space).pedestrian && !floor.openings.some((opening) => {
+      if (!openingPassable(opening) || !opening.connects.includes(space.id)) return false;
+      return space.type !== "balcony" || opening.connects.some((id) => id !== space.id && id !== EXTERIOR);
+    }),
   );
 }
 
@@ -141,7 +155,7 @@ export function circulationPassageConflicts(building: Building, requirements?: B
   const isDestinationOnly = (space: Space) => !isCirculationBackboneSpace(space);
   const output: CirculationPassageConflict[] = [];
 
-  for (const target of spaces.filter((space) => space.occupied)) {
+  for (const target of spaces.filter((space) => spaceAccessSemantics(space).pedestrian)) {
     const allowedPrivatePassages = target.type === "bathroom" ? attached.get(target.id) ?? new Set<string>() : new Set<string>();
     const reached = new Set<string>();
     const queue = [EXTERIOR];

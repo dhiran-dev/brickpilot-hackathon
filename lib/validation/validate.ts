@@ -1,8 +1,8 @@
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building, Floor, Opening, Rectangle, WallSegment } from "@/lib/building/schema";
-import { circulationPassageConflicts, spacesWithNoPassableOpening, unreachableOccupiedSpaces } from "@/lib/building/circulation";
+import { circulationPassageConflicts, openingUsage, spacesWithNoPassableOpening, unreachableOccupiedSpaces } from "@/lib/building/circulation";
 import { analyzeCoverage, rectangleIntersectionArea, wallLength } from "@/lib/building/topology";
-import { finding, MIN_CONCEPT_PASSAGE_WIDTH_MM, RULE_PACK_VERSION, RULES } from "@/lib/validation/rules";
+import { finding, MIN_CONCEPT_PASSAGE_WIDTH_MM, MIN_VEHICLE_ACCESS_WIDTH_MM, RULE_PACK_VERSION, RULES } from "@/lib/validation/rules";
 import type { ValidationFinding, ValidationReport, ValidationSeverity } from "@/lib/validation/types";
 
 function boundsRight(bounds: Rectangle) { return bounds.x + bounds.width; }
@@ -46,7 +46,15 @@ function openingInterval(opening: Opening) {
   return { start: opening.offsetMm, end: opening.offsetMm + opening.widthMm };
 }
 
-function openingFindings(floor: Floor) {
+function exteriorSide(wall: WallSegment, floor: Floor) {
+  if (wall.start.y === floor.envelope.y && wall.end.y === floor.envelope.y) return "north";
+  if (wall.start.x === boundsRight(floor.envelope) && wall.end.x === boundsRight(floor.envelope)) return "east";
+  if (wall.start.y === boundsBottom(floor.envelope) && wall.end.y === boundsBottom(floor.envelope)) return "south";
+  if (wall.start.x === floor.envelope.x && wall.end.x === floor.envelope.x) return "west";
+  return undefined;
+}
+
+function openingFindings(floor: Floor, roadEdges: Building["site"]["roadEdges"]) {
   const findings: ValidationFinding[] = [];
   const walls = new Map(floor.walls.map((wall) => [wall.id, wall]));
   for (const space of spacesWithNoPassableOpening(floor)) findings.push(finding(
@@ -71,7 +79,7 @@ function openingFindings(floor: Floor) {
       RULES.windowExterior, "error", "opening", "A window may only be placed on an exterior or courtyard wall.",
       { floorId: floor.id, objectIds: [opening.id, wall.id] },
     ));
-    if (opening.kind !== "window" && opening.widthMm < MIN_CONCEPT_PASSAGE_WIDTH_MM) findings.push(finding(
+    if (openingUsage(opening) === "pedestrian" && opening.widthMm < MIN_CONCEPT_PASSAGE_WIDTH_MM) findings.push(finding(
       RULES.openingPassageWidth,
       "error",
       "opening",
@@ -86,10 +94,63 @@ function openingFindings(floor: Floor) {
       },
       "baseline_heuristic",
     ));
+    if (openingUsage(opening) === "vehicle") {
+      const parkingId = opening.connects.find((id) => floor.spaces.find((space) => space.id === id)?.type === "parking");
+      const side = exteriorSide(wall, floor);
+      if (
+        opening.kind !== "open_connection" ||
+        !opening.connects.includes("EXTERIOR") ||
+        !parkingId ||
+        wall.type !== "exterior" ||
+        !side ||
+        !roadEdges.includes(side) ||
+        opening.widthMm < MIN_VEHICLE_ACCESS_WIDTH_MM
+      ) findings.push(finding(
+        RULES.vehicleOpening,
+        "error",
+        "opening",
+        "A vehicle opening must connect covered parking directly to an exterior wall on a configured road edge.",
+        {
+          floorId: floor.id,
+          objectIds: [opening.id, opening.wallId, ...opening.connects],
+          measured: { value: opening.widthMm, unit: "mm" },
+          required: { min: MIN_VEHICLE_ACCESS_WIDTH_MM, unit: "mm" },
+          suggestedAction: "Place covered parking on a road-facing edge and provide a vehicle-width opening.",
+          repairType: "add_vehicle_road_access",
+        },
+        "baseline_heuristic",
+      ));
+    }
     const edgeClearance = Math.min(opening.offsetMm, wallLength(wall) - opening.offsetMm - opening.widthMm);
     if (edgeClearance < 50) findings.push(finding(
       RULES.openingClearance, "error", "opening", "Opening is too close to a wall junction.",
       { floorId: floor.id, objectIds: [opening.id, wall.id], measured: { value: edgeClearance, unit: "mm" }, required: { min: 50, unit: "mm" } },
+    ));
+  }
+  for (const parking of floor.spaces.filter((space) => space.type === "parking")) {
+    const hasRoadAccess = floor.openings.some((opening) => {
+      if (openingUsage(opening) !== "vehicle" || !opening.connects.includes(parking.id)) return false;
+      const wall = walls.get(opening.wallId);
+      const side = wall ? exteriorSide(wall, floor) : undefined;
+      return opening.kind === "open_connection" &&
+        opening.connects.includes("EXTERIOR") &&
+        opening.widthMm >= MIN_VEHICLE_ACCESS_WIDTH_MM &&
+        wall?.type === "exterior" &&
+        Boolean(side && roadEdges.includes(side));
+    });
+    if (!hasRoadAccess) findings.push(finding(
+      RULES.parkingRoadAccess,
+      "error",
+      "opening",
+      `${parking.name} has no modeled vehicle access to a configured road edge.`,
+      {
+        floorId: floor.id,
+        objectIds: [parking.id],
+        required: { min: MIN_VEHICLE_ACCESS_WIDTH_MM, unit: "mm" },
+        suggestedAction: "Move covered parking to a road-facing edge or add a vehicle-width exterior opening.",
+        repairType: "add_vehicle_road_access",
+      },
+      "baseline_heuristic",
     ));
   }
   const byWall = new Map<string, Opening[]>();
@@ -151,7 +212,7 @@ function planningFindings(building: Building, requirements?: BuildingRequirement
     for (const space of floor.spaces) {
       const requirement = requirementById.get(space.id);
       if (requirement && space.areaMm2 < requirement.minAreaMm2) findings.push(finding(
-        RULES.roomMinimumArea, "warning", "planning", `${space.name} is below the requested minimum area.`,
+        RULES.roomMinimumArea, "error", "planning", `${space.name} is below the requested minimum area.`,
         { floorId: floor.id, objectIds: [space.id], measured: { value: space.areaMm2, unit: "mm2" }, required: { min: requirement.minAreaMm2, unit: "mm2" }, suggestedAction: "Relax the room program or enlarge the buildable envelope." },
         "baseline_heuristic",
       ));
@@ -162,8 +223,9 @@ function planningFindings(building: Building, requirements?: BuildingRequirement
         "baseline_heuristic",
       ));
       const exteriorWalls = floor.walls.filter((wall) => wall.type === "exterior" && wall.adjacentSpaceIds.includes(space.id));
-      if (requirement?.mustBeExterior && exteriorWalls.length === 0) findings.push(finding(
-        RULES.exteriorPreference, "warning", "planning", `${space.name} was requested on the exterior but has no exterior wall.`,
+      const intrinsicallyExterior = ["balcony", "courtyard", "terrace"].includes(space.type);
+      if (requirement?.mustBeExterior && !intrinsicallyExterior && exteriorWalls.length === 0) findings.push(finding(
+        RULES.exteriorPreference, "error", "planning", `${space.name} requires an exterior wall but has none.`,
         { floorId: floor.id, objectIds: [space.id] }, "baseline_heuristic",
       ));
       if (space.occupied && !["bathroom", "store", "circulation", "stair"].includes(space.type) && !floor.openings.some((opening) => opening.kind === "window" && opening.connects.includes(space.id))) findings.push(finding(
@@ -216,7 +278,7 @@ function circulationQualityFindings(building: Building, requirements?: BuildingR
 export function validateBuilding(building: Building, requirements?: BuildingRequirements): ValidationReport {
   const findings = [
     ...building.floors.flatMap(geometryFindings),
-    ...building.floors.flatMap(openingFindings),
+    ...building.floors.flatMap((floor) => openingFindings(floor, building.site.roadEdges)),
     ...verticalFindings(building),
     ...planningFindings(building, requirements),
     ...circulationQualityFindings(building, requirements),

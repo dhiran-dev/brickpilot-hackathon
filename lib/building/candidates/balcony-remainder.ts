@@ -12,7 +12,10 @@ export function splitOversizedBalconies(cells: CandidateRoom[], envelope: Rectan
     const touchesSouth = bounds.y + bounds.depth === envelope.y + envelope.depth;
     const touchesWest = bounds.x === envelope.x;
     const touchesEast = bounds.x + bounds.width === envelope.x + envelope.width;
-    const horizontalFacade = (touchesNorth || touchesSouth) && (!touchesWest && !touchesEast || bounds.width >= bounds.depth);
+    // Keep the balcony spanning the full wing width so it retains both its exterior edge and its
+    // door wall to the circulation spine. A facade-parallel width split can strand it behind the
+    // generated open-terrace remainder.
+    const horizontalFacade = touchesNorth || touchesSouth || touchesWest || touchesEast;
     let balconyBounds: Rectangle;
     let terraceBounds: Rectangle;
     if (horizontalFacade) {
