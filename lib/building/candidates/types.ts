@@ -1,4 +1,4 @@
-import type { FloorRequirement, RoomRequirement } from "@/lib/building/requirements";
+import type { FloorRequirement, FormStrategy, RoomRequirement } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
 
 export type CandidateRoom = Pick<
@@ -21,6 +21,7 @@ export type CandidateGeneratorOptions = {
   seed: number;
   variant: number;
   stairCore?: CandidateRoom;
+  formStrategy?: FormStrategy;
 };
 
 export type CandidateGenerator = (options: CandidateGeneratorOptions) => FloorCandidate;

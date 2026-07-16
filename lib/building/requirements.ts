@@ -4,7 +4,7 @@ const positiveMm = z.number().int().positive();
 const nonNegativeMm = z.number().int().nonnegative();
 
 export const BUILDING_TYPE_OPTIONS = [
-  { value: "detached_house", label: "Detached house", available: true },
+  { value: "detached_house", label: "Villa / bungalow", available: true },
   { value: "apartment", label: "Apartments", available: false, note: "Coming soon" },
   { value: "corporate_commercial", label: "Corporate / commercial", available: false, note: "Coming soon" },
 ] as const;
@@ -13,6 +13,16 @@ export const buildingTypeSchema = z.enum(["detached_house", "apartment", "corpor
 export const cardinalDirectionSchema = z.enum(["north", "east", "south", "west"]);
 export const displayUnitSchema = z.enum(["metric", "imperial"]);
 export const qualityTierSchema = z.enum(["essential", "standard", "premium"]);
+export const architecturalStyleSchema = z.enum([
+  "contemporary_tropical",
+  "warm_minimal",
+  "kerala_contemporary",
+  "modernist",
+  "courtyard_vernacular",
+]);
+export const formStrategySchema = z.enum(["compact", "stepped_terraces", "courtyard", "articulated_wings"]);
+export const roofCharacterSchema = z.enum(["flat_parapet", "sloped", "mixed"]);
+export const materialDirectionSchema = z.enum(["warm_natural", "light_mineral", "earthy_textured", "monochrome"]);
 export const roomTypeSchema = z.enum([
   "living",
   "dining",
@@ -115,6 +125,17 @@ export const buildingRequirementsSchema = z
       stairWidthMm: positiveMm.min(900).max(2400).default(1000),
       liftProvision: z.boolean().default(false),
     }),
+    architecture: z.object({
+      style: architecturalStyleSchema.default("contemporary_tropical"),
+      formStrategy: formStrategySchema.default("stepped_terraces"),
+      roofCharacter: roofCharacterSchema.default("mixed"),
+      materialDirection: materialDirectionSchema.default("warm_natural"),
+    }).default({
+      style: "contemporary_tropical",
+      formStrategy: "stepped_terraces",
+      roofCharacter: "mixed",
+      materialDirection: "warm_natural",
+    }),
     budget: z.object({
       qualityTier: qualityTierSchema.default("standard"),
       targetLowMinor: z.number().int().nonnegative().optional(),
@@ -179,6 +200,8 @@ export type RoomRequirement = z.infer<typeof roomRequirementSchema>;
 export type RoomType = z.infer<typeof roomTypeSchema>;
 export type PreferredZone = z.infer<typeof preferredZoneSchema>;
 export type CardinalDirection = z.infer<typeof cardinalDirectionSchema>;
+export type ArchitecturalStyle = z.infer<typeof architecturalStyleSchema>;
+export type FormStrategy = z.infer<typeof formStrategySchema>;
 
 export function hasMinimumResidentialRoomProgram(requirements: BuildingRequirements) {
   return requirements.rooms.some((room) => room.type === "bedroom")

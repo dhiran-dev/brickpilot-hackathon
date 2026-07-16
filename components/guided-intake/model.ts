@@ -25,6 +25,10 @@ export type IntakeDraft = {
   occupants: number;
   accessibilityRequired: boolean;
   socialSpaceMode: "separate" | "combined";
+  architecturalStyle: "contemporary_tropical" | "warm_minimal" | "kerala_contemporary" | "modernist" | "courtyard_vernacular";
+  formStrategy: "compact" | "stepped_terraces" | "courtyard" | "articulated_wings";
+  roofCharacter: "flat_parapet" | "sloped" | "mixed";
+  materialDirection: "warm_natural" | "light_mineral" | "earthy_textured" | "monochrome";
   programs: FloorProgram[];
   includeUtility: boolean;
   includePooja: boolean;
@@ -60,11 +64,15 @@ export const DEFAULT_INTAKE_DRAFT: IntakeDraft = {
   occupants: 5,
   accessibilityRequired: false,
   socialSpaceMode: "separate",
+  architecturalStyle: "contemporary_tropical",
+  formStrategy: "articulated_wings",
+  roofCharacter: "mixed",
+  materialDirection: "warm_natural",
   programs: [
-    { bedrooms: 3, bathrooms: 2, attachedBathrooms: 1, studies: 1, balcony: false },
-    { bedrooms: 2, bathrooms: 2, attachedBathrooms: 1, studies: 0, balcony: true },
-    { bedrooms: 2, bathrooms: 2, attachedBathrooms: 1, studies: 0, balcony: true },
-    { bedrooms: 1, bathrooms: 1, attachedBathrooms: 1, studies: 1, balcony: true },
+    { bedrooms: 1, bathrooms: 1, attachedBathrooms: 1, studies: 0, balcony: false },
+    { bedrooms: 3, bathrooms: 3, attachedBathrooms: 1, studies: 0, balcony: true },
+    { bedrooms: 2, bathrooms: 2, attachedBathrooms: 1, studies: 1, balcony: true },
+    { bedrooms: 1, bathrooms: 1, attachedBathrooms: 1, studies: 0, balcony: true },
   ],
   includeUtility: true,
   includePooja: true,
@@ -182,7 +190,8 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
   addRoom({ id: "circulation-f0", name: "Circulation", type: "circulation", floorId: "F0", privacy: "semi_private", accessible: draft.accessibilityRequired });
   if (draft.includeUtility) addRoom({ id: "utility", name: "Utility", type: "utility", floorId: "F0", privacy: "service", mustBeExterior: true });
   if (draft.includePooja) addRoom({ id: "pooja", name: "Pooja", type: "pooja", floorId: "F0", privacy: "private", preferredZone: "northeast" });
-  if (draft.includeCourtyard) addRoom({ id: "courtyard", name: "Courtyard", type: "courtyard", floorId: "F0", privacy: "semi_private", mustBeExterior: true, preferredZone: "center" });
+  const includeCourtyard = draft.includeCourtyard || draft.formStrategy === "courtyard";
+  if (includeCourtyard) addRoom({ id: "courtyard", name: "Courtyard", type: "courtyard", floorId: "F0", privacy: "semi_private", mustBeExterior: true, preferredZone: "center" });
   if (draft.includeParking) addRoom({ id: "parking", name: "Covered parking", type: "parking", floorId: "F0", privacy: "service", preferredZone: primaryRoadEdge, mustBeExterior: true });
   relationships.push({ type: "must_connect", fromRoomId: "foyer", toRoomId: "living" });
   if (socialSpaceMode === "combined") {
@@ -199,6 +208,20 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
     const floorId = `F${level}`;
     const program = normalizeFloorProgram(draft.programs[level], DEFAULT_INTAKE_DRAFT.programs[level]);
     if (draft.floorCount > 1 && level > 0) addRoom({ id: `circulation-f${level}`, name: "Upper lobby", type: "circulation", floorId, privacy: "semi_private" });
+    const isVillaFamilyLevel = level > 0 && (level === 1 || level === draft.floorCount - 1);
+    if (isVillaFamilyLevel) {
+      const familyLoungeId = `family-lounge-f${level}`;
+      addRoom({
+        id: familyLoungeId,
+        name: level === draft.floorCount - 1 && level > 1 ? "Sky family lounge" : "Family lounge",
+        type: "living",
+        floorId,
+        privacy: "semi_private",
+        preferredZone: primaryRoadEdge,
+        mustBeExterior: true,
+      });
+      relationships.push({ type: "prefer_near", fromRoomId: familyLoungeId, toRoomId: `circulation-f${level}` });
+    }
     for (let index = 0; index < program.bedrooms; index += 1) {
       const id = `bedroom-f${level}-${index + 1}`;
       const isAccessible: boolean = draft.accessibilityRequired && level === 0 && !accessibleBedroomAssigned;
@@ -211,12 +234,13 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
       const attachedBedroomId = index < program.attachedBathrooms ? `bedroom-f${level}-${index + 1}` : undefined;
       const isAccessible: boolean = draft.accessibilityRequired && level === 0 && !accessibleBathroomAssigned;
       accessibleBathroomAssigned = accessibleBathroomAssigned || isAccessible;
-      addRoom({ id, name: attachedBedroomId ? `${level === 0 ? "" : `L${level} `}Attached bathroom ${index + 1}`.trim() : `${level === 0 ? "" : `L${level} `}Bathroom ${index + 1}`.trim(), type: "bathroom", floorId, privacy: "service", mustBeExterior: true, accessible: isAccessible });
+      addRoom({ id, name: attachedBedroomId ? `${level === 0 ? "" : `L${level} `}Attached bathroom ${index + 1}`.trim() : `${level === 0 ? "" : `L${level} `}Bathroom ${index + 1}`.trim(), type: "bathroom", floorId, privacy: "service", accessible: isAccessible });
       if (attachedBedroomId) relationships.push({ type: "must_connect", fromRoomId: attachedBedroomId, toRoomId: id });
       if (index === 0) firstBathroomByFloor.push(id);
     }
     for (let index = 0; index < program.studies; index += 1) addRoom({ id: `study-f${level}-${index + 1}`, name: index ? `Study ${index + 1}` : "Study / office", type: "study", floorId, privacy: "private", mustBeExterior: true });
-    if (level > 0 && program.balcony) addRoom({ id: `balcony-f${level}`, name: "Balcony", type: "balcony", floorId, privacy: "semi_private", mustBeExterior: true });
+    const articulatedUpperFloor = level > 0 && ["stepped_terraces", "articulated_wings"].includes(draft.formStrategy ?? DEFAULT_INTAKE_DRAFT.formStrategy);
+    if (level > 0 && (program.balcony || articulatedUpperFloor)) addRoom({ id: `balcony-f${level}`, name: articulatedUpperFloor ? "Shaded balcony / terrace edge" : "Balcony", type: "balcony", floorId, privacy: "semi_private", mustBeExterior: true });
   }
 
   for (let index = 1; index < firstBathroomByFloor.length; index += 1) relationships.push({ type: "stack_with", fromRoomId: firstBathroomByFloor[index], toRoomId: firstBathroomByFloor[index - 1] });
@@ -246,6 +270,12 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
     relationships,
     household: { occupants: draft.occupants, accessibilityRequired: draft.accessibilityRequired },
     vertical: { stairFamily: draft.stairFamily, stairWidthMm: draft.stairWidthMm, liftProvision: draft.liftProvision },
+    architecture: {
+      style: draft.architecturalStyle ?? DEFAULT_INTAKE_DRAFT.architecturalStyle,
+      formStrategy: draft.formStrategy ?? DEFAULT_INTAKE_DRAFT.formStrategy,
+      roofCharacter: draft.roofCharacter ?? DEFAULT_INTAKE_DRAFT.roofCharacter,
+      materialDirection: draft.materialDirection ?? DEFAULT_INTAKE_DRAFT.materialDirection,
+    },
     budget: {
       qualityTier: draft.qualityTier,
       targetLowMinor: draft.budgetLowMajor > 0 ? Math.round(draft.budgetLowMajor * factor) : undefined,
@@ -302,6 +332,10 @@ export function draftFromRequirements(value: BuildingRequirements): IntakeDraft 
     occupants: value.household.occupants,
     accessibilityRequired: value.household.accessibilityRequired,
     socialSpaceMode: value.rooms.some((room) => room.type === "dining") ? "separate" : "combined",
+    architecturalStyle: value.architecture.style,
+    formStrategy: value.architecture.formStrategy,
+    roofCharacter: value.architecture.roofCharacter,
+    materialDirection: value.architecture.materialDirection,
     programs,
     includeUtility: value.rooms.some((room) => room.type === "utility"),
     includePooja: value.rooms.some((room) => room.type === "pooja"),

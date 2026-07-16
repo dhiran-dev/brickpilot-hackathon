@@ -216,6 +216,7 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
 
       {layers.walls ? <g data-layer="walls" id="layer-walls">
         {artifact.walls.map((wall) => <line key={wall.id} opacity={highlighted.has(wall.id) ? 1 : wall.type === "exterior" ? 0.72 : wall.type === "shaft" ? 0.62 : 0.52} stroke={highlighted.has(wall.id) ? theme.accent : wall.type === "exterior" ? theme.ink : theme.secondary} strokeLinecap="square" strokeWidth={wall.thicknessMm} x1={wall.start.x} x2={wall.end.x} y1={wall.start.y} y2={wall.end.y} />)}
+        {artifact.columns.map((column) => <g aria-label={`${column.id}, conceptual column coordination`} key={column.id}><rect fill={highlighted.has(column.id) ? theme.accent : theme.ink} height={column.depthMm} opacity="0.92" stroke={theme.sheet} strokeWidth="1" vectorEffect="non-scaling-stroke" width={column.widthMm} x={column.center.x - column.widthMm / 2} y={column.center.y - column.depthMm / 2} /><circle cx={column.center.x} cy={column.center.y} fill="none" r={Math.max(column.widthMm, column.depthMm) * 0.8} stroke={theme.accent} strokeDasharray="55 35" strokeWidth="0.7" vectorEffect="non-scaling-stroke" /></g>)}
       </g> : null}
 
       {layers.openings ? <g data-layer="openings" id="layer-openings">{artifact.openings.map((opening) => <OpeningSymbol key={opening.id} opening={opening} theme={theme} />)}</g> : null}

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { generateBuilding, BuildingGenerationError } from "@/lib/building/generate";
 import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomRequirement, type RoomType } from "@/lib/building/requirements";
-import { analyzeCoverage, deriveClearSpaceBounds } from "@/lib/building/topology";
+import { analyzeCoverage, deriveClearSpaceBounds, isOpenToSkySpace } from "@/lib/building/topology";
 import { circulationPassageConflicts, unreachableOccupiedSpaces } from "@/lib/building/circulation";
 import { validateBuilding } from "@/lib/validation";
 import { generateRecursiveSlicingCandidate } from "@/lib/building/candidates/recursive-slicing";
@@ -47,6 +47,7 @@ function requirements(floorCount: 1 | 2 | 3 | 4 = 1): BuildingRequirements {
     relationships: [],
     household: { occupants: 5, accessibilityRequired: true },
     vertical: { stairFamily: "dog_leg", stairWidthMm: 1000, liftProvision: false },
+    architecture: { style: "contemporary_tropical", formStrategy: "stepped_terraces", roofCharacter: "mixed", materialDirection: "warm_natural" },
     budget: { qualityTier: "standard", contingencyPercent: 7.5, taxPercent: 0 },
     seed: 42,
   };
@@ -138,7 +139,8 @@ function denseMultiStoryRecoveryRequirements(seed: number): BuildingRequirements
     rooms,
     relationships,
     household: { occupants: 5, accessibilityRequired: false },
-    vertical: { stairFamily: "dog_leg", stairWidthMm: 1000, liftProvision: false },
+    vertical: { stairFamily: "dog_leg", stairWidthMm: 1000, liftProvision: true },
+    architecture: { style: "contemporary_tropical", formStrategy: "stepped_terraces", roofCharacter: "mixed", materialDirection: "warm_natural" },
     budget: { qualityTier: "standard", contingencyPercent: 7.5, taxPercent: 0 },
     seed,
   };
@@ -192,6 +194,60 @@ describe("topology-first residential generator", () => {
     expect(floor.openings.some((opening) => opening.kind === "window")).toBe(true);
   });
 
+  test("turns noncompact taste into sectioned open-to-sky setbacks on every floor", () => {
+    const input = requirements(3);
+    input.site.facing = "east";
+    input.site.roadEdges = ["east"];
+    const result = generateBuilding(input);
+    expect(result.validation.valid).toBe(true);
+    for (const floor of result.building.floors) {
+      const voids = floor.spaces.filter(isOpenToSkySpace);
+      const constructedArea = floor.spaces.filter((space) => !isOpenToSkySpace(space)).reduce((sum, space) => sum + space.areaMm2, 0);
+      expect(voids.length).toBeGreaterThan(0);
+      expect(constructedArea).toBeLessThan(floor.envelope.width * floor.envelope.depth);
+      expect(voids.some((space) => space.bounds.x + space.bounds.width === floor.envelope.x + floor.envelope.width)).toBe(true);
+      expect(floor.walls.some((wall) => wall.type === "exterior" && wall.adjacentSpaceIds.some((id) => voids.some((space) => space.id === id)))).toBe(true);
+      expect(floor.walls.every((wall) => !wall.adjacentSpaceIds.every((id) => voids.some((space) => space.id === id)))).toBe(true);
+      expect(analyzeCoverage(floor.envelope, floor.spaces).gapAreaMm2).toBe(0);
+    }
+  });
+
+  test("keeps compact villas efficient without inventing a footprint recess", () => {
+    const input = requirements(2);
+    input.architecture.formStrategy = "compact";
+    const result = generateBuilding(input);
+    expect(result.validation.valid).toBe(true);
+    expect(result.building.floors.flatMap((floor) => floor.spaces).some(isOpenToSkySpace)).toBe(false);
+  });
+
+  test("uses nested side bays for an attached suite instead of parallel full-wing bands", () => {
+    const floor = { id: "F0" as const, label: "Ground floor", level: 0, floorHeightMm: 3_100 };
+    const envelope = { x: 0, y: 0, width: 10_000, depth: 14_000 };
+    const base = {
+      floorId: "F0" as const,
+      privacy: "semi_private" as const,
+      preferredZone: "any" as const,
+      mustBeExterior: false,
+      accessible: false,
+    };
+    const rooms: RoomRequirement[] = [
+      { ...base, id: "circulation", name: "Gallery", type: "circulation", minAreaMm2: 8_000_000, targetAreaMm2: 12_000_000 },
+      { ...base, id: "bedroom-suite", name: "Bedroom suite", type: "bedroom", privacy: "private", minAreaMm2: 12_000_000, targetAreaMm2: 15_000_000 },
+      { ...base, id: "bathroom-suite", name: "Attached bathroom suite", type: "bathroom", privacy: "service", minAreaMm2: 3_200_000, targetAreaMm2: 4_500_000 },
+      { ...base, id: "study", name: "Study", type: "study", privacy: "private", minAreaMm2: 8_000_000, targetAreaMm2: 10_000_000 },
+    ];
+    const candidate = generateSpineGrowthCandidate({ envelope, floor, rooms, seed: 42, variant: 0 });
+    const bedroom = candidate.cells.find((cell) => cell.id === "bedroom-suite")!;
+    const bathroom = candidate.cells.find((cell) => cell.id === "bathroom-suite")!;
+    expect(bedroom.bounds.y).toBe(bathroom.bounds.y);
+    expect(bedroom.bounds.depth).toBe(bathroom.bounds.depth);
+    expect(bedroom.bounds.x).not.toBe(bathroom.bounds.x);
+    expect(
+      bedroom.bounds.x + bedroom.bounds.width === bathroom.bounds.x
+      || bathroom.bounds.x + bathroom.bounds.width === bedroom.bounds.x,
+    ).toBe(true);
+  });
+
   for (const floorCount of [2, 3, 4] as const) {
     test(`supports a continuous G+${floorCount - 1} stair and valid topology`, () => {
       const input = requirements(floorCount);
@@ -233,33 +289,63 @@ describe("topology-first residential generator", () => {
     )).toBe(true);
   });
 
-  test("recovers the dense G+2 brief deterministically when the style seed search misses", () => {
-    const input = denseMultiStoryRecoveryRequirements(126_151_910);
-    expect(input.rooms).toHaveLength(25);
-    const first = generateBuilding(input);
-    const second = generateBuilding(input);
-    expect(second).toEqual(first);
-    expect(first.validation.valid).toBe(true);
-    expect(circulationPassageConflicts(first.building, input)).toEqual([]);
-    expect(first.building.seed).toBe(126_151_910);
-    expect(first.building.floors).toHaveLength(3);
-    expect(first.evaluatedCandidateCount).toBeGreaterThan(0);
-    expect(first.evaluatedCandidateCount).toBeLessThanOrEqual(1152);
-    for (const relation of input.relationships.filter((candidate) => candidate.type === "must_connect")) {
-      expect(first.building.floors.some((floor) => floor.openings.some((opening) =>
-        opening.kind !== "window" && opening.connects.includes(relation.fromRoomId) && opening.connects.includes(relation.toRoomId),
-      ))).toBe(true);
+  test("recovers the exact historical G+2 lift brief across every previously failed server seed", () => {
+    const historicalSeeds = [126_151_910, 3_150_183_438, 3_827_664_302, 2_807_986_978, 2_871_937_447];
+    const geometryHashes = new Set<string>();
+    for (const seed of historicalSeeds) {
+      const input = denseMultiStoryRecoveryRequirements(seed);
+      expect(input.rooms).toHaveLength(25);
+      expect(input.vertical.liftProvision).toBe(true);
+      const generated = generateBuilding(input);
+      geometryHashes.add(generated.building.candidate.geometryHash);
+      expect(generated.validation.valid).toBe(true);
+      expect(circulationPassageConflicts(generated.building, input)).toEqual([]);
+      expect(generated.building.seed).toBe(seed);
+      expect(generated.building.floors).toHaveLength(3);
+      expect(generated.evaluatedCandidateCount).toBeGreaterThan(0);
+      expect(generated.evaluatedCandidateCount).toBeLessThanOrEqual(1152);
+      for (const relation of input.relationships.filter((candidate) => candidate.type === "must_connect")) {
+        expect(generated.building.floors.some((floor) => floor.openings.some((opening) =>
+          opening.kind !== "window" && opening.connects.includes(relation.fromRoomId) && opening.connects.includes(relation.toRoomId),
+        ))).toBe(true);
+      }
+      for (const relation of input.relationships.filter((candidate) => {
+        const from = input.rooms.find((room) => room.id === candidate.fromRoomId);
+        const to = input.rooms.find((room) => room.id === candidate.toRoomId);
+        return candidate.type === "must_connect" && from?.type === "bedroom" && to?.type === "bathroom";
+      })) {
+        const bathroomOpenings = generated.building.floors
+          .flatMap((floor) => floor.openings)
+          .filter((opening) => opening.kind !== "window" && opening.connects.includes(relation.toRoomId));
+        expect(bathroomOpenings).toHaveLength(1);
+        expect(bathroomOpenings[0].connects).toContain(relation.fromRoomId);
+      }
     }
-    for (const relation of input.relationships.filter((candidate) => {
-      const from = input.rooms.find((room) => room.id === candidate.fromRoomId);
-      const to = input.rooms.find((room) => room.id === candidate.toRoomId);
-      return candidate.type === "must_connect" && from?.type === "bedroom" && to?.type === "bathroom";
-    })) {
-      const bathroomOpenings = first.building.floors
-        .flatMap((floor) => floor.openings)
-        .filter((opening) => opening.kind !== "window" && opening.connects.includes(relation.toRoomId));
-      expect(bathroomOpenings).toHaveLength(1);
-      expect(bathroomOpenings[0].connects).toContain(relation.fromRoomId);
+    expect(geometryHashes.size).toBe(1);
+  });
+
+  test("keeps dense-brief feasibility independent of a broader bounded style-seed sample", () => {
+    const sampleSeeds = Array.from({ length: 12 }, (_, index) => Math.imul(index + 1, 0x9e3779b1) >>> 0);
+    const results = sampleSeeds.map((seed) => generateBuilding(denseMultiStoryRecoveryRequirements(seed)));
+    expect(results.every((result) => result.validation.valid)).toBe(true);
+    expect(new Set(results.map((result) => result.building.candidate.geometryHash)).size).toBe(1);
+  });
+
+  test("summarizes bounded construction rejection reasons without changing the typed failure", () => {
+    const input = requirements(2);
+    input.site = {
+      ...input.site,
+      widthMm: 5_000,
+      setbacksMm: { north: 0, east: 0, south: 0, west: 0 },
+    };
+    input.vertical = { ...input.vertical, stairWidthMm: 2_400 };
+    try {
+      generateBuilding(input);
+      throw new Error("Expected generation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BuildingGenerationError);
+      expect((error as BuildingGenerationError).code).toBe("NO_FEASIBLE_LAYOUT");
+      expect((error as BuildingGenerationError).message).toContain("Construction rejections: STAIR_CORE_EXCEEDS_ENVELOPE=");
     }
   });
 
@@ -296,7 +382,7 @@ describe("topology-first residential generator", () => {
     expect(balcony).toBeDefined();
     expect((balcony?.areaMm2 ?? Number.POSITIVE_INFINITY) / 1_000_000).toBeLessThanOrEqual(10);
     if (terrace) {
-      expect(terrace.name).toBe("Open terrace / unbuilt");
+      expect(["Open terrace / unbuilt", "Sectioned setback terrace"]).toContain(terrace.name);
       expect(terrace.occupied).toBe(false);
     }
     expect(analyzeCoverage(upper.envelope, upper.spaces).gapAreaMm2).toBe(0);

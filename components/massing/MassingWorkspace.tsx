@@ -45,8 +45,9 @@ type Study = {
 
 type RenderState = {
   status: "idle" | "processing" | "partial" | "completed" | "failed";
-  jobs: Array<{ id: string; purpose: "exterior" | "interior" | null; status: string; failureReason: string | null; createdAt: string }>;
-  assets: Array<{ id: string; role: "exterior" | "interior" | string; url: string; contentType: string; index: number }>;
+  jobs: Array<{ id: string; purpose: "exterior_front" | "exterior_collage" | "exterior_top" | "interior" | null; status: string; failureReason: string | null; createdAt: string }>;
+  assets: Array<{ id: string; role: "exterior_front" | "exterior_collage" | "exterior_top" | "interior" | string; url: string; contentType: string; index: number }>;
+  sources: Array<{ id: string; role: string; url: string; contentType: string }>;
 };
 
 type PreparedReference = MassingCapture | { role: "plan_reference"; dataUri: string };
@@ -85,6 +86,10 @@ function formatMetric(value: number, suffix: string, digits = 1) {
   return `${value.toFixed(digits)} ${suffix}`;
 }
 
+function markInteriorPlanSource(svg: string) {
+  return svg.replace("</svg>", `<rect x="56" y="100" width="470" height="34" fill="#090908" stroke="#ff8d49"/><text x="72" y="122" fill="#fff6ea" font-family="Arial, sans-serif" font-size="15" font-weight="700">SOURCE D · INTERIOR · PLAN-DERIVED CAMERA</text></svg>`);
+}
+
 export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionId: string; userName: string }) {
   const viewerRef = useRef<MassingViewerHandle>(null);
   const [study, setStudy] = useState<Study | null>(null);
@@ -93,7 +98,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const [viewerReady, setViewerReady] = useState(false);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [visibleFloorIds, setVisibleFloorIds] = useState<string[]>([]);
-  const [explodePercent, setExplodePercent] = useState(28);
+  const [explodePercent, setExplodePercent] = useState(0);
   const [showInteriorWalls, setShowInteriorWalls] = useState(true);
   const [showSlabs, setShowSlabs] = useState(true);
   const [showRoof, setShowRoof] = useState(true);
@@ -104,7 +109,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const [preparing, setPreparing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", jobs: [], assets: [] });
+  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", jobs: [], assets: [], sources: [] });
 
   const loadRenderState = useCallback(async () => {
     const response = await fetch(`/api/designs/${layoutVersionId}/renders`, { cache: "no-store" });
@@ -153,8 +158,8 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const metrics = useMemo(() => study ? massingMetrics(study.building) : null, [study]);
   const currentReferenceKey = study ? `${study.building.candidate.geometryHash}:${selectedInteriorSpaceId}` : "";
   const referencesCurrent = references && referenceKey === currentReferenceKey;
-  const exteriorAssets = renderState.assets.filter((asset) => asset.role === "exterior");
-  const interiorAssets = renderState.assets.filter((asset) => asset.role === "interior");
+  const assetsByRole = useMemo(() => new Map(renderState.assets.map((asset) => [asset.role, asset])), [renderState.assets]);
+  const sourcesByRole = useMemo(() => new Map((renderState.sources ?? []).map((source) => [source.role, source])), [renderState.sources]);
   const layerControls = [
     { label: "Internal walls", checked: showInteriorWalls, setChecked: setShowInteriorWalls, Icon: Layers3 },
     { label: "Floor slabs", checked: showSlabs, setChecked: setShowSlabs, Icon: Box },
@@ -166,28 +171,25 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     setVisibleFloorIds((current) => current.includes(floorId) ? current.filter((id) => id !== floorId) : [...current, floorId]);
   }
 
-  async function prepareReferences(planOnly = false) {
+  async function prepareReferences() {
     if (!study) return;
     setPreparing(true);
     setActionError(null);
     const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showSlabs, showRoof, showSite };
     try {
-      let captures: MassingCapture[] = [];
-      if (!planOnly) {
-        if (!viewerReady || !viewerRef.current) throw new Error("The 3D viewer is not ready. Use the marked-plan fallback if WebGL is unavailable.");
-        flushSync(() => {
-          setVisibleFloorIds(floors.map((floor) => floor.id));
-          setExplodePercent(0);
-          setShowInteriorWalls(true);
-          setShowSlabs(true);
-          setShowRoof(true);
-          setShowSite(true);
-        });
-        await nextFrame();
-        await nextFrame();
-        captures = await viewerRef.current.captureReferenceViews();
-      }
-      const planSvg = buildReferencePlanSvg(study.building, { projectName: study.title, selectedSpaceId: selectedInteriorSpaceId });
+      if (!viewerReady || !viewerRef.current) throw new Error("The 3D viewer is required to prepare the camera-locked render sources.");
+      flushSync(() => {
+        setVisibleFloorIds(floors.map((floor) => floor.id));
+        setExplodePercent(0);
+        setShowInteriorWalls(false);
+        setShowSlabs(true);
+        setShowRoof(true);
+        setShowSite(true);
+      });
+      await nextFrame();
+      await nextFrame();
+      const captures: MassingCapture[] = await viewerRef.current.captureReferenceViews();
+      const planSvg = markInteriorPlanSource(buildReferencePlanSvg(study.building, { projectName: study.title, selectedSpaceId: selectedInteriorSpaceId }));
       const planDataUri = await svgToWebp(planSvg);
       setReferences([{ role: "plan_reference", dataUri: planDataUri }, ...captures]);
       setReferenceKey(currentReferenceKey);
@@ -271,7 +273,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
             <MassingViewer building={study.building} explodeM={explodeM} onError={setViewerError} onReadyChange={setViewerReady} ref={viewerRef} showInteriorWalls={showInteriorWalls} showRoof={showRoof} showSite={showSite} showSlabs={showSlabs} visibleFloorIds={visibleFloorIds} />
             <div className="absolute right-4 top-4 z-10 border border-[#8e5a31]/60 bg-[#0b0a09]/95 shadow-[4px_5px_0_rgba(0,0,0,0.4)]">
               <div className="grid grid-cols-4 border-b border-[#8e5a31]/45 text-[#cdbdab]">{[[Rotate3d, "Rotate"], [Move3d, "Pan"], [ZoomIn, "Zoom"], [Scan, "Fit"]].map(([Icon, label], index) => <button className="grid min-h-14 min-w-14 place-items-center border-r border-[#8e5a31]/35 px-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711]" key={label as string} onClick={() => index === 3 && viewerRef.current?.fit()} type="button"><Icon className="h-4 w-4" /><span>{label as string}</span></button>)}</div>
-              <div className="grid grid-cols-5 text-[#a99a8d]">{(["front", "rear", "left", "right", "iso"] as MassingView[]).map((view) => <button className="border-r border-[#8e5a31]/35 px-2 py-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711] hover:text-[#fff6ea]" key={view} onClick={() => viewerRef.current?.setView(view)} type="button">{view}</button>)}</div>
+              <div className="grid grid-cols-6 text-[#a99a8d]">{(["front", "rear", "left", "right", "iso", "top"] as MassingView[]).map((view) => <button className="border-r border-[#8e5a31]/35 px-2 py-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711] hover:text-[#fff6ea]" key={view} onClick={() => viewerRef.current?.setView(view)} type="button">{view}</button>)}</div>
             </div>
             <div className="absolute bottom-4 left-4 z-10 flex items-end gap-3"><div className="relative h-16 w-16 border border-[#c97940]/65 bg-[#0b0a09]/90"><span className="absolute left-2 top-2 text-[0.5rem] text-[#c97940]">TOP</span><span className="absolute bottom-2 left-2 text-[0.5rem] text-[#fff6ea]">FRONT</span><span className="absolute bottom-2 right-2 text-[0.5rem] text-[#b5a697]">RIGHT</span></div><span className="text-[0.57rem] uppercase tracking-[0.09em] text-[#756a60]">Canonical mm → scene metres</span></div>
             {viewerError ? <div className="absolute inset-x-4 bottom-4 z-20 border border-[#c28a2a]/60 bg-[#18140b]/95 p-4 text-xs leading-5 text-[#e7b756]"><CircleAlert className="mr-2 inline h-4 w-4" />{viewerError}</div> : null}
@@ -288,25 +290,28 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
               [BadgeCheck, metrics.stairAligned ? "Aligned" : "Review", "stair core"],
             ].map(([Icon, value, label]) => <div className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-2 border-b border-[#8e5a31]/30 py-3" key={label as string}><Icon className="h-4 w-4 text-[#c97940]" /><dd className="font-[family-name:var(--font-display)] text-xl">{value as string}</dd><dt className="text-[0.54rem] font-bold uppercase tracking-[0.11em] text-[#8f8275]">{label as string}</dt></div>)}</dl> : null}
             <div className="mt-6"><div className="flex items-center justify-between"><p className="text-[0.61rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Reference captures</p>{referencesCurrent ? <span className="text-[0.53rem] font-bold uppercase tracking-[0.08em] text-[#7bc79e]">Local only</span> : null}</div>
-              <div className="mt-3 grid grid-cols-3 gap-1.5">{(["massing_front", "massing_rear", "massing_iso"] as const).map((role) => { const reference = references?.find((item) => item.role === role); return <div className="relative aspect-[4/3] border border-[#8e5a31]/45 bg-[#090908]" key={role}>{reference ? <img alt={`${role.replaceAll("_", " ")} local reference`} className="h-full w-full object-cover" src={reference.dataUri} /> : <div className="grid h-full place-items-center"><Camera className="h-4 w-4 text-[#574d45]" /></div>}<span className="absolute inset-x-0 bottom-0 bg-[#090908]/90 px-1 py-1 text-center text-[0.42rem] font-bold uppercase tracking-[0.06em] text-[#b5a697]">{role.replace("massing_", "")}</span>{reference ? <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center bg-[#1f5b3d]"><Check className="h-2.5 w-2.5" /></span> : null}</div>; })}</div>
-              <button className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-[#c97940]/70 px-3 py-2.5 text-[0.58rem] font-bold uppercase tracking-[0.1em] hover:bg-[#171512] disabled:opacity-45" disabled={preparing || !selectedInteriorSpaceId} onClick={() => void prepareReferences(false)} type="button">{preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}{referencesCurrent ? "Refresh reference set" : "Prepare reference set"}</button>
-              {viewerError ? <button className="mt-2 w-full text-center text-[0.54rem] font-bold uppercase tracking-[0.08em] text-[#d9a856] underline underline-offset-4" disabled={preparing} onClick={() => void prepareReferences(true)} type="button">Use marked-plan fallback only</button> : null}
+              <div className="mt-3 grid grid-cols-3 gap-1.5">{(["massing_front", "massing_collage", "massing_top"] as const).map((role) => { const reference = references?.find((item) => item.role === role); return <div className="relative aspect-[3/2] border border-[#8e5a31]/45 bg-[#090908]" key={role}>{reference ? <img alt={`${role.replaceAll("_", " ")} local reference`} className="h-full w-full object-cover" src={reference.dataUri} /> : <div className="grid h-full place-items-center"><Camera className="h-4 w-4 text-[#574d45]" /></div>}<span className="absolute inset-x-0 bottom-0 bg-[#090908]/90 px-1 py-1 text-center text-[0.42rem] font-bold uppercase tracking-[0.06em] text-[#b5a697]">{role.replace("massing_", "")}</span>{reference ? <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center bg-[#1f5b3d]"><Check className="h-2.5 w-2.5" /></span> : null}</div>; })}</div>
+              <button className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-[#c97940]/70 px-3 py-2.5 text-[0.58rem] font-bold uppercase tracking-[0.1em] hover:bg-[#171512] disabled:opacity-45" disabled={preparing || !selectedInteriorSpaceId || !viewerReady} onClick={() => void prepareReferences()} type="button">{preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}{referencesCurrent ? "Refresh reference set" : "Prepare reference set"}</button>
             </div>
             <label className="mt-6 block"><span className="text-[0.61rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Interior source</span><select className="mt-3 w-full border border-[#8e5a31]/60 bg-[#090908] px-3 py-3 text-xs text-[#fff6ea] outline-none focus:border-[#ff4e00]" onChange={(event) => setSelectedInteriorSpaceId(event.target.value)} value={selectedInteriorSpaceId}>{eligibleInteriorSpaces.map((space) => <option key={space.id} value={space.id}>{space.name} · {space.floorLabel}</option>)}</select></label>
-            <p className="mt-3 text-[0.61rem] leading-5 text-[#786d62]">The marked plan and three fixed camera captures ground the same final building. References remain in this browser until confirmation.</p>
+            <p className="mt-3 text-[0.61rem] leading-5 text-[#786d62]">The marked interior plan and three fixed 3:2 camera sources ground four separate image-edit jobs. References remain in this browser until confirmation.</p>
           </aside>
         </div>
 
         <div className="grid gap-4 border-t border-[#8e5a31]/50 bg-[#0a0908] p-5 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
           <div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center border border-[#8e5a31]/65"><LockKeyhole className="h-5 w-5 text-[#c97940]" /></span><div><p className="font-[family-name:var(--font-display)] text-xl">{renderState.status === "idle" ? "Nothing has been sent to GPT Image 2." : renderState.status === "processing" ? "GPT Image 2 is creating the grounded concepts." : renderState.status === "completed" ? "All four grounded concepts are ready." : "The massing remains available while renders are recovered."}</p><p className="mt-1 text-xs leading-5 text-[#8f8275]">{renderState.status === "idle" ? "Prepare and review the local reference set, then confirm explicitly." : renderState.status === "processing" ? "This page can be left and reopened; status is persisted and reconciled." : "Concept visualization only. Geometry remains authoritative in the 2D and massing views."}</p>{actionError ? <p className="mt-2 text-xs text-[#ff806f]">{actionError}</p> : null}</div></div>
-          <div className="border-l border-[#8e5a31]/40 pl-5"><p className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.1em]"><Camera className="h-4 w-4 text-[#c97940]" /> 3 exteriors + 1 interior</p><p className="mt-1 flex items-center gap-2 text-[0.61rem] text-[#8f8275]"><Clock3 className="h-3.5 w-3.5" /> Estimated 20–60 sec · async</p></div>
+          <div className="border-l border-[#8e5a31]/40 pl-5"><p className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.1em]"><Camera className="h-4 w-4 text-[#c97940]" /> Front + collage + top + interior</p><p className="mt-1 flex items-center gap-2 text-[0.61rem] text-[#8f8275]"><Clock3 className="h-3.5 w-3.5" /> Four camera-locked async edits</p></div>
           {renderState.status === "processing" ? <button className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#8e5a31]/55 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#b5a697]" disabled type="button"><LoaderCircle className="h-4 w-4 animate-spin" /> Rendering package</button> : renderState.status === "completed" ? <a className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#38765a]/65 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#7bc79e]" href="#render-gallery"><Eye className="h-4 w-4" /> View final concepts</a> : <button className="inline-flex min-w-64 items-center justify-center gap-2 bg-[#e94300] px-5 py-4 text-[0.66rem] font-extrabold uppercase tracking-[0.12em] text-[#fff6ea] transition hover:bg-[#ff4e00] disabled:cursor-not-allowed disabled:bg-[#4d2515] disabled:text-[#957461]" disabled={!referencesCurrent || submitting} onClick={() => void confirmAndGenerate()} type="button">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : renderState.status === "failed" || renderState.status === "partial" ? <RefreshCw className="h-4 w-4" /> : <MousePointer2 className="h-4 w-4" />}{renderState.status === "failed" || renderState.status === "partial" ? "Retry missing render" : "Confirm & generate 4 renders"}</button>}
         </div>
       </section>
 
       {renderState.status !== "idle" ? <section className="mt-8 border border-[#8e5a31]/55 bg-[#0c0b09] p-5" id="render-gallery"><div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/40 pb-4"><div><p className="text-[0.61rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Visualization set</p><h2 className="mt-1 font-[family-name:var(--font-display)] text-3xl">Concept renders grounded in your plan</h2></div><p className="max-w-xl text-xs leading-5 text-[#786d62]">Materials, furnishing and lighting are generative assumptions. Floor count, footprint and openings are constrained by the canonical references.</p></div>
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">{[0, 1, 2].map((index) => { const asset = exteriorAssets[index]; return <article className="relative aspect-[3/2] overflow-hidden border border-[#8e5a31]/45 bg-[#090908]" key={`exterior-${index}`}>{asset ? <img alt={`Grounded exterior concept ${index + 1}`} className="h-full w-full object-cover" loading="lazy" src={asset.url} /> : <div className="grid h-full place-items-center bg-[linear-gradient(120deg,#0b0a09,#17120f,#0b0a09)] bg-[length:220%_100%] animate-[pulse_2s_ease-in-out_infinite]"><span className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#695d53]">Exterior {index + 1} · {renderState.status === "failed" ? "unavailable" : "rendering"}</span></div>}<span className="absolute left-3 top-3 bg-[#090908]/90 px-2 py-1 text-[0.52rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea]">Exterior {index + 1}</span></article>; })}
-          <article className="relative aspect-[3/2] overflow-hidden border border-[#8e5a31]/45 bg-[#090908]">{interiorAssets[0] ? <img alt="Grounded furnished interior concept" className="h-full w-full object-cover" loading="lazy" src={interiorAssets[0].url} /> : <div className="grid h-full place-items-center bg-[linear-gradient(120deg,#0b0a09,#17120f,#0b0a09)] bg-[length:220%_100%] animate-[pulse_2s_ease-in-out_infinite]"><span className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#695d53]">Interior · {renderState.status === "failed" ? "unavailable" : "rendering"}</span></div>}<span className="absolute left-3 top-3 bg-[#090908]/90 px-2 py-1 text-[0.52rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea]">Interior concept</span></article></div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">{([
+          ["exterior_front", "Front / road perspective"],
+          ["exterior_collage", "Four-view collage"],
+          ["exterior_top", "High front-right perspective"],
+          ["interior", "Furnished interior concept"],
+        ] as const).map(([role, label]) => { const asset = assetsByRole.get(role); const sourceRole = role === "exterior_front" ? "massing_front" : role === "exterior_collage" ? "massing_collage" : role === "exterior_top" ? "massing_top" : "plan_reference"; const source = sourcesByRole.get(sourceRole); return <article className="border border-[#8e5a31]/45 bg-[#090908]" key={role}><div className="relative aspect-[3/2] overflow-hidden">{asset ? <img alt={label} className="h-full w-full object-cover" loading="lazy" src={asset.url} /> : <div className="grid h-full place-items-center bg-[linear-gradient(120deg,#0b0a09,#17120f,#0b0a09)] bg-[length:220%_100%] animate-[pulse_2s_ease-in-out_infinite]"><span className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#695d53]">{label} · {renderState.status === "failed" ? "unavailable" : "rendering"}</span></div>}<span className="absolute left-3 top-3 bg-[#090908]/90 px-2 py-1 text-[0.52rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea]">{label}</span></div><div className="grid grid-cols-[7rem_1fr] items-center gap-3 border-t border-[#8e5a31]/35 p-2.5">{source ? <img alt={`${label} exact submitted source`} className="aspect-[3/2] w-full border border-[#8e5a31]/35 object-cover" src={source.url} /> : <div className="grid aspect-[3/2] place-items-center border border-[#8e5a31]/25"><Camera className="h-3.5 w-3.5 text-[#574d45]" /></div>}<p className="text-[0.56rem] leading-4 text-[#756a60]"><strong className="block uppercase tracking-[0.09em] text-[#a99a8d]">Exact submitted source</strong>Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.</p></div></article>; })}</div>
         {renderState.jobs.some((job) => job.failureReason) ? <div className="mt-4 border border-[#c28a2a]/50 bg-[#18140b] p-4 text-xs leading-5 text-[#d9a856]">{renderState.jobs.filter((job) => job.failureReason).map((job) => <p key={job.id}><strong className="uppercase">{job.purpose ?? "Render"}:</strong> {job.failureReason}</p>)}</div> : null}
       </section> : null}
     </div>

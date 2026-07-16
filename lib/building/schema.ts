@@ -54,6 +54,34 @@ export const verticalConnectorSchema = z.object({
   direction: cardinalDirectionSchema,
 });
 
+export const structuralGridAxisSchema = z.object({
+  id: z.string(),
+  direction: z.enum(["x", "y"]),
+  coordinateMm: z.number().int(),
+});
+
+export const structuralColumnSchema = z.object({
+  id: z.string(),
+  center: pointSchema,
+  widthMm: z.number().int().positive(),
+  depthMm: z.number().int().positive(),
+  servedFloorIds: z.array(z.string()).min(1),
+});
+
+/**
+ * Deterministic coordination aid only. It records an aligned conceptual column grid so obvious
+ * multi-floor discontinuities and opening/stair collisions can be caught before presentation.
+ * It is deliberately not a structural design, load calculation, or code approval artifact.
+ */
+export const structuralConceptSchema = z.object({
+  structuralConceptVersion: z.literal(1),
+  scope: z.literal("conceptual_column_coordination_only"),
+  disclaimer: z.literal("Conceptual column coordination only; member sizing, loads, foundations and code compliance require a licensed structural engineer."),
+  baselineMaxBayMm: z.number().int().positive(),
+  axes: z.array(structuralGridAxisSchema),
+  columns: z.array(structuralColumnSchema),
+});
+
 export const floorSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -82,6 +110,9 @@ export const buildingSchema = z.object({
   }),
   floors: z.array(floorSchema).min(1).max(4),
   verticalConnectors: z.array(verticalConnectorSchema),
+  // Optional so already-persisted schema-v2 buildings remain readable. Newly generated buildings
+  // always include this deterministic concept through generateBuilding().
+  structuralConcept: structuralConceptSchema.optional(),
 });
 
 export type Point = z.infer<typeof pointSchema>;
@@ -92,6 +123,9 @@ export type Opening = z.infer<typeof openingSchema>;
 export type Space = z.infer<typeof spaceSchema>;
 export type Floor = z.infer<typeof floorSchema>;
 export type VerticalConnector = z.infer<typeof verticalConnectorSchema>;
+export type StructuralGridAxis = z.infer<typeof structuralGridAxisSchema>;
+export type StructuralColumn = z.infer<typeof structuralColumnSchema>;
+export type StructuralConcept = z.infer<typeof structuralConceptSchema>;
 export type Building = z.infer<typeof buildingSchema>;
 
 export function rectanglePolygon(rectangle: Rectangle): Polygon {

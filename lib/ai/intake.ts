@@ -9,7 +9,7 @@ export type IntakeParseResult =
   | { status: "failed"; reason: "provider_unavailable" | "could_not_extract"; message: string };
 
 const SYSTEM_PROMPT = `Extract only facts explicitly stated in a residential home-design brief. Return one JSON object. Omit unknown fields.
-Allowed fields: projectName, countryCode, adminArea, locality, currency, siteWidthFeet, siteDepthFeet, siteWidthMetres, siteDepthMetres, facing, roadEdges, floorCount, floorHeightMetres, stairWidthMm, occupants, floorPrograms, bedroomsGroundFloor, bathroomsGroundFloor, includeParking, includePooja, includeUtility, includeCourtyard, socialSpaceMode, qualityTier, budgetLowMajor, budgetHighMajor.
+Allowed fields: projectName, countryCode, adminArea, locality, currency, siteWidthFeet, siteDepthFeet, siteWidthMetres, siteDepthMetres, facing, roadEdges, floorCount, floorHeightMetres, stairWidthMm, occupants, floorPrograms, bedroomsGroundFloor, bathroomsGroundFloor, includeParking, includePooja, includeUtility, includeCourtyard, socialSpaceMode, architecturalStyle, formStrategy, roofCharacter, materialDirection, qualityTier, budgetLowMajor, budgetHighMajor.
 floorPrograms is an array of { level: 0-3, bedrooms?, bathrooms?, attachedBathrooms?, studies?, balcony? }.
 Never emit a seed, room id, area, cost in minor units, coordinate, wall, opening, or geometry. Plot dimensions may be feet or metres, never both. Return JSON only.`;
 
@@ -115,6 +115,10 @@ function draftFromExtraction(extraction: NlIntakeExtraction): IntakeDraft {
     includeUtility: extraction.includeUtility ?? draft.includeUtility,
     includeCourtyard: extraction.includeCourtyard ?? draft.includeCourtyard,
     socialSpaceMode: extraction.socialSpaceMode ?? draft.socialSpaceMode,
+    architecturalStyle: extraction.architecturalStyle ?? draft.architecturalStyle,
+    formStrategy: extraction.formStrategy ?? draft.formStrategy,
+    roofCharacter: extraction.roofCharacter ?? draft.roofCharacter,
+    materialDirection: extraction.materialDirection ?? draft.materialDirection,
     qualityTier: extraction.qualityTier ?? draft.qualityTier,
     budgetLowMajor: extraction.budgetLowMajor ?? draft.budgetLowMajor,
     budgetHighMajor: extraction.budgetHighMajor ?? draft.budgetHighMajor,
@@ -135,6 +139,8 @@ function assumptionsFor(extraction: NlIntakeExtraction): string[] {
   }
   if (extraction.qualityTier === undefined) assumptions.push("Assumed a standard finish quality tier.");
   if (extraction.socialSpaceMode === undefined) assumptions.push("Assumed a combined living and dining space.");
+  if (extraction.architecturalStyle === undefined) assumptions.push("Assumed a climate-responsive contemporary tropical character; review it in the Architecture step.");
+  if (extraction.formStrategy === undefined) assumptions.push("Assumed stepped terraces rather than a plain full-height box.");
   if ([extraction.includeParking, extraction.includePooja, extraction.includeUtility, extraction.includeCourtyard].every((value) => value === undefined)) {
     assumptions.push("Did not add optional parking, pooja, utility, or courtyard spaces unless mentioned.");
   }

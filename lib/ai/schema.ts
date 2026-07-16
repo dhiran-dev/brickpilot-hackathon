@@ -11,7 +11,7 @@ export const citedConcernSchema = z
     floorId: floorIdSchema.optional(),
     objectIds: z.array(z.string()).max(6).default([]),
     evidenceIds: z.array(z.string()).min(1).max(6),
-    topic: z.enum(["circulation", "adjacency", "daylight", "orientation", "opening", "vertical_stacking", "other"]),
+    topic: z.enum(["circulation", "adjacency", "daylight", "orientation", "opening", "vertical_stacking", "structural_coordination", "other"]),
     whyItMatters: z.string().min(1).max(400),
     recommendation: z.string().min(1).max(400),
     whatItSaves: z.string().min(1).max(300),

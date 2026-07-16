@@ -4,10 +4,23 @@ process.env.DATABASE_URL ||= "postgres://brickpilot:brickpilot@127.0.0.1:5432/br
 process.env.BETTER_AUTH_SECRET ||= "brickpilot-test-secret-at-least-32-characters";
 process.env.BETTER_AUTH_URL ||= "http://localhost:3000";
 
-const { GET, POST } = await import("@/app/api/designs/[layoutVersionId]/renders/route");
+const { GET, POST, canonicalizeRenderReferences } = await import("@/app/api/designs/[layoutVersionId]/renders/route");
 const context = { params: Promise.resolve({ layoutVersionId: "00000000-0000-0000-0000-000000000000" }) };
 
 describe("/api/designs/[layoutVersionId]/renders", () => {
+  test("canonicalizes shuffled semantic references before provider use", () => {
+    const references = ["massing_top", "plan_reference", "massing_collage", "massing_front"].map((role) => ({
+      role: role as "plan_reference" | "massing_front" | "massing_collage" | "massing_top",
+      dataUri: `data:image/webp;base64,${role}`,
+    }));
+    expect(canonicalizeRenderReferences(references).map((reference) => reference.role)).toEqual([
+      "plan_reference",
+      "massing_front",
+      "massing_collage",
+      "massing_top",
+    ]);
+  });
+
   test("rejects unauthenticated status reads", async () => {
     const response = await GET(new Request("http://localhost/api/designs/id/renders"), context);
     expect(response.status).toBe(401);

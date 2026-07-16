@@ -7,8 +7,15 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Building } from "@/lib/building/schema";
 import { buildMassingModel, type MassingPrimitiveKind } from "@/lib/render/massing";
 
-export type MassingView = "front" | "rear" | "left" | "right" | "iso";
-export type MassingCapture = { role: "massing_front" | "massing_rear" | "massing_iso"; dataUri: string };
+export type MassingView = "front" | "rear" | "left" | "right" | "iso" | "top";
+export type MassingCapture = { role: "massing_front" | "massing_collage" | "massing_top"; dataUri: string };
+
+export const MASSING_CAPTURE_SIZE = { width: 1200, height: 800 } as const;
+export const MASSING_CAPTURE_LABELS = {
+  front: "SOURCE A · FRONT / ROAD · CAMERA LOCK",
+  collage: "SOURCE B · COLLAGE · FOUR LOCKED VIEWS",
+  top: "SOURCE C · HIGH 3/4 · FRONT + RIGHT · CAMERA LOCK",
+} as const;
 
 export type MassingViewerHandle = {
   setView: (view: MassingView) => void;
@@ -44,6 +51,7 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; opacity?: number;
   roof: { color: 0x8d7c6e, edge: 0xff9a58 },
   exterior_wall: { color: 0xd8cec0, edge: 0x5b3a22 },
   interior_wall: { color: 0xa39486, opacity: 0.84, edge: 0x6f533e },
+  column: { color: 0xe58a42, edge: 0x3b1d0b },
   stair: { color: 0xb96834, edge: 0x4b2a18 },
 };
 
@@ -58,33 +66,80 @@ function disposeObject(object: THREE.Object3D) {
 }
 
 function frontVector(facing: Building["site"]["facing"]) {
-  if (facing === "north") return new THREE.Vector3(-0.5, 0.42, -1);
-  if (facing === "south") return new THREE.Vector3(0.5, 0.42, 1);
-  if (facing === "east") return new THREE.Vector3(1, 0.42, 0.5);
-  return new THREE.Vector3(-1, 0.42, -0.5);
+  if (facing === "north") return new THREE.Vector3(0, 0, -1);
+  if (facing === "south") return new THREE.Vector3(0, 0, 1);
+  if (facing === "east") return new THREE.Vector3(1, 0, 0);
+  return new THREE.Vector3(-1, 0, 0);
 }
 
-function viewVector(view: MassingView, facing: Building["site"]["facing"]) {
+export function massingViewVector(view: MassingView, facing: Building["site"]["facing"]) {
   const front = frontVector(facing).normalize();
-  if (view === "front") return front;
-  if (view === "rear") return front.clone().multiplyScalar(-1).setY(0.48).normalize();
-  if (view === "left") return new THREE.Vector3(-front.z, 0.28, front.x).normalize();
-  if (view === "right") return new THREE.Vector3(front.z, 0.28, -front.x).normalize();
-  return new THREE.Vector3(1, 0.9, 1).normalize();
+  const right = new THREE.Vector3(-front.z, 0, front.x).normalize();
+  if (view === "front") return front.clone().addScaledVector(right, 0.42).setY(0.3).normalize();
+  if (view === "rear") return front.clone().multiplyScalar(-1).addScaledVector(right, -0.35).setY(0.3).normalize();
+  if (view === "left") return right.clone().multiplyScalar(-1).addScaledVector(front, 0.2).setY(0.28).normalize();
+  if (view === "right") return right.clone().addScaledVector(front, 0.2).setY(0.28).normalize();
+  if (view === "top") return front.clone().addScaledVector(right, 0.68).setY(1.08).normalize();
+  return front.clone().addScaledVector(right, 0.75).setY(0.72).normalize();
 }
 
-function compressedDataUri(source: HTMLCanvasElement) {
-  const limit = 1200;
-  const ratio = Math.min(1, limit / Math.max(source.width, source.height));
+const CAPTURE_WIDTH = MASSING_CAPTURE_SIZE.width;
+const CAPTURE_HEIGHT = MASSING_CAPTURE_SIZE.height;
+
+function drawSourceLabel(context: CanvasRenderingContext2D, label: string, width: number) {
+  context.save();
+  context.font = "700 18px Arial, sans-serif";
+  context.textBaseline = "middle";
+  const badgeWidth = Math.min(width - 40, Math.ceil(context.measureText(label).width) + 32);
+  context.fillStyle = "rgba(8, 8, 7, 0.9)";
+  context.fillRect(20, 20, badgeWidth, 40);
+  context.strokeStyle = "rgba(255, 141, 73, 0.9)";
+  context.strokeRect(20.5, 20.5, badgeWidth - 1, 39);
+  context.fillStyle = "#fff6ea";
+  context.fillText(label, 36, 40);
+  context.restore();
+}
+
+function labeledDataUri(source: HTMLCanvasElement, label: string) {
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(source.width * ratio));
-  canvas.height = Math.max(1, Math.round(source.height * ratio));
+  canvas.width = CAPTURE_WIDTH;
+  canvas.height = CAPTURE_HEIGHT;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Unable to prepare the reference capture.");
   context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  drawSourceLabel(context, label, canvas.width);
   let dataUri = canvas.toDataURL("image/webp", 0.82);
   if (dataUri.length > 1_250_000) dataUri = canvas.toDataURL("image/webp", 0.68);
   if (dataUri.length > 1_350_000) throw new Error("Reference capture is still too large after compression.");
+  return dataUri;
+}
+
+function collageDataUri(panels: Array<{ source: HTMLCanvasElement; label: string }>) {
+  const canvas = document.createElement("canvas");
+  canvas.width = CAPTURE_WIDTH;
+  canvas.height = CAPTURE_HEIGHT;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Unable to prepare the collage reference.");
+  const cellWidth = CAPTURE_WIDTH / 2;
+  const cellHeight = CAPTURE_HEIGHT / 2;
+  panels.forEach((panel, index) => {
+    const x = index % 2 * cellWidth;
+    const y = Math.floor(index / 2) * cellHeight;
+    context.drawImage(panel.source, x, y, cellWidth, cellHeight);
+    context.fillStyle = "rgba(8, 8, 7, 0.88)";
+    context.fillRect(x + 12, y + cellHeight - 40, Math.min(cellWidth - 24, 190), 28);
+    context.fillStyle = "#fff6ea";
+    context.font = "700 14px Arial, sans-serif";
+    context.textBaseline = "middle";
+    context.fillText(panel.label, x + 22, y + cellHeight - 26);
+    context.strokeStyle = "#c97940";
+    context.lineWidth = 2;
+    context.strokeRect(x + 1, y + 1, cellWidth - 2, cellHeight - 2);
+  });
+  drawSourceLabel(context, MASSING_CAPTURE_LABELS.collage, canvas.width);
+  let dataUri = canvas.toDataURL("image/webp", 0.82);
+  if (dataUri.length > 1_250_000) dataUri = canvas.toDataURL("image/webp", 0.68);
+  if (dataUri.length > 1_350_000) throw new Error("Collage reference is still too large after compression.");
   return dataUri;
 }
 
@@ -108,7 +163,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     if (!runtime) return;
     const target = runtime.controls.target.clone();
     const distance = Math.max(8, runtime.modelRadius * 2.25);
-    const destination = target.clone().add(viewVector(view, facingRef.current).multiplyScalar(distance));
+    const destination = target.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
     if (!animate) {
       runtime.camera.position.copy(destination);
       runtime.controls.update();
@@ -137,24 +192,53 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     async captureReferenceViews() {
       const runtime = runtimeRef.current;
       if (!runtime) throw new Error("The 3D model is not ready yet.");
-      const captures: MassingCapture[] = [];
-      const views = [
-        ["front", "massing_front"],
-        ["rear", "massing_rear"],
-        ["iso", "massing_iso"],
-      ] as const;
       const originalPosition = runtime.camera.position.clone();
       const originalTarget = runtime.controls.target.clone();
-      for (const [view, role] of views) {
-        setView(view, false);
-        runtime.renderer.render(runtime.scene, runtime.camera);
-        captures.push({ role, dataUri: compressedDataUri(runtime.renderer.domElement) });
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const originalSize = runtime.renderer.getSize(new THREE.Vector2());
+      const originalPixelRatio = runtime.renderer.getPixelRatio();
+      const originalAspect = runtime.camera.aspect;
+      const snapshots = new Map<MassingView, HTMLCanvasElement>();
+      try {
+        runtime.renderer.setPixelRatio(1);
+        runtime.renderer.setSize(CAPTURE_WIDTH, CAPTURE_HEIGHT, false);
+        runtime.camera.aspect = CAPTURE_WIDTH / CAPTURE_HEIGHT;
+        runtime.camera.updateProjectionMatrix();
+        for (const view of ["front", "rear", "right", "top"] as const) {
+          setView(view, false);
+          runtime.renderer.render(runtime.scene, runtime.camera);
+          const snapshot = document.createElement("canvas");
+          snapshot.width = CAPTURE_WIDTH;
+          snapshot.height = CAPTURE_HEIGHT;
+          const context = snapshot.getContext("2d");
+          if (!context) throw new Error("Unable to prepare the fixed camera reference.");
+          context.drawImage(runtime.renderer.domElement, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+          snapshots.set(view, snapshot);
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+        const front = snapshots.get("front")!;
+        const top = snapshots.get("top")!;
+        return [
+          { role: "massing_front", dataUri: labeledDataUri(front, MASSING_CAPTURE_LABELS.front) },
+          {
+            role: "massing_collage",
+            dataUri: collageDataUri([
+              { source: front, label: "FRONT / ROAD" },
+              { source: snapshots.get("rear")!, label: "REAR" },
+              { source: snapshots.get("right")!, label: "RIGHT SIDE" },
+              { source: top, label: "HIGH 3/4" },
+            ]),
+          },
+          { role: "massing_top", dataUri: labeledDataUri(top, MASSING_CAPTURE_LABELS.top) },
+        ];
+      } finally {
+        runtime.renderer.setPixelRatio(originalPixelRatio);
+        runtime.renderer.setSize(originalSize.x, originalSize.y, false);
+        runtime.camera.aspect = originalAspect;
+        runtime.camera.updateProjectionMatrix();
+        runtime.camera.position.copy(originalPosition);
+        runtime.controls.target.copy(originalTarget);
+        runtime.controls.update();
       }
-      runtime.camera.position.copy(originalPosition);
-      runtime.controls.target.copy(originalTarget);
-      runtime.controls.update();
-      return captures;
     },
   }));
 
@@ -166,7 +250,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
     } catch {
-      onError?.("WebGL is unavailable in this browser. You can still use the marked-plan fallback.");
+      onError?.("WebGL is unavailable in this browser, so camera-locked render sources cannot be prepared.");
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -180,7 +264,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x080807);
     scene.fog = new THREE.Fog(0x080807, 32, 70);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 250);
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 250);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
@@ -290,8 +374,24 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       (grid.material as THREE.Material).opacity = 0.34;
       runtime.root.add(grid);
     }
-    runtime.modelRadius = Math.max(6, Math.hypot(model.widthM, model.depthM, model.heightM) / 2);
-    runtime.controls.target.set(...model.centre);
+    const buildingPrimitives = model.primitives.filter((primitive) => primitive.kind !== "site");
+    if (buildingPrimitives.length > 0) {
+      const min = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+      const max = new THREE.Vector3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
+      for (const primitive of buildingPrimitives) {
+        const centre = new THREE.Vector3(...primitive.center);
+        const half = new THREE.Vector3(...primitive.size).multiplyScalar(0.5);
+        min.min(centre.clone().sub(half));
+        max.max(centre.clone().add(half));
+      }
+      const size = max.clone().sub(min);
+      const centre = min.clone().add(max).multiplyScalar(0.5);
+      runtime.modelRadius = Math.max(4, size.length() / 2);
+      runtime.controls.target.set(centre.x, min.y + size.y * 0.45, centre.z);
+    } else {
+      runtime.modelRadius = Math.max(6, Math.hypot(model.widthM, model.depthM, model.heightM) / 2);
+      runtime.controls.target.set(...model.centre);
+    }
     runtime.controls.minDistance = Math.max(3, runtime.modelRadius * 0.42);
     runtime.controls.maxDistance = runtime.modelRadius * 5;
     setView("iso", false);

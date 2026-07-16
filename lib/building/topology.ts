@@ -2,6 +2,16 @@ import type { FloorCandidate } from "@/lib/building/candidates/types";
 import { rectanglePolygon, type Floor, type Rectangle, type Space, type WallSegment } from "@/lib/building/schema";
 
 const EXTERIOR = "EXTERIOR";
+const OPEN_TO_SKY_TYPES = new Set<Space["type"]>(["courtyard", "terrace"]);
+
+export function isOpenToSkySpace(space: Pick<Space, "type"> | undefined) {
+  return Boolean(space && OPEN_TO_SKY_TYPES.has(space.type));
+}
+
+/** Unwalled edge zones that shape the enclosed villa footprint. Parking may retain a canopy. */
+export function isPerimeterOpenSpace(space: Pick<Space, "type"> | undefined) {
+  return Boolean(space && (isOpenToSkySpace(space) || space.type === "parking"));
+}
 
 function right(rectangle: Rectangle) {
   return rectangle.x + rectangle.width;
@@ -61,6 +71,7 @@ function mergeRawWalls(rawWalls: RawWall[]) {
 }
 
 export function buildCanonicalWalls(floorId: string, envelope: Rectangle, spaces: Space[]): WallSegment[] {
+  const spacesById = new Map(spaces.map((space) => [space.id, space]));
   const xCoordinates = uniqueSorted([envelope.x, right(envelope), ...spaces.flatMap((space) => [space.bounds.x, right(space.bounds)])]);
   const yCoordinates = uniqueSorted([envelope.y, bottom(envelope), ...spaces.flatMap((space) => [space.bounds.y, bottom(space.bounds)])]);
   const rawWalls: RawWall[] = [];
@@ -91,10 +102,12 @@ export function buildCanonicalWalls(floorId: string, envelope: Rectangle, spaces
     }
   }
 
-  return mergeRawWalls(rawWalls).map((wall) => {
-    const isExterior = wall.adjacentSpaceIds.length === 1;
+  return mergeRawWalls(rawWalls).flatMap((wall) => {
+    const adjacentSpaces = wall.adjacentSpaceIds.map((id) => spacesById.get(id)).filter(Boolean) as Space[];
+    if (adjacentSpaces.length > 0 && adjacentSpaces.every(isPerimeterOpenSpace)) return [];
+    const isExterior = wall.adjacentSpaceIds.length === 1 || adjacentSpaces.some(isPerimeterOpenSpace);
     const suffix = `${wall.orientation}-${wall.line}-${wall.from}-${wall.to}`;
-    return {
+    return [{
       id: `${floorId}-wall-${suffix}`,
       floorId,
       start: wall.orientation === "V" ? { x: wall.line, y: wall.from } : { x: wall.from, y: wall.line },
@@ -102,7 +115,7 @@ export function buildCanonicalWalls(floorId: string, envelope: Rectangle, spaces
       thicknessMm: isExterior ? 230 : 115,
       type: isExterior ? "exterior" : "interior",
       adjacentSpaceIds: [...wall.adjacentSpaceIds].sort(),
-    } satisfies WallSegment;
+    } satisfies WallSegment];
   });
 }
 

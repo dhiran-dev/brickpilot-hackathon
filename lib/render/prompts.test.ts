@@ -2,28 +2,36 @@ import { describe, expect, test } from "bun:test";
 
 import { generateBuilding } from "@/lib/building/generate";
 import { BUILDING_FIXTURES } from "@/lib/building/fixtures";
-import { buildRenderSpecs } from "@/lib/render/prompts";
+import { buildRenderSpecs, RENDER_CONTRACT_VERSION, RENDER_PURPOSES } from "@/lib/render/prompts";
 
 describe("server-owned render prompts", () => {
-  test("locks reference roles, building facts and output counts", () => {
+  test("binds four one-image semantic jobs to exact sources", () => {
     const requirements = BUILDING_FIXTURES[0].requirements;
     const { building } = generateBuilding(requirements);
     const selected = building.floors[0].spaces.find((space) => space.type === "living")!;
-    const specs = buildRenderSpecs({ building, requirements, selectedInteriorSpaceId: selected.id, referenceCount: 4 });
-    expect(specs.exterior.requestedOutputCount).toBe(3);
-    expect(specs.interior.requestedOutputCount).toBe(1);
-    expect(specs.exterior.prompt).toContain("Image 1 is the marked canonical plan board");
-    expect(specs.exterior.prompt).toContain("Image 4 is the isometric clay massing");
-    expect(specs.exterior.prompt).toContain(`exactly ${building.floors.length} storey`);
-    expect(specs.exterior.prompt).toContain("exactly ONE continuous, full-bleed");
-    expect(specs.exterior.prompt).toContain("Avoid contact sheets, collages");
-    expect(specs.interior.prompt).toContain(`Selected room: ${selected.name}`);
-    expect(specs.interior.prompt).toContain("framed paintings or wall artworks");
+    const specs = buildRenderSpecs({ building, requirements, selectedInteriorSpaceId: selected.id });
+
+    expect(RENDER_CONTRACT_VERSION).toBe(2);
+    expect(specs.map((spec) => spec.purpose)).toEqual([...RENDER_PURPOSES]);
+    expect(specs.map((spec) => spec.sourceRole)).toEqual(["massing_front", "massing_collage", "massing_top", "plan_reference"]);
+    expect(specs.every((spec) => spec.requestedOutputCount === 1)).toBe(true);
+    for (const spec of specs.slice(0, 3)) {
+      expect(spec.prompt).toContain("EDIT THE SUPPLIED ARCHITECTURAL SOURCE IMAGE");
+      expect(spec.prompt).toContain("Preserve the exact building silhouette");
+      expect(spec.prompt).toContain("Every opening is immutable");
+      expect(spec.prompt).toContain(`exactly ${building.floors.length} storey`);
+    }
+    expect(specs[0].prompt).toContain("FRONT / ROAD · CAMERA LOCK");
+    expect(specs[1].prompt).toContain("Preserve the exact 2-by-2 panel grid");
+    expect(specs[2].prompt).toContain("HIGH 3/4 · FRONT + RIGHT");
+    expect(specs[3].prompt).toContain(`Selected room: ${selected.name}`);
+    expect(specs[3].prompt).toContain("plan-derived fallback");
+    expect(specs[3].prompt).toContain("framed paintings");
   });
 
   test("rejects an interior room outside the canonical building", () => {
     const requirements = BUILDING_FIXTURES[0].requirements;
     const { building } = generateBuilding(requirements);
-    expect(() => buildRenderSpecs({ building, requirements, selectedInteriorSpaceId: "forged", referenceCount: 4 })).toThrow("INTERIOR_SPACE_NOT_FOUND");
+    expect(() => buildRenderSpecs({ building, requirements, selectedInteriorSpaceId: "forged" })).toThrow("INTERIOR_SPACE_NOT_FOUND");
   });
 });

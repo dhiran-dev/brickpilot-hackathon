@@ -11,6 +11,12 @@ describe("guided intake mapping", () => {
     expect(requirements.buildingType).toBe("detached_house");
     expect(requirements.region.currency).toBe("INR");
     expect(requirements.site.widthMm).toBe(12_000);
+    expect(requirements.architecture).toEqual({
+      style: "contemporary_tropical",
+      formStrategy: "articulated_wings",
+      roofCharacter: "mixed",
+      materialDirection: "warm_natural",
+    });
     expect(requirements.rooms.some((room) => room.type === "living")).toBe(true);
     expect(requirements.rooms.some((room) => room.type === "bedroom")).toBe(true);
   });
@@ -24,6 +30,35 @@ describe("guided intake mapping", () => {
       fromRoomId: "bedroom-f0-1",
       toRoomId: "bathroom-f0-1",
     });
+  });
+
+  test("defaults a three-floor villa to practical clusters, an open car court, and upper setbacks", () => {
+    const requirements = createRequirements({ ...DEFAULT_INTAKE_DRAFT, floorCount: 3 });
+    const generated = generateBuilding(requirements);
+    const ground = generated.building.floors[0];
+    const parking = ground.spaces.find((space) => space.type === "parking")!;
+    const upperFloors = generated.building.floors.slice(1);
+
+    expect(generated.validation.valid).toBe(true);
+    expect(requirements.rooms.filter((room) => room.floorId === "F2" && room.type === "bedroom")).toHaveLength(2);
+    expect(requirements.rooms.some((room) => room.id === "family-lounge-f1" && room.type === "living")).toBe(true);
+    expect(requirements.rooms.some((room) => room.id === "family-lounge-f2" && room.type === "living")).toBe(true);
+    expect(generated.validation.findings.some((finding) => finding.ruleId === "PLANNING_ROOM_MIN_DIMENSION")).toBe(false);
+    expect(ground.spaces.filter((space) => space.type === "circulation").length).toBeGreaterThan(1);
+    expect(ground.walls.some((wall) => wall.type === "exterior" && wall.adjacentSpaceIds.includes(parking.id))).toBe(true);
+    expect(ground.walls.some((wall) => wall.adjacentSpaceIds.length === 1 && wall.adjacentSpaceIds.includes(parking.id))).toBe(false);
+    expect(upperFloors.every((floor) => floor.spaces.some((space) => space.type === "terrace"))).toBe(true);
+    for (const floor of upperFloors) {
+      const envelopeArea = floor.envelope.width * floor.envelope.depth;
+      const outdoorArea = floor.spaces
+        .filter((space) => ["balcony", "terrace"].includes(space.type))
+        .reduce((sum, space) => sum + space.areaMm2, 0);
+      expect(outdoorArea / envelopeArea).toBeGreaterThan(0.08);
+      expect(outdoorArea / envelopeArea).toBeLessThan(0.25);
+      expect(floor.spaces
+        .filter((space) => space.name === "Sectioned setback terrace")
+        .every((space) => Math.min(space.bounds.width, space.bounds.depth) <= 2_400 && space.areaMm2 <= 13_000_000)).toBe(true);
+    }
   });
 
   test("supports G+3 with one generator-owned stair core per floor", () => {
@@ -114,7 +149,7 @@ describe("guided intake mapping", () => {
   });
 
   test("uses attached bedrooms as the primary brief while preserving internal totals", () => {
-    const initial = DEFAULT_INTAKE_DRAFT.programs[0];
+    const initial = { bedrooms: 3, bathrooms: 2, attachedBathrooms: 1, studies: 1, balcony: false };
     expect(floorProgramBrief(initial)).toEqual({
       attachedBedrooms: 1,
       bedroomsWithoutAttachedBathroom: 2,
@@ -150,5 +185,38 @@ describe("guided intake mapping", () => {
     expect(combined.rooms.some((room) => room.id === "dining")).toBe(false);
     expect(combined.relationships).toContainEqual({ type: "prefer_near", fromRoomId: "living", toRoomId: "kitchen" });
     expect(draftFromRequirements(combined).socialSpaceMode).toBe("combined");
+  });
+
+  test("round-trips architectural taste and makes courtyard form a real programme constraint", () => {
+    const requirements = createRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      architecturalStyle: "kerala_contemporary",
+      formStrategy: "courtyard",
+      roofCharacter: "sloped",
+      materialDirection: "earthy_textured",
+      includeCourtyard: false,
+    });
+    expect(requirements.rooms.some((room) => room.type === "courtyard")).toBe(true);
+    expect(requirements.architecture).toEqual({
+      style: "kerala_contemporary",
+      formStrategy: "courtyard",
+      roofCharacter: "sloped",
+      materialDirection: "earthy_textured",
+    });
+    expect(draftFromRequirements(requirements)).toMatchObject({
+      architecturalStyle: "kerala_contemporary",
+      formStrategy: "courtyard",
+      roofCharacter: "sloped",
+      materialDirection: "earthy_textured",
+      includeCourtyard: true,
+    });
+  });
+
+  test("upgrades legacy requirements with stable architectural defaults", () => {
+    const current = createRequirements(DEFAULT_INTAKE_DRAFT);
+    const legacy = structuredClone(current) as Record<string, unknown>;
+    delete legacy.architecture;
+    const parsed = buildingRequirementsSchema.parse(legacy);
+    expect(parsed.architecture.formStrategy).toBe("stepped_terraces");
   });
 });

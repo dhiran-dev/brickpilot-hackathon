@@ -1,9 +1,10 @@
 import type { Building, Floor, Opening, Rectangle, WallSegment } from "@/lib/building/schema";
+import { isOpenToSkySpace } from "@/lib/building/topology";
 
 const MM_TO_M = 1 / 1000;
 export const SLAB_THICKNESS_M = 0.18;
 
-export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "stair";
+export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair";
 
 export type MassingPrimitive = {
   id: string;
@@ -30,6 +31,7 @@ export type MassingOptions = {
   includeSlabs?: boolean;
   includeRoof?: boolean;
   includeSite?: boolean;
+  includeColumns?: boolean;
 };
 
 type WallPanel = { fromMm: number; toMm: number; bottomMm: number; topMm: number };
@@ -90,6 +92,7 @@ function wallPrimitive(
   panel: WallPanel,
   baseYM: number,
   index: number,
+  kindOverride?: "exterior_wall" | "interior_wall",
 ): MassingPrimitive {
   const dx = wall.end.x - wall.start.x;
   const dz = wall.end.y - wall.start.y;
@@ -104,7 +107,7 @@ function wallPrimitive(
   const thicknessM = wall.thicknessMm * MM_TO_M;
   return {
     id: `${wall.id}-panel-${index}`,
-    kind: wall.type === "exterior" ? "exterior_wall" : "interior_wall",
+    kind: kindOverride ?? (wall.type === "exterior" ? "exterior_wall" : "interior_wall"),
     floorId: floor.id,
     sourceId: wall.id,
     center: [x, baseYM + (panel.bottomMm + panel.topMm) * MM_TO_M / 2, z],
@@ -150,6 +153,7 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
   const includeSlabs = options.includeSlabs ?? true;
   const includeRoof = options.includeRoof ?? true;
   const includeSite = options.includeSite ?? true;
+  const includeColumns = options.includeColumns ?? includeInteriorWalls;
   const primitives: MassingPrimitive[] = [];
   const orderedFloors = [...building.floors].sort((left, right) => left.level - right.level);
 
@@ -168,15 +172,33 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
     if (!visible.has(floor.id)) continue;
     const explodeYM = floor.level * explodeM;
     const baseYM = floor.elevationMm * MM_TO_M + explodeYM;
-    if (includeSlabs) {
-      primitives.push(rectanglePrimitive(building, floor.envelope, `${floor.id}-slab`, "slab", baseYM - SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, floor.id));
-    }
+    const openToSkyIds = new Set(floor.spaces.filter(isOpenToSkySpace).map((space) => space.id));
+    const constructedSpaces = floor.spaces.filter((space) => !openToSkyIds.has(space.id));
+    if (includeSlabs) constructedSpaces.forEach((space) => primitives.push(rectanglePrimitive(building, space.bounds, `${floor.id}-slab-${space.id}`, "slab", baseYM - SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, floor.id, space.id)));
     const openingsByWall = new Map<string, Opening[]>();
     for (const opening of floor.openings) openingsByWall.set(opening.wallId, [...(openingsByWall.get(opening.wallId) ?? []), opening]);
     for (const wall of floor.walls) {
-      if (!includeInteriorWalls && wall.type !== "exterior") continue;
+      const openAdjacent = wall.adjacentSpaceIds.filter((id) => openToSkyIds.has(id));
+      if (openAdjacent.length === wall.adjacentSpaceIds.length) continue;
+      const kindOverride = openAdjacent.length > 0 ? "exterior_wall" as const : undefined;
+      if (!includeInteriorWalls && wall.type !== "exterior" && !kindOverride) continue;
       wallPanels(wall, openingsByWall.get(wall.id) ?? [], floor.floorHeightMm)
-        .forEach((panel, index) => primitives.push(wallPrimitive(building, floor, wall, panel, baseYM, index)));
+        .forEach((panel, index) => primitives.push(wallPrimitive(building, floor, wall, panel, baseYM, index, kindOverride)));
+    }
+    if (includeColumns) {
+      for (const column of building.structuralConcept?.columns ?? []) {
+        if (!column.servedFloorIds.includes(floor.id)) continue;
+        primitives.push(rectanglePrimitive(
+          building,
+          { x: Math.round(column.center.x - column.widthMm / 2), y: Math.round(column.center.y - column.depthMm / 2), width: column.widthMm, depth: column.depthMm },
+          `${column.id}-${floor.id}`,
+          "column",
+          baseYM + floor.floorHeightMm * MM_TO_M / 2,
+          floor.floorHeightMm * MM_TO_M,
+          floor.id,
+          column.id,
+        ));
+      }
     }
     primitives.push(...stairPrimitives(building, floor, explodeYM));
   }
@@ -184,7 +206,8 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
   const topFloor = orderedFloors.at(-1);
   if (topFloor && visible.has(topFloor.id) && includeSlabs && includeRoof) {
     const topYM = (topFloor.elevationMm + topFloor.floorHeightMm) * MM_TO_M + topFloor.level * explodeM;
-    primitives.push(rectanglePrimitive(building, topFloor.envelope, `${topFloor.id}-roof`, "roof", topYM + SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, topFloor.id));
+    topFloor.spaces.filter((space) => !isOpenToSkySpace(space))
+      .forEach((space) => primitives.push(rectanglePrimitive(building, space.bounds, `${topFloor.id}-roof-${space.id}`, "roof", topYM + SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, topFloor.id, space.id)));
   }
 
   const physicalHeightM = topFloor ? (topFloor.elevationMm + topFloor.floorHeightMm) * MM_TO_M : 0;
@@ -205,11 +228,14 @@ export function massingMetrics(building: Building) {
   return {
     storeys: floors.length,
     heightM,
-    builtAreaM2: floors.reduce((sum, floor) => sum + floor.envelope.width * floor.envelope.depth / 1_000_000, 0),
+    builtAreaM2: floors.reduce((sum, floor) => sum + floor.spaces
+      .filter((space) => !isOpenToSkySpace(space))
+      .reduce((floorTotal, space) => floorTotal + space.areaMm2 / 1_000_000, 0), 0),
     openingCount: floors.reduce((sum, floor) => sum + floor.openings.length, 0),
     stairAligned: building.verticalConnectors.every((connector) => {
       const bounds = connector.servedFloorIds.map((floorId) => connector.boundsByFloor[floorId]).filter(Boolean);
       return new Set(bounds.map((item) => `${item.x}:${item.y}:${item.width}:${item.depth}`)).size <= 1;
     }),
+    columnCount: building.structuralConcept?.columns.length ?? 0,
   };
 }

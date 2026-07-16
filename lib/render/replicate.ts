@@ -27,8 +27,8 @@ function model() {
 }
 
 function quality() {
-  const parsed = z.enum(["low", "medium", "high", "auto"]).safeParse(process.env.IMAGE_QUALITY ?? "medium");
-  return parsed.success ? parsed.data : "medium";
+  const parsed = z.enum(["low", "medium", "high", "auto"]).safeParse(process.env.IMAGE_QUALITY ?? "high");
+  return parsed.success ? parsed.data : "high";
 }
 
 export function replicateWebhookUrl() {

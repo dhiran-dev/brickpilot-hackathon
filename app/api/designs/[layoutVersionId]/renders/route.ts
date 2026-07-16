@@ -9,11 +9,11 @@ import { db } from "@/lib/db";
 import { generatedAssets, generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 import { persistedValidationReportSchema } from "@/lib/design/persisted-study";
 import { applyReplicatePrediction, reconcileReplicateJob } from "@/lib/render/finalize-job";
-import { buildRenderSpecs, type RenderPurpose, type RenderSpec } from "@/lib/render/prompts";
+import { buildRenderSpecs, isRenderPurpose, RENDER_CONTRACT_VERSION, RENDER_PURPOSES, type RenderPurpose, type RenderSpec } from "@/lib/render/prompts";
 import { createReplicatePrediction, safePredictionPayload } from "@/lib/render/replicate";
 import { decodeReferenceDataUri, storeReferenceDataUri } from "@/lib/render/storage";
 
-const referenceRoleSchema = z.enum(["plan_reference", "massing_front", "massing_rear", "massing_iso"]);
+const referenceRoleSchema = z.enum(["plan_reference", "massing_front", "massing_collage", "massing_top"]);
 const renderRequestSchema = z.object({
   geometryHash: z.string().min(1).max(200),
   selectedInteriorSpaceId: z.string().min(1).max(200),
@@ -22,14 +22,17 @@ const renderRequestSchema = z.object({
   const roles = value.references.map((reference) => reference.role);
   if (new Set(roles).size !== roles.length) context.addIssue({ code: "custom", path: ["references"], message: "Reference roles must be unique" });
   if (!roles.includes("plan_reference")) context.addIssue({ code: "custom", path: ["references"], message: "The marked plan reference is required" });
-  if (roles.length !== 1 && roles.length !== 4) context.addIssue({ code: "custom", path: ["references"], message: "Provide the plan-only fallback or the complete four-image grounding set" });
-  if (roles.length === 4) {
-    for (const required of referenceRoleSchema.options) if (!roles.includes(required)) context.addIssue({ code: "custom", path: ["references"], message: `Missing ${required}` });
-  }
+  if (roles.length !== 4) context.addIssue({ code: "custom", path: ["references"], message: "Provide the complete four-image grounding set" });
+  for (const required of referenceRoleSchema.options) if (!roles.includes(required)) context.addIssue({ code: "custom", path: ["references"], message: `Missing ${required}` });
 });
 
 const MAX_BODY_BYTES = 5_900_000;
 const MAX_RENDER_ATTEMPTS_PER_PURPOSE = 3;
+
+export function canonicalizeRenderReferences(references: Array<z.infer<typeof renderRequestSchema>["references"][number]>) {
+  const referencesByRole = new Map(references.map((reference) => [reference.role, reference]));
+  return referenceRoleSchema.options.map((role) => referencesByRole.get(role)).filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+}
 
 function configuredLimit(value: string | undefined, fallback: number) {
   const parsed = Number(value);
@@ -44,7 +47,7 @@ function errorResponse(message: string, status: number, code: string, details?: 
 }
 
 function purposeOf(payload: Record<string, unknown>): RenderPurpose | null {
-  return payload.renderPurpose === "exterior" || payload.renderPurpose === "interior" ? payload.renderPurpose : null;
+  return payload.renderContractVersion === RENDER_CONTRACT_VERSION && isRenderPurpose(payload.renderPurpose) ? payload.renderPurpose : null;
 }
 
 async function renderState(layoutVersionId: string) {
@@ -52,7 +55,7 @@ async function renderState(layoutVersionId: string) {
     .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")))
     .orderBy(generationJobs.createdAt);
   const assets = await db.select().from(generatedAssets)
-    .where(and(eq(generatedAssets.layoutVersionId, layoutVersionId), eq(generatedAssets.type, "render")))
+    .where(eq(generatedAssets.layoutVersionId, layoutVersionId))
     .orderBy(generatedAssets.createdAt);
   const latestByPurpose = new Map<RenderPurpose, typeof generationJobs.$inferSelect>();
   for (const job of jobs) {
@@ -67,14 +70,19 @@ async function renderState(layoutVersionId: string) {
     failureReason: job.failureReason,
     createdAt: job.createdAt,
   }));
-  const publicAssets = assets.map((asset, index) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType, index }));
+  const requiredRoles = new Set<string>(RENDER_PURPOSES);
+  const currentProviderJobIds = new Set(latestJobs.map((job) => job.providerJobId).filter((id): id is string => Boolean(id)));
+  const currentAssets = assets.filter((asset) => asset.type === "render" && requiredRoles.has(asset.role) && Boolean(asset.providerJobId) && currentProviderJobIds.has(asset.providerJobId!));
+  const publicAssets = currentAssets.map((asset, index) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType, index }));
+  const latestSourceByRole = new Map<string, typeof generatedAssets.$inferSelect>();
+  for (const asset of assets.filter((candidate) => candidate.type === "source")) latestSourceByRole.set(asset.role, asset);
+  const publicSources = [...latestSourceByRole.values()].map((asset) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType }));
   const active = latestJobs.some((job) => job.status === "queued" || job.status === "processing");
-  const completedExterior = assets.filter((asset) => asset.role === "exterior").length;
-  const completedInterior = assets.filter((asset) => asset.role === "interior").length;
-  const complete = completedExterior >= 3 && completedInterior >= 1;
+  const completedRoles = new Set(currentAssets.map((asset) => asset.role));
+  const complete = RENDER_PURPOSES.every((purpose) => completedRoles.has(purpose));
   const failed = latestJobs.some((job) => job.status === "failed" || job.status === "canceled");
-  const status = complete ? "completed" : active ? "processing" : assets.length > 0 ? "partial" : failed ? "failed" : "idle";
-  return { status, jobs: publicJobs, assets: publicAssets };
+  const status = complete ? "completed" : active ? "processing" : currentAssets.length > 0 ? "partial" : failed ? "failed" : "idle";
+  return { status, jobs: publicJobs, assets: publicAssets, sources: publicSources };
 }
 
 async function ownedStudy(layoutVersionId: string, userId: string) {
@@ -125,6 +133,8 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Reference image is invalid.", 400, "INVALID_REFERENCE_IMAGE");
   }
+  const orderedReferences = canonicalizeRenderReferences(parsed.data.references);
+  const referencesByRole = new Map(orderedReferences.map((reference) => [reference.role, reference]));
 
   const row = await ownedStudy(layoutVersionId, user.id);
   if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
@@ -142,7 +152,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   const [{ latestVersion }] = await db.select({ latestVersion: sql<number>`max(${layoutVersions.version})::integer` }).from(layoutVersions).where(eq(layoutVersions.projectId, row.projectId));
   if (Number(latestVersion) !== row.version) return errorResponse("Open the latest immutable study version before spending on renders.", 409, "STALE_STUDY_VERSION");
 
-  const specs = buildRenderSpecs({ building: building.data, requirements: requirements.data, selectedInteriorSpaceId: selected.id, referenceCount: parsed.data.references.length });
+  const specs = buildRenderSpecs({ building: building.data, requirements: requirements.data, selectedInteriorSpaceId: selected.id });
   const now = new Date();
   const dayStart = new Date(now);
   dayStart.setUTCHours(0, 0, 0, 0);
@@ -157,7 +167,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
       const active = existing.filter((job) => job.status === "queued" || job.status === "processing");
       if (active.length > 0) return { reused: true, jobs: active, specs: [] };
       const completedPurposes = new Set(existing.filter((job) => job.status === "completed").map((job) => purposeOf(job.requestPayload)).filter(Boolean));
-      const missingSpecs = [specs.exterior, specs.interior].filter((spec) => !completedPurposes.has(spec.purpose));
+      const missingSpecs = specs.filter((spec) => !completedPurposes.has(spec.purpose));
       if (missingSpecs.length === 0) return { reused: true, jobs: existing.filter((job) => job.status === "completed"), specs: [] };
       for (const spec of missingSpecs) {
         const attempts = existing.filter((job) => purposeOf(job.requestPayload) === spec.purpose).length;
@@ -185,11 +195,12 @@ export async function POST(request: Request, context: { params: Promise<{ layout
           status: "queued",
           requestPayload: {
             packageId,
+            renderContractVersion: RENDER_CONTRACT_VERSION,
             renderPurpose: spec.purpose,
             requestedOutputCount: spec.requestedOutputCount,
             geometryHash: building.data.candidate.geometryHash,
             selectedInteriorSpaceId: selected.id,
-            referenceRoles: parsed.data.references.map((reference) => reference.role),
+            referenceRoles: [spec.sourceRole],
             prompt: spec.prompt,
           },
           updatedAt: now,
@@ -209,7 +220,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   if (reserved.reused) return NextResponse.json(await renderState(layoutVersionId));
 
   try {
-    const stored = await Promise.all(parsed.data.references.map((reference) => storeReferenceDataUri(
+    const stored = await Promise.all(orderedReferences.map((reference) => storeReferenceDataUri(
       reference.dataUri,
       `sources/${layoutVersionId}/${packageId}/${reference.role}.webp`,
     )));
@@ -219,7 +230,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
           projectId: row.projectId,
           layoutVersionId,
           type: "source",
-          role: parsed.data.references[index].role,
+          role: orderedReferences[index].role,
           provider: "brickpilot",
           status: "completed",
           storageKey: asset.storageKey,
@@ -240,7 +251,9 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     const spec = reserved.specs.find((candidate) => candidate.purpose === purpose);
     if (!spec) continue;
     try {
-      const prediction = await createReplicatePrediction(spec, parsed.data.references.map((reference) => reference.dataUri));
+      const source = referencesByRole.get(spec.sourceRole);
+      if (!source) throw new Error(`Required render source ${spec.sourceRole} is missing`);
+      const prediction = await createReplicatePrediction(spec, [source.dataUri]);
       const startedAt = new Date();
       await db.update(generationJobs).set({
         providerJobId: prediction.id,

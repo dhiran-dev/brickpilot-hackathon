@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Building2, Check, CircleDollarSign, Compass, Home, LoaderCircle, MapPinned, RotateCcw, Ruler, Sparkles, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, Check, CircleDollarSign, Compass, Home, LoaderCircle, MapPinned, Palette, RotateCcw, Ruler, Sparkles, UsersRound } from "lucide-react";
 
 import { BUILDING_TYPE_OPTIONS, buildingRequirementsSchema, type BuildingRequirements } from "@/lib/building/requirements";
 import { assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
@@ -13,6 +13,7 @@ const STEPS = [
   { id: "site", label: "Site", question: "What controls the plot?", icon: Compass },
   { id: "building", label: "Levels", question: "How should the house stack?", icon: Building2 },
   { id: "rooms", label: "Rooms", question: "Who needs which spaces?", icon: UsersRound },
+  { id: "architecture", label: "Style", question: "What architectural character should shape it?", icon: Palette },
   { id: "budget", label: "Budget", question: "What should the estimate respect?", icon: CircleDollarSign },
   { id: "review", label: "Review", question: "Is this the brief to solve?", icon: Check },
 ] as const;
@@ -34,7 +35,7 @@ const STAIR_WIDTH_OPTIONS = [
   [1200, "1200 mm · generous"],
   [1500, "1500 mm · wide / assisted movement"],
 ] as const;
-const INTAKE_STORAGE_VERSION = 3;
+const INTAKE_STORAGE_VERSION = 4;
 
 type StepId = (typeof STEPS)[number]["id"];
 
@@ -70,6 +71,7 @@ function stepReady(step: StepId, draft: IntakeDraft) {
   if (step === "site") return draft.siteWidth > 0 && draft.siteDepth > 0 && draft.roadEdges.length > 0 && Object.values(draft.setbacks).every((value) => value >= 0);
   if (step === "building") return draft.floorCount >= 1 && draft.floorCount <= 4 && draft.floorHeightM >= 2.4 && (draft.floorCount === 1 || draft.stairWidthMm >= 900);
   if (step === "rooms") return draft.occupants > 0 && draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bedrooms, 0) >= 1 && draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bathrooms, 0) >= 1;
+  if (step === "architecture") return Boolean(draft.architecturalStyle && draft.formStrategy && draft.roofCharacter && draft.materialDirection);
   if (step === "budget") return draft.budgetLowMajor >= 0 && draft.budgetHighMajor >= draft.budgetLowMajor && draft.contingencyPercent >= 0;
   return true;
 }
@@ -222,7 +224,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
 
           {step.id === "project" ? <div className="space-y-7">
             <Field label="Project name"><input autoFocus className={CONTROL} maxLength={120} onChange={(event) => patch({ projectName: event.target.value })} placeholder="The Nair family home" value={draft.projectName} /></Field>
-            <div><p className={LABEL}>Building type</p><div className="mt-2 grid gap-2 md:grid-cols-3">{BUILDING_TYPE_OPTIONS.map((option) => <Choice badge={option.available ? undefined : option.note} checked={option.value === draft.buildingType} detail={option.available ? "Ground floor through G+3, one household." : option.value === "apartment" ? "Multi-unit residential planning is not enabled yet." : "Office, retail and institutional rule packs are coming later."} disabled={!option.available} key={option.value} onClick={() => option.available && patch({ buildingType: "detached_house" })} title={option.label} />)}</div></div>
+            <div><p className={LABEL}>Building type</p><div className="mt-2 grid gap-2 md:grid-cols-3">{BUILDING_TYPE_OPTIONS.map((option) => <Choice badge={option.available ? undefined : option.note} checked={option.value === draft.buildingType} detail={option.available ? "A single-family bungalow or multi-level villa, from ground-only through G+3." : option.value === "apartment" ? "Multi-unit residential planning is not enabled yet." : "Office, retail and institutional rule packs are coming later."} disabled={!option.available} key={option.value} onClick={() => option.available && patch({ buildingType: "detached_house" })} title={option.label} />)}</div></div>
             <div className="border-l-2 border-[#c97940] bg-[#17120e] p-4 text-xs leading-6 text-[#aa9b8d]"><strong className="text-[#fff6ea]">Scope:</strong> BrickPilot produces a residential concept and feasibility package. A licensed architect and engineers must verify it before permits or construction.</div>
           </div> : null}
 
@@ -258,6 +260,24 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             <div><p className={LABEL}>Ground-floor priorities</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.includeParking} label="Covered parking" onChange={(includeParking) => patch({ includeParking })} /><Toggle checked={draft.includeUtility} label="Utility / laundry" onChange={(includeUtility) => patch({ includeUtility })} /><Toggle checked={draft.includePooja} label="Pooja / sacred room" onChange={(includePooja) => patch({ includePooja })} /><Toggle checked={draft.includeCourtyard} detail="Creates an exterior planning void, not leftover gap." label="Central courtyard" onChange={(includeCourtyard) => patch({ includeCourtyard })} /></div></div>
           </div> : null}
 
+          {step.id === "architecture" ? <div className="space-y-7">
+            <div><p className={LABEL}>Architectural character</p><p className="mt-2 max-w-3xl text-xs leading-5 text-[#8f8275]">This is a design constraint, not a decorative label. It controls the elevation vocabulary, shade, roof expression and the material brief sent to visualization.</p><div className="mt-3 grid gap-2 md:grid-cols-3">{([
+              ["contemporary_tropical", "Contemporary tropical", "Deep shade, screened openings, planted edges and warm natural finishes."],
+              ["kerala_contemporary", "Kerala contemporary", "Regional roof cues, rain protection and modern planning without imitation ornament."],
+              ["warm_minimal", "Warm minimal", "Quiet planes, timber warmth and restrained, human-scaled detail."],
+              ["courtyard_vernacular", "Courtyard vernacular", "An inward-looking shaded heart with regionally grounded proportions."],
+              ["modernist", "Modernist", "Clear structural rhythm, strong horizontal lines and disciplined openings."],
+            ] as const).map(([value, title, detail]) => <Choice checked={draft.architecturalStyle === value} detail={detail} key={value} onClick={() => patch({ architecturalStyle: value })} title={title} />)}</div></div>
+            <div><p className={LABEL}>Built-form strategy</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{([
+              ["stepped_terraces", "Stepped villa", "Sectioned setbacks on every level create shaded entry courts, terraces and a receding villa silhouette."],
+              ["articulated_wings", "Courts + wings", "Use mixed room clusters, an entry recess and side courts to form practical connected villa wings."],
+              ["courtyard", "Courtyard form", "Reserve an open-to-sky planning heart; this automatically includes a courtyard in the brief."],
+              ["compact", "Compact", "A simpler, efficient envelope with architectural depth coming from shade and façade layers."],
+            ] as const).map(([value, title, detail]) => <Choice checked={draft.formStrategy === value} detail={detail} key={value} onClick={() => patch({ formStrategy: value, ...(value === "courtyard" ? { includeCourtyard: true } : {}) })} title={title} />)}</div></div>
+            <div className="grid gap-5 sm:grid-cols-2"><Field label="Roof character"><select className={CONTROL} onChange={(event) => patch({ roofCharacter: event.target.value as IntakeDraft["roofCharacter"] })} value={draft.roofCharacter}><option value="mixed">Mixed · shelter + terraces</option><option value="sloped">Predominantly sloped</option><option value="flat_parapet">Flat parapet</option></select></Field><Field label="Material direction"><select className={CONTROL} onChange={(event) => patch({ materialDirection: event.target.value as IntakeDraft["materialDirection"] })} value={draft.materialDirection}><option value="warm_natural">Warm natural · timber + stone + mineral plaster</option><option value="earthy_textured">Earthy textured · brick + lime + local stone</option><option value="light_mineral">Light mineral · pale plaster + restrained timber</option><option value="monochrome">Monochrome · concrete + dark metal + clear glazing</option></select></Field></div>
+            <div className="border-l-2 border-[#c97940] bg-[#17120e] p-4 text-xs leading-6 text-[#aa9b8d]"><strong className="text-[#fff6ea]">Plot and house are separate decisions.</strong> A rectangular site may contain stepped, winged or courtyard-based built form. BrickPilot still keeps every room and support concept inside the verified buildable envelope.</div>
+          </div> : null}
+
           {step.id === "budget" ? <div className="space-y-7">
             <div><p className={LABEL}>Finish and specification tier</p><div className="mt-2 grid gap-2 sm:grid-cols-3">{(["essential", "standard", "premium"] as const).map((tier) => <Choice checked={draft.qualityTier === tier} detail={tier === "essential" ? "Durable, cost-controlled baseline." : tier === "standard" ? "Balanced residential specification." : "Higher finish and services allowance."} key={tier} onClick={() => patch({ qualityTier: tier })} title={tier} />)}</div></div>
             <div className="grid gap-5 sm:grid-cols-2"><Field label={`Target low (${draft.currency})`} hint="Enter 0 if no target is set."><input className={CONTROL} min="0" onChange={(event) => patch({ budgetLowMajor: Number(event.target.value) })} step="10000" type="number" value={draft.budgetLowMajor} /></Field><Field label={`Target high (${draft.currency})`}><input className={CONTROL} min={draft.budgetLowMajor} onChange={(event) => patch({ budgetHighMajor: Number(event.target.value) })} step="10000" type="number" value={draft.budgetHighMajor} /></Field><Field label="Contingency (%)"><input className={CONTROL} max="50" min="0" onChange={(event) => patch({ contingencyPercent: Number(event.target.value) })} step="0.5" type="number" value={draft.contingencyPercent} /></Field><Field label="Tax assumption (%)" hint="Only apply a tax rate you have explicitly confirmed."><input className={CONTROL} max="50" min="0" onChange={(event) => patch({ taxPercent: Number(event.target.value) })} step="0.5" type="number" value={draft.taxPercent} /></Field></div>
@@ -287,6 +307,7 @@ function Review({ draft, requirements, capacity }: { draft: IntakeDraft; require
     ["Household", `${draft.occupants} people${draft.accessibilityRequired ? " · step-free priorities" : ""}`],
     ["Private rooms", `${totalBedrooms} bedrooms · ${totalBathrooms} bathrooms · ${totalAttachedBathrooms} attached`],
     ["Social spaces", draft.socialSpaceMode === "combined" ? "Combined living / dining hall" : "Separate living + dining"],
+    ["Architecture", `${draft.architecturalStyle.replaceAll("_", " ")} · ${draft.formStrategy.replaceAll("_", " ")}`],
     ["Budget target", draft.budgetHighMajor > 0 ? `${budget.format(draft.budgetLowMajor)} – ${budget.format(draft.budgetHighMajor)}` : "No target supplied"],
     ["Canonical output", requirements ? `${requirements.rooms.length} named spaces · ${requirements.relationships.length} relationship rules` : "Requires corrections"],
   ];

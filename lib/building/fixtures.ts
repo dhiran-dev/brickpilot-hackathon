@@ -38,6 +38,7 @@ function fixture(overrides: {
     relationships: overrides.relationships,
     household: { occupants: 4, accessibilityRequired: false },
     vertical: { stairFamily: "dog_leg", stairWidthMm: 1000, liftProvision: false },
+    architecture: { style: "contemporary_tropical", formStrategy: "stepped_terraces", roofCharacter: "mixed", materialDirection: "warm_natural" },
     budget: { qualityTier: "standard", contingencyPercent: 7.5, taxPercent: 0 },
     seed: 42,
   };

@@ -9,7 +9,7 @@ const validationFindingSchema = z.object({
   ruleId: z.string(),
   ruleVersion: z.number().int().positive(),
   severity: z.enum(["error", "warning", "info"]),
-  category: z.enum(["geometry", "topology", "opening", "vertical", "planning", "cost"]),
+  category: z.enum(["geometry", "topology", "opening", "vertical", "planning", "structure", "cost"]),
   floorId: z.string().optional(),
   objectIds: z.array(z.string()),
   measured: z.object({ value: z.number(), unit: z.string() }).optional(),

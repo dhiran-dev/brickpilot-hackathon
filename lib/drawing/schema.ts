@@ -166,6 +166,7 @@ export type DrawingFloorArtifact = {
   envelope: Rectangle;
   rooms: DrawingRoom[];
   walls: DrawingWall[];
+  columns: Array<{ id: string; center: Point; widthMm: number; depthMm: number }>;
   openings: DrawingOpening[];
   furniture: DrawingFurniture[];
   dimensions: { overall: DrawingDimension[]; internal: DrawingDimension[] };

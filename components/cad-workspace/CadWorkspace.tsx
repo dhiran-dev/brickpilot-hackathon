@@ -167,7 +167,7 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
     site: 2,
     zoning: artifact.rooms.length,
     circulation: artifact.routes.length,
-    walls: artifact.walls.length,
+    walls: artifact.walls.length + artifact.columns.length,
     openings: artifact.openings.length,
     furniture: artifact.furniture.length,
     labels: artifact.rooms.length,

@@ -4,10 +4,10 @@ import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import type { ValidationReport } from "@/lib/validation";
 
-const SYSTEM_PROMPT = `You are an advisory architectural concurrence reviewer for a concept-stage residential plan that has already passed deterministic geometry, topology, opening, and vertical-connectivity validation.
-Review circulation, adjacency, daylight, orientation, door/window logic, and multi-storey stacking using only the structured evidence provided. Never change geometry and never claim licensed-architect, permit, structural, MEP, or code approval.
-Every concern must cite exact evidenceIds and objectIds values from the payload. If ruleId is present, cite its matching finding evidence ID and only that finding's object IDs. If floorId is present, it must be an exact floorId from the drawing summary.
-Return only JSON: { "concurs": boolean, "confidence": "high|medium|low", "citedConcerns": [{ "ruleId"?: string, "floorId"?: string, "objectIds": string[], "evidenceIds": string[], "topic": "circulation|adjacency|daylight|orientation|opening|vertical_stacking|other", "whyItMatters": string, "recommendation": string, "whatItSaves": string }], "requirementDeltas": [{ "op": "add_room|resize_room|remove_room", "summary": string, "roomId"?: string, "resizeDirection"?: "increase|decrease", "newRoom"?: { "id": string, "name": string, "type": string, "floorId": string, "privacy": string } }] }.
+const SYSTEM_PROMPT = `You are an advisory architectural concurrence reviewer for a concept-stage residential plan that has already passed deterministic geometry, topology, opening, vertical-connectivity, and preliminary column-coordination validation.
+Review circulation, adjacency, daylight, orientation, door/window logic, multi-storey stacking, and the supplied conceptual column/grid coordination evidence using only the structured evidence provided. Never change geometry and never claim licensed-architect, permit, structural, MEP, or code approval. Column evidence is a preliminary coordination aid only; never infer loads, member sizing, foundations, seismic safety, or construction readiness.
+Every concern must cite exact evidenceIds and objectIds values from the payload. If ruleId is present, cite its matching finding evidence ID and only that finding's object IDs. If floorId is present, it must be an exact floorId from the drawing summary. Prefer zero to three strong concerns; do not manufacture a concern merely to fill the array. If no grounded concern remains after review, concur with an empty concern list.
+Return only JSON: { "concurs": boolean, "confidence": "high|medium|low", "citedConcerns": [{ "ruleId"?: string, "floorId"?: string, "objectIds": string[], "evidenceIds": string[], "topic": "circulation|adjacency|daylight|orientation|opening|vertical_stacking|structural_coordination|other", "whyItMatters": string, "recommendation": string, "whatItSaves": string }], "requirementDeltas": [{ "op": "add_room|resize_room|remove_room", "summary": string, "roomId"?: string, "resizeDirection"?: "increase|decrease", "newRoom"?: { "id": string, "name": string, "type": string, "floorId": string, "privacy": string } }] }.
 Never emit a coordinate, wall position, raw area, money value, or unsupported room/floor id.`;
 
 function floorTopologySummary(building: Building) {
@@ -39,6 +39,7 @@ function requirementsSummary(requirements: BuildingRequirements) {
     household: requirements.household,
     facing: requirements.site.facing,
     roadEdges: requirements.site.roadEdges,
+    architecture: requirements.architecture,
   };
 }
 
@@ -70,6 +71,8 @@ function evidenceIdsFor(input: { requirements: BuildingRequirements; building: B
   }
   input.requirements.relationships.forEach((_, index) => ids.add(`relationship:${index}`));
   input.building.verticalConnectors.forEach((connector) => ids.add(`connector:${connector.id}`));
+  input.building.structuralConcept?.columns.forEach((column) => ids.add(`column:${column.id}`));
+  input.building.structuralConcept?.axes.forEach((axis) => ids.add(`grid:${axis.id}`));
   input.validation.findings.forEach((_, index) => ids.add(`finding:${index}`));
   return ids;
 }
@@ -87,6 +90,8 @@ function isGroundedReview(
     for (const opening of floor.openings) { objectIds.add(opening.id); objectFloorIds.set(opening.id, floor.id); }
   }
   for (const connector of input.building.verticalConnectors) objectIds.add(connector.id);
+  for (const column of input.building.structuralConcept?.columns ?? []) objectIds.add(column.id);
+  for (const axis of input.building.structuralConcept?.axes ?? []) objectIds.add(axis.id);
   const ruleIds = new Set(input.validation.findings.map((finding) => finding.ruleId));
   const roomIds = new Set(input.requirements.rooms.map((room) => room.id));
   const validEvidenceIds = evidenceIdsFor(input);
@@ -98,7 +103,7 @@ function isGroundedReview(
     if (concern.floorId && concern.objectIds.some((id) => objectFloorIds.has(id) && objectFloorIds.get(id) !== concern.floorId)) return false;
     for (const evidenceId of concern.evidenceIds) {
       const [kind, value] = evidenceId.split(":", 2);
-      if (["room", "opening", "connector"].includes(kind) && !concern.objectIds.includes(value)) return false;
+      if (["room", "opening", "connector", "column", "grid"].includes(kind) && !concern.objectIds.includes(value)) return false;
       if (kind === "relationship") {
         const relationship = input.requirements.relationships[Number(value)];
         if (!relationship || !concern.objectIds.some((id) => id === relationship.fromRoomId || id === relationship.toRoomId)) return false;
@@ -129,6 +134,26 @@ function isGroundedReview(
   return true;
 }
 
+function retainGroundedReview(
+  review: ArchitecturalConcurrence,
+  input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport },
+) {
+  const citedConcerns = review.citedConcerns.filter((concern) => isGroundedReview({
+    concurs: true,
+    confidence: review.confidence,
+    citedConcerns: [concern],
+    requirementDeltas: [],
+  }, input));
+  const requirementDeltas = review.requirementDeltas.filter((delta) => isGroundedReview({
+    concurs: true,
+    confidence: review.confidence,
+    citedConcerns: [],
+    requirementDeltas: [delta],
+  }, input));
+  const grounded = { ...review, citedConcerns, requirementDeltas };
+  return isGroundedReview(grounded, input) ? grounded : undefined;
+}
+
 export async function reviewBuilding(
   input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport },
   options: { complete?: typeof callJsonModeCompletion } = {},
@@ -151,6 +176,17 @@ export async function reviewBuilding(
     drawingSummary: drawingSummary(input.building),
     requirementRelationships: input.requirements.relationships.map((relationship, index) => ({ evidenceId: `relationship:${index}`, ...relationship })),
     verticalConnectors: input.building.verticalConnectors.map((connector) => ({ evidenceId: `connector:${connector.id}`, id: connector.id, kind: connector.kind, servedFloorIds: connector.servedFloorIds })),
+    structuralConcept: input.building.structuralConcept ? {
+      scope: input.building.structuralConcept.scope,
+      disclaimer: input.building.structuralConcept.disclaimer,
+      baselineMaxBayMm: input.building.structuralConcept.baselineMaxBayMm,
+      axes: input.building.structuralConcept.axes.map((axis) => ({ evidenceId: `grid:${axis.id}`, id: axis.id, orientation: axis.direction === "x" ? "horizontal" : "vertical" })),
+      bays: (["x", "y"] as const).flatMap((direction) => {
+        const axes = input.building.structuralConcept!.axes.filter((axis) => axis.direction === direction).sort((left, right) => left.coordinateMm - right.coordinateMm);
+        return axes.slice(1).map((axis, index) => ({ orientation: direction === "x" ? "horizontal" : "vertical", fromAxisId: axes[index].id, toAxisId: axis.id, bayMm: axis.coordinateMm - axes[index].coordinateMm }));
+      }),
+      columns: input.building.structuralConcept.columns.map((column) => ({ evidenceId: `column:${column.id}`, id: column.id, servedFloorIds: column.servedFloorIds })),
+    } : null,
   };
 
   let lastOutputError: string | undefined;
@@ -160,8 +196,8 @@ export async function reviewBuilding(
       raw = await complete({
         systemPrompt: SYSTEM_PROMPT,
         userPayload: lastOutputError ? { ...userPayload, previousOutputError: lastOutputError } : userPayload,
-        maxTokens: 1_200,
-        timeoutMs: 12_000,
+        maxTokens: 1_800,
+        timeoutMs: 20_000,
       });
     } catch (error) {
       if (error instanceof AiProviderError) {
@@ -178,7 +214,8 @@ export async function reviewBuilding(
     }
 
     const parsed = architecturalConcurrenceSchema.safeParse(raw);
-    if (parsed.success && isGroundedReview(parsed.data, input)) return { status: "reviewed", review: parsed.data };
+    const grounded = parsed.success ? retainGroundedReview(parsed.data, input) : undefined;
+    if (grounded) return { status: "reviewed", review: grounded };
     lastOutputError = parsed.success
       ? "Every concern and requirement delta must cite only exact, supporting IDs from the supplied evidence."
       : parsed.error.issues.map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`).join("; ");

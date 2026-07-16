@@ -1,5 +1,5 @@
 export type ValidationSeverity = "error" | "warning" | "info";
-export type ValidationCategory = "geometry" | "topology" | "opening" | "vertical" | "planning" | "cost";
+export type ValidationCategory = "geometry" | "topology" | "opening" | "vertical" | "planning" | "structure" | "cost";
 
 export type ValidationFinding = {
   ruleId: string;

@@ -53,6 +53,7 @@ function requirements(overrides: Partial<BuildingRequirements["region"]> = {}): 
     relationships: [],
     household: { occupants: 4, accessibilityRequired: false },
     vertical: { stairFamily: "dog_leg", stairWidthMm: 1_000, liftProvision: false },
+    architecture: { style: "contemporary_tropical", formStrategy: "stepped_terraces", roofCharacter: "mixed", materialDirection: "warm_natural" },
     budget: { qualityTier: "standard", contingencyPercent: 7.5, taxPercent: 18 },
     seed: 42,
   };

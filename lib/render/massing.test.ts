@@ -73,7 +73,28 @@ describe("deterministic massing model", () => {
     expect(model.primitives.some((primitive) => primitive.kind === "interior_wall" && primitive.floorId === "F1")).toBe(true);
   });
 
+  test("treats open terraces as real massing recesses instead of roofing the full rectangle", () => {
+    const articulated = structuredClone(building);
+    const floor = articulated.floors[1];
+    floor.spaces.push({
+      id: "terrace-1",
+      floorId: "F1",
+      name: "Open terrace / unbuilt",
+      type: "terrace",
+      planningCellPolygon: rectanglePolygon({ x: 8000, y: 9000, width: 3000, depth: 3000 }),
+      bounds: { x: 8000, y: 9000, width: 3000, depth: 3000 },
+      areaMm2: 9_000_000,
+      occupied: false,
+      accessible: false,
+    });
+    floor.walls.push({ id: "terrace-boundary", floorId: "F1", start: { x: 8000, y: 9000 }, end: { x: 8000, y: 12_000 }, thicknessMm: 115, type: "interior", adjacentSpaceIds: ["living-1", "terrace-1"] });
+    const model = buildMassingModel(articulated);
+    expect(model.primitives.some((primitive) => primitive.kind === "slab" && primitive.sourceId === "terrace-1")).toBe(false);
+    expect(model.primitives.some((primitive) => primitive.kind === "roof" && primitive.sourceId === "terrace-1")).toBe(false);
+    expect(model.primitives.some((primitive) => primitive.kind === "exterior_wall" && primitive.sourceId === "terrace-boundary")).toBe(true);
+  });
+
   test("reports exact building-wide evidence", () => {
-    expect(massingMetrics(building)).toEqual({ storeys: 2, heightM: 6.2, builtAreaM2: 320, openingCount: 4, stairAligned: true });
+    expect(massingMetrics(building)).toEqual({ storeys: 2, heightM: 6.2, builtAreaM2: 174.08, openingCount: 4, stairAligned: true, columnCount: 0 });
   });
 });

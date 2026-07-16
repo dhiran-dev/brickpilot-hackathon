@@ -63,9 +63,11 @@ export async function GET(request: Request) {
     .limit(48);
 
   const classified = rows.map(classifyPersistedStudy);
-  const studies = classified.filter((item) => item.compatible).map((item) => item.study).slice(0, 12);
+  const compatible = classified.filter((item) => item.compatible).map((item) => item.study);
+  const studies = compatible.filter((study) => study.status === "completed").slice(0, 12);
+  const failedStudies = compatible.filter((study) => study.status === "failed").slice(0, 8);
   const incompatibleStudies = classified.filter((item) => !item.compatible).map((item) => item.study).slice(0, 12);
-  return NextResponse.json({ studies, incompatibleStudies });
+  return NextResponse.json({ studies, failedStudies, incompatibleStudies });
 }
 
 export async function POST(request: Request) {

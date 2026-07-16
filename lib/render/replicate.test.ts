@@ -43,11 +43,13 @@ describe("Replicate prediction contract", () => {
     globalThis.fetch = (async (_input, init) => {
       calls += 1;
       if (calls === 1) return new Response(JSON.stringify({ retry_after: 0 }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "0" } });
-      expect(String(init?.body)).toContain("data:image/webp;base64,fixture");
+      const body = JSON.parse(String(init?.body)) as { input: { input_images: string[]; number_of_images: number } };
+      expect(body.input.input_images).toEqual(["data:image/webp;base64,fixture"]);
+      expect(body.input.number_of_images).toBe(1);
       return new Response(JSON.stringify({ id: "prediction-1", status: "starting", output: null }), { status: 201, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
     const prediction = await createReplicatePrediction(
-      { purpose: "interior", prompt: "Grounded interior", requestedOutputCount: 1 },
+      { purpose: "interior", sourceRole: "plan_reference", prompt: "Grounded interior", requestedOutputCount: 1 },
       ["data:image/webp;base64,fixture"],
     );
     expect(prediction.id).toBe("prediction-1");

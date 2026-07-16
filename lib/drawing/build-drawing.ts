@@ -342,6 +342,9 @@ function floorArtifact(building: Building, floor: Floor, findings: DrawingFindin
     envelope: floor.envelope,
     rooms,
     walls: floor.walls.map(({ id, start, end, thicknessMm, type }) => ({ id, start, end, thicknessMm, type })),
+    columns: (building.structuralConcept?.columns ?? [])
+      .filter((column) => column.servedFloorIds.includes(floor.id))
+      .map(({ id, center, widthMm, depthMm }) => ({ id, center, widthMm, depthMm })),
     openings: floor.openings.flatMap((opening) => {
       const wall = wallById.get(opening.wallId);
       return wall ? [openingGeometry(opening, wall, floor)] : [];

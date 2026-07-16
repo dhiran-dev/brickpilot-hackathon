@@ -1,7 +1,8 @@
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building, Floor, Opening, Rectangle, WallSegment } from "@/lib/building/schema";
 import { circulationPassageConflicts, openingUsage, spacesWithNoPassableOpening, unreachableOccupiedSpaces } from "@/lib/building/circulation";
-import { analyzeCoverage, rectangleIntersectionArea, wallLength } from "@/lib/building/topology";
+import { columnConflictsWithOpening, columnConflictsWithStair } from "@/lib/building/structure";
+import { analyzeCoverage, isOpenToSkySpace, rectangleIntersectionArea, wallLength } from "@/lib/building/topology";
 import { finding, MIN_CONCEPT_PASSAGE_WIDTH_MM, MIN_VEHICLE_ACCESS_WIDTH_MM, RULE_PACK_VERSION, RULES } from "@/lib/validation/rules";
 import type { ValidationFinding, ValidationReport, ValidationSeverity } from "@/lib/validation/types";
 
@@ -52,6 +53,15 @@ function exteriorSide(wall: WallSegment, floor: Floor) {
   if (wall.start.y === boundsBottom(floor.envelope) && wall.end.y === boundsBottom(floor.envelope)) return "south";
   if (wall.start.x === floor.envelope.x && wall.end.x === floor.envelope.x) return "west";
   return undefined;
+}
+
+function parkingDirectlyTouchesRoad(parking: Floor["spaces"][number], floor: Floor, roadEdges: Building["site"]["roadEdges"]) {
+  return roadEdges.some((side) => {
+    if (side === "north") return parking.bounds.y === floor.envelope.y && parking.bounds.width >= MIN_VEHICLE_ACCESS_WIDTH_MM;
+    if (side === "south") return boundsBottom(parking.bounds) === boundsBottom(floor.envelope) && parking.bounds.width >= MIN_VEHICLE_ACCESS_WIDTH_MM;
+    if (side === "west") return parking.bounds.x === floor.envelope.x && parking.bounds.depth >= MIN_VEHICLE_ACCESS_WIDTH_MM;
+    return boundsRight(parking.bounds) === boundsRight(floor.envelope) && parking.bounds.depth >= MIN_VEHICLE_ACCESS_WIDTH_MM;
+  });
 }
 
 function openingFindings(floor: Floor, roadEdges: Building["site"]["roadEdges"]) {
@@ -128,7 +138,7 @@ function openingFindings(floor: Floor, roadEdges: Building["site"]["roadEdges"])
     ));
   }
   for (const parking of floor.spaces.filter((space) => space.type === "parking")) {
-    const hasRoadAccess = floor.openings.some((opening) => {
+    const hasRoadAccess = parkingDirectlyTouchesRoad(parking, floor, roadEdges) || floor.openings.some((opening) => {
       if (openingUsage(opening) !== "vehicle" || !opening.connects.includes(parking.id)) return false;
       const wall = walls.get(opening.wallId);
       const side = wall ? exteriorSide(wall, floor) : undefined;
@@ -197,9 +207,160 @@ function verticalFindings(building: Building) {
   return findings;
 }
 
+function structuralFindings(building: Building) {
+  const concept = building.structuralConcept;
+  if (!concept) return [];
+  const findings: ValidationFinding[] = [];
+  const orderedFloors = [...building.floors].sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  const allFloorIds = orderedFloors.map((floor) => floor.id);
+  const allFloorIdSet = new Set(allFloorIds);
+  const duplicateCenters = new Map<string, string>();
+
+  for (const column of concept.columns) {
+    const centerKey = `${column.center.x}:${column.center.y}`;
+    const duplicate = duplicateCenters.get(centerKey);
+    if (duplicate) findings.push(finding(
+      RULES.structuralGridDuplicate,
+      "error",
+      "structure",
+      "Two conceptual column records occupy the same grid point.",
+      { objectIds: [duplicate, column.id], suggestedAction: "Keep one stable vertical column record for this grid point." },
+    ));
+    duplicateCenters.set(centerKey, column.id);
+
+    const served = [...new Set(column.servedFloorIds)].filter((floorId) => allFloorIdSet.has(floorId));
+    if (
+      served.length !== column.servedFloorIds.length
+      || served.length !== allFloorIds.length
+      || allFloorIds.some((floorId) => !served.includes(floorId))
+    ) findings.push(finding(
+      RULES.structuralColumnContinuous,
+      "error",
+      "structure",
+      "A conceptual column is not continuously coordinated through every modeled floor.",
+      {
+        objectIds: [column.id, ...column.servedFloorIds],
+        suggestedAction: "Regenerate one aligned column stack from the lowest to the highest modeled floor.",
+        repairType: "align_conceptual_column",
+      },
+    ));
+
+    for (const floor of orderedFloors.filter((candidate) => column.servedFloorIds.includes(candidate.id))) {
+      const insideCenter = column.center.x >= floor.envelope.x
+        && column.center.x <= boundsRight(floor.envelope)
+        && column.center.y >= floor.envelope.y
+        && column.center.y <= boundsBottom(floor.envelope);
+      if (!insideCenter) findings.push(finding(
+        RULES.structuralColumnContinuous,
+        "error",
+        "structure",
+        "A conceptual column center falls outside its served floor envelope.",
+        { floorId: floor.id, objectIds: [column.id, floor.id], suggestedAction: "Keep the conceptual support point within the coordinated floor plate." },
+      ));
+
+      const containingVoid = floor.spaces.find((space) => (
+        isOpenToSkySpace(space)
+        && column.center.x > space.bounds.x
+        && column.center.x < boundsRight(space.bounds)
+        && column.center.y > space.bounds.y
+        && column.center.y < boundsBottom(space.bounds)
+      ));
+      if (containingVoid) findings.push(finding(
+        RULES.structuralColumnClearance,
+        "error",
+        "structure",
+        "A conceptual column occupies an open-to-sky court or setback terrace.",
+        {
+          floorId: floor.id,
+          objectIds: [column.id, containingVoid.id],
+          suggestedAction: "Move the conceptual support point onto the constructed floor plate and preserve the open court.",
+          repairType: "relocate_conceptual_column",
+        },
+      ));
+
+      if (columnConflictsWithStair(column, floor)) {
+        const stairs = floor.spaces.filter((space) => space.type === "stair" && (
+          column.center.x + column.widthMm / 2 > space.bounds.x
+          && column.center.x - column.widthMm / 2 < boundsRight(space.bounds)
+          && column.center.y + column.depthMm / 2 > space.bounds.y
+          && column.center.y - column.depthMm / 2 < boundsBottom(space.bounds)
+        ));
+        findings.push(finding(
+          RULES.structuralColumnClearance,
+          "error",
+          "structure",
+          "A conceptual column overlaps the modeled stair clearance.",
+          {
+            floorId: floor.id,
+            objectIds: [column.id, ...stairs.map((space) => space.id)],
+            suggestedAction: "Move the conceptual grid point outside the stair and landing footprint.",
+            repairType: "relocate_conceptual_column",
+          },
+        ));
+      }
+
+      const wallById = new Map(floor.walls.map((wall) => [wall.id, wall]));
+      for (const opening of floor.openings) {
+        const wall = wallById.get(opening.wallId);
+        if (!wall || !columnConflictsWithOpening(column, opening, wall)) continue;
+        findings.push(finding(
+          RULES.structuralColumnClearance,
+          "error",
+          "structure",
+          "A conceptual column conflicts with a modeled door, window, or open connection.",
+          {
+            floorId: floor.id,
+            objectIds: [column.id, opening.id, wall.id],
+            suggestedAction: "Relocate the conceptual support point away from the opening and its junction clearance.",
+            repairType: "relocate_conceptual_column",
+          },
+        ));
+      }
+    }
+  }
+
+  for (const direction of ["x", "y"] as const) {
+    const coordinates = concept.axes
+      .filter((axis) => axis.direction === direction)
+      .map((axis) => axis.coordinateMm)
+      .sort((left, right) => left - right);
+    for (let index = 1; index < coordinates.length; index += 1) {
+      const bay = coordinates[index] - coordinates[index - 1];
+      if (bay <= concept.baselineMaxBayMm) continue;
+      findings.push(finding(
+        RULES.structuralBayBaseline,
+        "warning",
+        "structure",
+        "A conceptual grid bay exceeds BrickPilot's coordination baseline; this is not a structural span calculation.",
+        {
+          objectIds: concept.axes.filter((axis) => axis.direction === direction && (axis.coordinateMm === coordinates[index - 1] || axis.coordinateMm === coordinates[index])).map((axis) => axis.id),
+          measured: { value: bay, unit: "mm" },
+          required: { max: concept.baselineMaxBayMm, unit: "mm" },
+          suggestedAction: "Have a structural engineer confirm the framing strategy and member sizes.",
+        },
+        "baseline_heuristic",
+      ));
+    }
+  }
+  return findings;
+}
+
 function planningFindings(building: Building, requirements?: BuildingRequirements) {
   const findings: ValidationFinding[] = [];
   const requirementById = new Map(requirements?.rooms.map((room) => [room.id, room]) ?? []);
+  const minimumClearDimension: Partial<Record<BuildingRequirements["rooms"][number]["type"], number>> = {
+    bedroom: 2_700,
+    living: 2_700,
+    dining: 2_400,
+    kitchen: 2_100,
+    study: 2_100,
+    parking: 2_400,
+    bathroom: 1_200,
+    utility: 1_200,
+    foyer: 1_200,
+    pooja: 1_200,
+    store: 1_000,
+  };
   for (const floor of building.floors) {
     for (const opening of floor.openings.filter((candidate) => candidate.kind === "door")) {
       const accessibleRoute = opening.connects.some((id) => floor.spaces.find((space) => space.id === id)?.accessible);
@@ -216,8 +377,26 @@ function planningFindings(building: Building, requirements?: BuildingRequirement
         { floorId: floor.id, objectIds: [space.id], measured: { value: space.areaMm2, unit: "mm2" }, required: { min: requirement.minAreaMm2, unit: "mm2" }, suggestedAction: "Relax the room program or enlarge the buildable envelope." },
         "baseline_heuristic",
       ));
+      const requiredDimension = requirement ? minimumClearDimension[space.type] : undefined;
+      const shortDimension = Math.min(space.bounds.width, space.bounds.depth);
+      const longDimension = Math.max(space.bounds.width, space.bounds.depth);
+      const parkingTooShort = space.type === "parking" && longDimension < 4_800;
+      if (requiredDimension && (shortDimension < requiredDimension || parkingTooShort)) findings.push(finding(
+        RULES.roomMinimumDimension,
+        "warning",
+        "planning",
+        `${space.name} does not meet the concept-stage clear-dimension baseline.`,
+        {
+          floorId: floor.id,
+          objectIds: [space.id],
+          measured: { value: parkingTooShort ? longDimension : shortDimension, unit: "mm" },
+          required: { min: parkingTooShort ? 4_800 : requiredDimension, unit: "mm" },
+          suggestedAction: "Regenerate with a lower room count, larger envelope, or a better-proportioned room cluster.",
+        },
+        "baseline_heuristic",
+      ));
       const aspect = Math.max(space.bounds.width / space.bounds.depth, space.bounds.depth / space.bounds.width);
-      if (aspect > 4) findings.push(finding(
+      if (aspect > 4 && !["circulation", "stair", "terrace", "balcony", "parking"].includes(space.type)) findings.push(finding(
         RULES.roomAspect, "warning", "planning", `${space.name} has an inefficient aspect ratio.`,
         { floorId: floor.id, objectIds: [space.id], measured: { value: Number(aspect.toFixed(2)), unit: "ratio" }, required: { max: 4, unit: "ratio" } },
         "baseline_heuristic",
@@ -280,6 +459,7 @@ export function validateBuilding(building: Building, requirements?: BuildingRequ
     ...building.floors.flatMap(geometryFindings),
     ...building.floors.flatMap((floor) => openingFindings(floor, building.site.roadEdges)),
     ...verticalFindings(building),
+    ...structuralFindings(building),
     ...planningFindings(building, requirements),
     ...circulationQualityFindings(building, requirements),
   ];

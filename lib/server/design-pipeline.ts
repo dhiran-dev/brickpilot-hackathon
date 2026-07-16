@@ -45,7 +45,10 @@ export async function runDesignPipeline(
     evaluatedCandidateCount: generated.evaluatedCandidateCount,
     assumptions: [
       "Concept feasibility geometry uses rectangular planning cells and baseline residential heuristics.",
-      "Validation is not permit, structural, MEP, or jurisdictional approval.",
+      generated.building.structuralConcept
+        ? `${generated.building.structuralConcept.columns.length} aligned conceptual pillar locations were coordinated through the modeled floors. This is not member sizing, load analysis, foundation design, or structural approval.`
+        : "No preliminary column-coordination concept is available for this legacy result.",
+      "Validation is not permit, licensed architectural, structural, MEP, or jurisdictional approval.",
       costEstimate.status === "available"
         ? `Cost uses ${costEstimate.selection.ratePackName} (${costEstimate.selection.ratePackVersion}).`
         : "No native regional rate pack was available; cost is intentionally unavailable.",

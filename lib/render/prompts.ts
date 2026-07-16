@@ -2,26 +2,24 @@ import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import { massingMetrics } from "@/lib/render/massing";
 
-export type RenderPurpose = "exterior" | "interior";
+export const RENDER_CONTRACT_VERSION = 2;
+export const RENDER_PURPOSES = ["exterior_front", "exterior_collage", "exterior_top", "interior"] as const;
+export type RenderPurpose = (typeof RENDER_PURPOSES)[number];
+export type RenderSourceRole = "massing_front" | "massing_collage" | "massing_top" | "plan_reference";
 
 export type RenderSpec = {
   purpose: RenderPurpose;
-  requestedOutputCount: number;
+  sourceRole: RenderSourceRole;
+  requestedOutputCount: 1;
   prompt: string;
 };
 
-function metres(valueMm: number) {
-  return `${(valueMm / 1000).toFixed(2)} m`;
+export function isRenderPurpose(value: unknown): value is RenderPurpose {
+  return typeof value === "string" && (RENDER_PURPOSES as readonly string[]).includes(value);
 }
 
-function referenceContract(referenceCount: number) {
-  const roles = [
-    "Image 1 is the marked canonical plan board containing every floor; preserve its room boundaries, exterior outline, circulation and selected interior source.",
-    "Image 2 is the front three-quarter clay massing; preserve its silhouette, storey alignment and opening locations.",
-    "Image 3 is the rear three-quarter clay massing; preserve rear massing and opening locations.",
-    "Image 4 is the isometric clay massing; use it to reconcile the complete stacked geometry.",
-  ];
-  return roles.slice(0, referenceCount).join("\n");
+function metres(valueMm: number) {
+  return `${(valueMm / 1000).toFixed(2)} m`;
 }
 
 function buildingFacts(building: Building, requirements: BuildingRequirements) {
@@ -30,59 +28,102 @@ function buildingFacts(building: Building, requirements: BuildingRequirements) {
     .sort((left, right) => left.level - right.level)
     .map((floor) => `${floor.label}: footprint ${metres(floor.envelope.width)} × ${metres(floor.envelope.depth)}, floor-to-floor ${metres(floor.floorHeightMm)}, ${floor.openings.filter((opening) => opening.connects.includes("EXTERIOR")).length} exterior openings`)
     .join("; ");
-  return `Canonical facts: exactly ${metrics.storeys} storey${metrics.storeys === 1 ? "" : "s"}; overall height ${metrics.heightM.toFixed(2)} m; site ${metres(building.site.widthMm)} × ${metres(building.site.depthMm)}; facing ${building.site.facing}; road edge(s) ${building.site.roadEdges.join(", ")}; location ${requirements.region.locality ?? requirements.region.adminArea}, ${requirements.region.countryCode}; quality tier ${requirements.budget.qualityTier}. Floors: ${floorFacts}.`;
+  return `Canonical facts: exactly ${metrics.storeys} storey${metrics.storeys === 1 ? "" : "s"}; overall height ${metrics.heightM.toFixed(2)} m; site ${metres(building.site.widthMm)} × ${metres(building.site.depthMm)}; facing ${building.site.facing}; road edge(s) ${building.site.roadEdges.join(", ")}; location ${requirements.region.locality ?? requirements.region.adminArea}, ${requirements.region.countryCode}; architectural style ${requirements.architecture.style.replaceAll("_", " ")}; built-form strategy ${requirements.architecture.formStrategy.replaceAll("_", " ")}; roof character ${requirements.architecture.roofCharacter.replaceAll("_", " ")}; material direction ${requirements.architecture.materialDirection.replaceAll("_", " ")}; quality tier ${requirements.budget.qualityTier}. Floors: ${floorFacts}.`;
+}
+
+function materialSchedule(requirements: BuildingRequirements) {
+  const schedules: Record<BuildingRequirements["architecture"]["materialDirection"], string> = {
+    warm_natural: "warm mineral plaster, locally appropriate stone, durable timber-toned screens and warm-grey metal",
+    light_mineral: "pale mineral plaster, light local stone, restrained natural timber and champagne-grey metal",
+    earthy_textured: "earth-toned lime plaster, textured brick or laterite accents, local stone and dark timber",
+    monochrome: "refined exposed-concrete tones, charcoal metal, clear glazing and sparse warm timber accents",
+  };
+  return schedules[requirements.architecture.materialDirection];
+}
+
+function exteriorEditPrompt(input: {
+  building: Building;
+  requirements: BuildingRequirements;
+  sourceLabel: string;
+  outputDirection: string;
+  collage?: boolean;
+}) {
+  const locality = input.requirements.region.locality ?? input.requirements.region.adminArea;
+  const compositionLock = input.collage
+    ? "Preserve the exact 2-by-2 panel grid, the camera and crop inside every panel, and the relationship between all four views. Keep one consistent material schedule across every panel. Retain small clean panel captions, but remove all SOURCE and CAMERA LOCK annotations."
+    : "Preserve the source camera position, focal length, crop, horizon and pixel-space composition exactly. Remove the SOURCE/CAMERA LOCK annotation, clay edge lines and site grid from the final photograph.";
+  return `EDIT THE SUPPLIED ARCHITECTURAL SOURCE IMAGE. It is labeled \"${input.sourceLabel}\" and is the authoritative camera and geometry reference. Do not invent a new camera or reinterpret the building.
+
+GEOMETRY AND CAMERA LOCK
+${buildingFacts(input.building, input.requirements)}
+Preserve the exact building silhouette, storey count, floor heights, stacked footprints, setbacks, projections, wall planes, stair/core alignment, roof and parapet outline, and every visible door and window aperture. Every opening is immutable in count, shape, size and position. Do not rotate, mirror, widen or narrow the house. Do not add or remove a floor, wing, balcony, canopy, entrance, major void, door or window. ${compositionLock}
+
+MATERIAL-ONLY ARCHITECTURAL EDIT
+Convert only the clay surfaces into a coherent, buildable ${input.requirements.architecture.style.replaceAll("_", " ")} residence suitable for ${locality}. Apply this locked shared schedule: ${materialSchedule(input.requirements)}. Respect the requested ${input.requirements.architecture.roofCharacter.replaceAll("_", " ")} roof character only where it already exists in the source silhouette. Use climate-suitable shade, realistic glazing, subtle shallow reveals, modest planting and warm architectural lighting. Materials are surface finishes: they must not alter usable floor area or the primary silhouette. Keep all construction thicknesses physically believable and keep the palette identical across the other views.
+
+OUTPUT
+${input.outputDirection} Photorealistic premium architectural visualization, landscape 3:2, realistic 28–35 mm architectural lens, natural perspective and physically believable lighting. No people, cars, pools, fantasy forms, extra glass, text, logos or watermarks.`;
 }
 
 export function buildRenderSpecs(input: {
   building: Building;
   requirements: BuildingRequirements;
   selectedInteriorSpaceId: string;
-  referenceCount: number;
-}): { exterior: RenderSpec; interior: RenderSpec } {
-  const { building, requirements, selectedInteriorSpaceId, referenceCount } = input;
+}): RenderSpec[] {
+  const { building, requirements, selectedInteriorSpaceId } = input;
   const selected = building.floors.flatMap((floor) => floor.spaces).find((space) => space.id === selectedInteriorSpaceId);
   if (!selected) throw new Error("INTERIOR_SPACE_NOT_FOUND");
   const selectedFloor = building.floors.find((floor) => floor.id === selected.floorId)!;
   const selectedOpenings = selectedFloor.openings.filter((opening) => opening.connects.includes(selected.id));
   const exteriorOpenings = selectedOpenings.filter((opening) => opening.connects.includes("EXTERIOR"));
-  const facts = buildingFacts(building, requirements);
-  const references = referenceContract(referenceCount);
+  const locality = requirements.region.locality ?? requirements.region.adminArea;
 
-  const exteriorPrompt = `Create three coordinated, photorealistic exterior concept renders of the SAME detached residence represented by the supplied architectural references.
+  const interiorPrompt = `Create one photorealistic furnished interior photograph for the room highlighted in the supplied canonical plan source labeled \"SOURCE D · INTERIOR · PLAN-DERIVED CAMERA\".
 
-REFERENCE CONTRACT
-${references}
+PLAN AND ROOM LOCK
+The supplied image is a plan-derived fallback, not a perspective photograph. Translate only the highlighted INTERIOR SOURCE room into one eye-level view; do not reproduce the plan board in the output. Selected room: ${selected.name} (${selected.type}) on ${selectedFloor.label}; canonical clear planning bounds ${metres(selected.bounds.width)} × ${metres(selected.bounds.depth)}; ${selectedOpenings.length} connected openings including ${exteriorOpenings.length} exterior opening${exteriorOpenings.length === 1 ? "" : "s"}. Preserve the rectangular room boundary, door/window count, opening relationships, circulation and daylight directions shown in the plan. Do not invent a second room, move an opening, widen the footprint or change the ceiling height. ${buildingFacts(building, requirements)}
 
-GEOMETRY LOCK
-${facts}
-Keep the exact floor count, footprint setbacks, floor heights, stacked volumes, stair/core alignment and exterior door/window positions visible in the references. Do not add, remove or move a storey, wing, balcony, entrance, major void, door or window. Do not mirror or rotate the house relative to the road. If references disagree, Image 1 controls plan geometry and Images 2–4 control the three-dimensional silhouette.
+FURNISHING AND MATERIALS
+Create a tasteful, practical ${requirements.budget.qualityTier.replaceAll("_", " ")} ${selected.type} suitable for ${locality} in a ${requirements.architecture.style.replaceAll("_", " ")} character. Add correctly scaled furniture, clear circulation, durable flooring, warm-neutral layered lighting, curtains only where windows exist, and one or two restrained framed paintings. Use the same ${materialSchedule(requirements)} schedule as the exterior concepts.
 
-ALLOWED DESIGN WORK
-Apply a coherent contemporary residential exterior appropriate to ${requirements.region.locality ?? requirements.region.adminArea}: climate-suitable shade, restrained local stone or mineral plaster, durable timber-toned screening, realistic glazing, buildable parapets, subtle boundary treatment and modest planting. Use physically believable materials and construction thicknesses. Show warm interior light and refined exterior lighting without changing openings.
+OUTPUT
+Exactly one continuous full-bleed landscape 3:2 interior architectural photograph, eye-level 24–28 mm lens, natural daylight and warm practical lighting. Remove source labels and plan graphics. No floor-plan collage, false windows, blocked doors, people, text, logos or watermarks.`;
 
-OUTPUT DIRECTION
-The API requests three separate image files. Each returned file must contain exactly ONE continuous, full-bleed landscape 3:2 architectural photograph with one camera angle. Never place multiple views, panels or frames inside one image. Across the three files, vary between a front/arrival three-quarter view, a rear/garden three-quarter view and a complementary eye-level exterior view. Keep materials and lighting consistent across all three. Premium architectural visualization, realistic 28–35 mm lens, natural perspective, no aerial drone view.
-
-Avoid contact sheets, collages, diptychs, triptychs, inset images, fantasy architecture, impossible cantilevers, extra floors, excessive glass, generic white-box mansion styling, people, cars, pools, text, logos and watermarks. These are concept renders grounded in the plan, not construction documents.`;
-
-  const interiorPrompt = `Create one photorealistic furnished interior concept for the exact selected room in the supplied architectural references.
-
-REFERENCE CONTRACT
-${references}
-
-ROOM LOCK
-Selected room: ${selected.name} (${selected.type}) on ${selectedFloor.label}; canonical clear planning bounds ${metres(selected.bounds.width)} × ${metres(selected.bounds.depth)}; ${selectedOpenings.length} connected openings including ${exteriorOpenings.length} exterior opening${exteriorOpenings.length === 1 ? "" : "s"}. Preserve its rectangular boundary, doors, windows, circulation openings and daylight directions from Image 1. Do not invent a second room, move an opening, widen the footprint or change the ceiling height. ${facts}
-
-ALLOWED DESIGN WORK
-Assume a tasteful, practical ${requirements.budget.qualityTier.replaceAll("_", " ")} residential interior suitable for ${requirements.region.locality ?? requirements.region.adminArea}. Add correctly scaled furniture appropriate to a ${selected.type}, layered warm-neutral lighting, durable flooring, a restrained material palette, curtains where windows exist, and one or two tasteful framed paintings or wall artworks. Maintain clear circulation and believable furniture clearances.
-
-OUTPUT DIRECTION
-One landscape 3:2, eye-level 24–28 mm interior architectural photograph with natural daylight and warm practical lighting, physically believable materials and lived-in restraint.
-
-Avoid changing geometry, blocking doors, placing furniture across circulation, false windows, excessive luxury, visual clutter, people, text, logos and watermarks. This is a concept render grounded in the selected room, not construction documentation.`;
-
-  return {
-    exterior: { purpose: "exterior", requestedOutputCount: 3, prompt: exteriorPrompt },
-    interior: { purpose: "interior", requestedOutputCount: 1, prompt: interiorPrompt },
-  };
+  return [
+    {
+      purpose: "exterior_front",
+      sourceRole: "massing_front",
+      requestedOutputCount: 1,
+      prompt: exteriorEditPrompt({
+        building,
+        requirements,
+        sourceLabel: "SOURCE A · FRONT / ROAD · CAMERA LOCK",
+        outputDirection: "One complete front/arrival three-quarter view from exactly the supplied camera.",
+      }),
+    },
+    {
+      purpose: "exterior_collage",
+      sourceRole: "massing_collage",
+      requestedOutputCount: 1,
+      prompt: exteriorEditPrompt({
+        building,
+        requirements,
+        sourceLabel: "SOURCE B · COLLAGE · FOUR LOCKED VIEWS",
+        outputDirection: "One polished 2-by-2 architectural presentation board matching all four supplied massing panels.",
+        collage: true,
+      }),
+    },
+    {
+      purpose: "exterior_top",
+      sourceRole: "massing_top",
+      requestedOutputCount: 1,
+      prompt: exteriorEditPrompt({
+        building,
+        requirements,
+        sourceLabel: "SOURCE C · HIGH 3/4 · FRONT + RIGHT · CAMERA LOCK",
+        outputDirection: "One complete elevated front-right perspective from exactly the supplied camera; this is not a drone redesign.",
+      }),
+    },
+    { purpose: "interior", sourceRole: "plan_reference", requestedOutputCount: 1, prompt: interiorPrompt },
+  ];
 }

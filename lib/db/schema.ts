@@ -25,7 +25,20 @@ export const generationKind = pgEnum("generation_kind", ["design", "render"]);
 export const generationStatus = pgEnum("generation_status", ["queued", "processing", "completed", "failed", "canceled"]);
 export const generationProvider = pgEnum("generation_provider", ["brickpilot", "fireworks", "replicate"]);
 export const assetKind = pgEnum("asset_kind", ["floor_plan", "render", "report", "source"]);
-export const assetRole = pgEnum("asset_role", ["legacy", "plan_reference", "massing_front", "massing_rear", "massing_iso", "exterior", "interior"]);
+export const assetRole = pgEnum("asset_role", [
+  "legacy",
+  "plan_reference",
+  "massing_front",
+  "massing_rear",
+  "massing_iso",
+  "massing_collage",
+  "massing_top",
+  "exterior",
+  "exterior_front",
+  "exterior_collage",
+  "exterior_top",
+  "interior",
+]);
 export const webhookProvider = pgEnum("webhook_provider", ["replicate"]);
 
 export const users = pgTable("users", {

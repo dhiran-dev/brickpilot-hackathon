@@ -2,13 +2,19 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { generatedAssets, generationJobs, layoutVersions } from "@/lib/db/schema";
+import { isRenderPurpose } from "@/lib/render/prompts";
 import { getReplicatePrediction, predictionOutputs, providerStatus, safePredictionPayload, type ReplicatePrediction } from "@/lib/render/replicate";
 import { storeRemoteRender } from "@/lib/render/storage";
 
 const ACTIVE_STATUSES = ["queued", "processing"] as const;
 
 function requestMetadata(value: Record<string, unknown>) {
-  const purpose = value.renderPurpose === "interior" ? "interior" : value.renderPurpose === "exterior" ? "exterior" : null;
+  // Keep accepting contract-v1 jobs that were already in flight during rollout.
+  const purpose = isRenderPurpose(value.renderPurpose)
+    ? value.renderPurpose
+    : value.renderPurpose === "exterior" || value.renderPurpose === "interior"
+      ? value.renderPurpose
+      : null;
   const requestedOutputCount = Number(value.requestedOutputCount);
   if (!purpose || !Number.isInteger(requestedOutputCount) || requestedOutputCount < 1 || requestedOutputCount > 3) {
     throw new Error("Render job metadata is invalid");

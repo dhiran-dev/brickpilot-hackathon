@@ -52,6 +52,27 @@ describe("parseNaturalLanguageIntake", () => {
     expect(result.requirements.rooms.filter((room) => room.type === "bedroom" && room.floorId === "F1")).toHaveLength(1);
   });
 
+  test("extracts bounded architectural taste without allowing geometry", async () => {
+    const result = await parseNaturalLanguageIntake("A stepped Kerala contemporary home with earthy materials and a mixed roof", {
+      complete: async () => ({
+        bedroomsGroundFloor: 2,
+        architecturalStyle: "kerala_contemporary",
+        formStrategy: "stepped_terraces",
+        roofCharacter: "mixed",
+        materialDirection: "earthy_textured",
+      }),
+    });
+    expect(result.status).toBe("parsed");
+    if (result.status !== "parsed") throw new Error("expected parsed");
+    expect(result.requirements.architecture).toEqual({
+      style: "kerala_contemporary",
+      formStrategy: "stepped_terraces",
+      roofCharacter: "mixed",
+      materialDirection: "earthy_textured",
+    });
+    expect(result.assumptions.some((assumption) => assumption.startsWith("Assumed a climate-responsive"))).toBe(false);
+  });
+
   test("infers storey count from an upper-floor allocation", async () => {
     const result = await parseNaturalLanguageIntake("Bedrooms on the ground and first floor", {
       complete: async () => ({ floorPrograms: [{ level: 0, bedrooms: 1 }, { level: 1, bedrooms: 2 }] }),
