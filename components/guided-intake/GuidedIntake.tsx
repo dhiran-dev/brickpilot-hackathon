@@ -89,7 +89,13 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   const capacity = useMemo(() => requirements ? assessBriefCapacity(requirements) : null, [requirements]);
 
   useEffect(() => {
-    if (initialValue) { setHydrated(true); return; }
+    if (initialValue) {
+      setDraft(draftFromRequirements(initialValue));
+      setStepIndex(0);
+      setError(null);
+      setHydrated(true);
+      return;
+    }
     try {
       const saved = window.localStorage.getItem(`brickpilot:intake:${storageKey}`);
       if (saved) {
@@ -177,15 +183,16 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   }
 
   async function submit() {
+    const incompleteStepIndex = STEPS.findIndex((candidate) => !stepReady(candidate.id, draft));
+    if (incompleteStepIndex >= 0) {
+      setStepIndex(incompleteStepIndex);
+      setError(`Complete the ${STEPS[incompleteStepIndex].label.toLowerCase()} step before generating.`);
+      return;
+    }
     if (!requirements) { setError("Some answers do not form a valid building brief yet. Review the highlighted step values."); return; }
     if (capacity?.blocking) { setError("The minimum room programme is larger than the usable floor area. Follow the capacity recommendations above before generating."); return; }
-    const values = new Uint32Array(1);
-    window.crypto.getRandomValues(values);
-    const seed = values[0];
-    const seededDraft = { ...draft, seed };
-    const parsed = buildingRequirementsSchema.safeParse(createRequirements(seededDraft));
+    const parsed = buildingRequirementsSchema.safeParse(createRequirements(draft));
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "The brief is incomplete."); return; }
-    setDraft(seededDraft);
     setError(null);
     await onSubmit(parsed.data);
   }

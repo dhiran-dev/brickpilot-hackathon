@@ -146,6 +146,7 @@ export const layoutVersions = pgTable(
     layoutJson: jsonb("layout_json").$type<Record<string, unknown>>(),
     validation: jsonb("validation").$type<Record<string, unknown>>(),
     costEstimate: jsonb("cost_estimate").$type<Record<string, unknown>>(),
+    aiReview: jsonb("ai_review").$type<Record<string, unknown>>(),
     failureReason: text("failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

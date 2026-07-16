@@ -180,6 +180,11 @@ export type RoomType = z.infer<typeof roomTypeSchema>;
 export type PreferredZone = z.infer<typeof preferredZoneSchema>;
 export type CardinalDirection = z.infer<typeof cardinalDirectionSchema>;
 
+export function hasMinimumResidentialRoomProgram(requirements: BuildingRequirements) {
+  return requirements.rooms.some((room) => room.type === "bedroom")
+    && requirements.rooms.some((room) => room.type === "bathroom");
+}
+
 export function squareMetresToMm2(value: number) {
   return Math.round(value * 1_000_000);
 }

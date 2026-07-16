@@ -1,13 +1,12 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { BuildingGenerationError, generateBuilding } from "@/lib/building/generate";
-import { buildingRequirementsSchema } from "@/lib/building/requirements";
+import { buildingRequirementsSchema, hasMinimumResidentialRoomProgram } from "@/lib/building/requirements";
 import { requireUser } from "@/lib/auth";
-import { estimateBuildingCost } from "@/lib/cost";
 import { db } from "@/lib/db";
 import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 import { classifyPersistedStudy } from "@/lib/design/persisted-study";
+import { runDesignPipeline } from "@/lib/server/design-pipeline";
 
 function configuredLimit(value: string | undefined, fallback: number) {
   const parsed = Number(value);
@@ -32,6 +31,12 @@ function jsonRecord(value: unknown) {
   return value as Record<string, unknown>;
 }
 
+class BuildingGenerationErrorLike extends Error {
+  constructor(readonly result: Extract<Awaited<ReturnType<typeof runDesignPipeline>>, { status: "failed" }>) {
+    super(result.message);
+  }
+}
+
 export async function GET(request: Request) {
   const user = await requireUser(request);
   if (!user) return errorResponse("Authentication is required.", 401, "AUTH_REQUIRED");
@@ -40,6 +45,7 @@ export async function GET(request: Request) {
     .select({
       projectId: projects.id,
       designId: layoutVersions.id,
+      version: layoutVersions.version,
       title: projects.title,
       status: layoutVersions.status,
       createdAt: layoutVersions.createdAt,
@@ -47,6 +53,7 @@ export async function GET(request: Request) {
       building: layoutVersions.layoutJson,
       validation: layoutVersions.validation,
       costEstimate: layoutVersions.costEstimate,
+      aiReview: layoutVersions.aiReview,
     })
     .from(layoutVersions)
     .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
@@ -93,7 +100,12 @@ export async function POST(request: Request) {
       parsed.error.flatten(),
     );
   }
-  const requirements = parsed.data;
+  if (!hasMinimumResidentialRoomProgram(parsed.data)) {
+    return errorResponse("Add at least one bedroom and one bathroom before generating a residential study.", 400, "INCOMPLETE_ROOM_PROGRAM");
+  }
+  const randomSeed = new Uint32Array(1);
+  crypto.getRandomValues(randomSeed);
+  const requirements = { ...parsed.data, seed: randomSeed[0] };
 
   const now = new Date();
   const summary = `Structured residential requirements v${requirements.requirementSchemaVersion}; ${requirements.floors.length} floor(s); ${requirements.rooms.length} requested rooms.`;
@@ -113,8 +125,8 @@ export async function POST(request: Request) {
       dayStart.setUTCHours(0, 0, 0, 0);
       const [usage] = await transaction
         .select({
-          hourly: sql<number>`count(*) filter (where ${generationJobs.createdAt} >= ${hourStart})::integer`,
-          daily: sql<number>`count(*) filter (where ${generationJobs.createdAt} >= ${dayStart})::integer`,
+          hourly: sql<number>`count(*) filter (where ${gte(generationJobs.createdAt, hourStart)})::integer`,
+          daily: sql<number>`count(*) filter (where ${gte(generationJobs.createdAt, dayStart)})::integer`,
         })
         .from(generationJobs)
         .innerJoin(layoutVersions, eq(generationJobs.layoutVersionId, layoutVersions.id))
@@ -165,36 +177,27 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof GenerationRateLimitError) return errorResponse(error.message, 429, "RATE_LIMITED", { scope: error.scope, limit: error.limit, retryAfterSeconds: error.retryAfterSeconds });
+    console.error("Design generation reservation failed", error);
     return errorResponse("Unable to reserve this generation safely. No partial study was saved.", 500, "GENERATION_RESERVATION_FAILED");
   }
   const { created, layout, job } = queued;
 
   try {
-    const generated = generateBuilding(requirements);
-    const costEstimate = estimateBuildingCost(generated.building, requirements);
+    const pipelineResult = await runDesignPipeline(requirements);
+    if (pipelineResult.status === "failed") throw new BuildingGenerationErrorLike(pipelineResult);
+    const { building, validation, costEstimate, intent, aiReview } = pipelineResult;
     const completedAt = new Date();
-    const intent = {
-      requirementSchemaVersion: requirements.requirementSchemaVersion,
-      buildingSchemaVersion: generated.building.buildingSchemaVersion,
-      rendererVersion: generated.building.rendererVersion,
-      evaluatedCandidateCount: generated.evaluatedCandidateCount,
-      assumptions: [
-        "Concept feasibility geometry uses rectangular planning cells and baseline residential heuristics.",
-        "Validation is not permit, structural, MEP, or jurisdictional approval.",
-        costEstimate.status === "available"
-          ? `Cost uses ${costEstimate.selection.ratePackName} (${costEstimate.selection.ratePackVersion}).`
-          : "No native regional rate pack was available; cost is intentionally unavailable.",
-      ],
-    };
     const response = {
       projectId: created.id,
       designId: layout.id,
+      version: layout.version,
       title: requirements.projectName,
       requirements,
-      building: generated.building,
-      validation: generated.validation,
+      building,
+      validation,
       costEstimate,
       intent,
+      aiReview,
     };
 
     await db.transaction(async (transaction) => {
@@ -203,9 +206,10 @@ export async function POST(request: Request) {
         .set({
           status: "completed",
           intent: jsonRecord(intent),
-          layoutJson: jsonRecord(generated.building),
-          validation: jsonRecord(generated.validation),
+          layoutJson: jsonRecord(building),
+          validation: jsonRecord(validation),
           costEstimate: jsonRecord(costEstimate),
+          aiReview: jsonRecord(aiReview),
           updatedAt: completedAt,
         })
         .where(eq(layoutVersions.id, layout.id));
@@ -222,7 +226,7 @@ export async function POST(request: Request) {
     return NextResponse.json(response, { status: 201 });
   } catch (error) {
     const failedAt = new Date();
-    const generationError = error instanceof BuildingGenerationError ? error : undefined;
+    const generationError = error instanceof BuildingGenerationErrorLike ? error.result : undefined;
     const code = generationError?.code ?? "GENERATION_FAILED";
     const message = generationError?.message ?? "Unable to create a deterministic concept for these requirements.";
     await db.transaction(async (transaction) => {

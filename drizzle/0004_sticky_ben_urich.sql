@@ -1,0 +1,1 @@
+ALTER TABLE "layout_versions" ADD COLUMN "ai_review" jsonb;

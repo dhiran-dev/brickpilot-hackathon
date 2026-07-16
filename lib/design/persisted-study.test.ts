@@ -37,7 +37,7 @@ const building = {
 
 const validation = { rulePackVersion: "rules-v1", valid: true, score: 100, counts: { error: 0, warning: 0, info: 0 }, findings: [] };
 const costEstimate = { estimateSchemaVersion: 1, generatedAt: "2026-07-16T00:00:00.000Z", currency: "INR", locale: "en-IN", warnings: [], status: "unavailable", confidence: "unavailable", reason: "no_rate_pack", improveConfidenceActions: [] };
-const row: PersistedStudyRow = { projectId: "project", designId: "design", title: "Saved study", status: "completed", createdAt: new Date("2026-07-16T00:00:00.000Z"), requirements, building, validation, costEstimate };
+const row: PersistedStudyRow = { projectId: "project", designId: "design", version: 1, title: "Saved study", status: "completed", createdAt: new Date("2026-07-16T00:00:00.000Z"), requirements, building, validation, costEstimate, aiReview: null };
 
 describe("persisted study compatibility", () => {
   test("returns only schema-valid completed payloads as openable", () => {
@@ -48,7 +48,7 @@ describe("persisted study compatibility", () => {
 
   test("marks legacy building JSON instead of returning it as openable", () => {
     const result = classifyPersistedStudy({ ...row, building: { buildingSchemaVersion: 1 } });
-    expect(result).toMatchObject({ compatible: false, study: { compatibility: "legacy_incompatible", reason: "INVALID_BUILDING" } });
+    expect(result).toMatchObject({ compatible: false, study: { version: 1, compatibility: "legacy_incompatible", reason: "INVALID_BUILDING" } });
   });
 
   test("marks invalid requirements and keeps unfinished valid rows non-openable", () => {
@@ -56,5 +56,17 @@ describe("persisted study compatibility", () => {
     const pending = classifyPersistedStudy({ ...row, status: "planning", building: { invalid: true } });
     expect(pending.compatible).toBe(true);
     if (pending.compatible) expect(pending.study.building).toBeNull();
+  });
+
+  test("round-trips valid stored reviews and rejects invalid review payloads", () => {
+    const reviewed = classifyPersistedStudy({
+      ...row,
+      aiReview: { status: "reviewed", review: { concurs: true, confidence: "high", citedConcerns: [], requirementDeltas: [] } },
+    });
+    expect(reviewed).toMatchObject({ compatible: true, study: { aiReview: { status: "reviewed" } } });
+    expect(classifyPersistedStudy({ ...row, aiReview: { status: "reviewed", review: { concurs: "yes" } } })).toMatchObject({
+      compatible: false,
+      study: { reason: "INVALID_AI_REVIEW" },
+    });
   });
 });

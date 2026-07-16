@@ -1,4 +1,5 @@
 import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomType } from "@/lib/building/requirements";
+import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
 
 export type FloorProgram = { bedrooms: number; bathrooms: number; attachedBathrooms: number; studies: number; balcony: boolean };
 
@@ -77,25 +78,6 @@ export const DEFAULT_INTAKE_DRAFT: IntakeDraft = {
   seed: 42,
 };
 
-const ROOM_AREAS: Record<RoomType, { min: number; target: number }> = {
-  living: { min: 15, target: 22 },
-  dining: { min: 9, target: 13 },
-  kitchen: { min: 8, target: 12 },
-  bedroom: { min: 10, target: 14 },
-  bathroom: { min: 3.2, target: 4.5 },
-  pooja: { min: 2.5, target: 4 },
-  utility: { min: 3.5, target: 5 },
-  foyer: { min: 3, target: 5 },
-  parking: { min: 14, target: 18 },
-  study: { min: 7, target: 10 },
-  balcony: { min: 4, target: 7 },
-  circulation: { min: 4, target: 8 },
-  stair: { min: 6, target: 9 },
-  store: { min: 2, target: 3 },
-  courtyard: { min: 8, target: 14 },
-  terrace: { min: 8, target: 16 },
-};
-
 const ZERO_DECIMAL_CURRENCIES = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
 
 function minorFactor(currency: string) {
@@ -104,11 +86,6 @@ function minorFactor(currency: string) {
 
 function inputUnitToMm(value: number, unit: IntakeDraft["displayUnit"]) {
   return Math.round(value * (unit === "metric" ? 1000 : 304.8));
-}
-
-function area(type: RoomType) {
-  const values = ROOM_AREAS[type];
-  return { minAreaMm2: squareMetresToMm2(values.min), targetAreaMm2: squareMetresToMm2(values.target) };
 }
 
 export function normalizeFloorProgram(program: Partial<FloorProgram> | undefined, fallback: FloorProgram): FloorProgram {
@@ -178,7 +155,7 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
   let accessibleBathroomAssigned = false;
 
   function addRoom(room: { id: string; name: string; type: RoomType; floorId: string; privacy: "public" | "semi_private" | "private" | "service"; preferredZone?: BuildingRequirements["rooms"][number]["preferredZone"]; mustBeExterior?: boolean; accessible?: boolean }) {
-    rooms.push({ ...room, ...area(room.type), preferredZone: room.preferredZone ?? "any", mustBeExterior: room.mustBeExterior ?? false, accessible: room.accessible ?? false });
+    rooms.push({ ...room, ...roomAreaDefaultsMm2(room.type), preferredZone: room.preferredZone ?? "any", mustBeExterior: room.mustBeExterior ?? false, accessible: room.accessible ?? false });
   }
 
   const primaryRoadEdge = draft.roadEdges.includes(draft.facing) ? draft.facing : draft.roadEdges[0] ?? draft.facing;
