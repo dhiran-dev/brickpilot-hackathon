@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BadgeCheck, ChevronRight, Clock3, Coins, LoaderCircle, LogOut, Plus, RotateCcw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Box, ChevronRight, Clock3, Coins, LoaderCircle, LogOut, Plus, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { CadWorkspace } from "@/components/cad-workspace";
 import { GuidedIntake } from "@/components/guided-intake";
@@ -234,7 +235,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, userName }: { hasPr
             {isGenerating ? <div className="grid min-h-[44rem] place-items-center border border-[#8e5a31]/55 bg-[#0d0c0a] p-8 text-center"><div className="max-w-md"><LoaderCircle className="mx-auto h-9 w-9 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-6 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Evaluating deterministic candidates</p><h1 className="mt-4 font-[family-name:var(--font-display)] text-5xl font-normal leading-[0.95] tracking-[-0.04em]">Building a plan that can explain itself<span className="text-[#ff4e00]">.</span></h1><p className="mt-5 text-sm leading-6 text-[#9d8f82]">Normalizing shared walls, placing openings and stairs, proving circulation, reconciling regional cost, and composing the drawing sheet.</p></div></div> : null}
 
             {result && !isGenerating ? <div className="reveal space-y-5">
-              <div className="flex flex-wrap items-end justify-between gap-4 border border-[#8e5a31]/50 bg-[#0d0c0a] px-5 py-4"><div><p className="text-[0.62rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Study {result.designId.slice(0, 8)} · immutable v{result.version ?? 1}</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-4xl tracking-[-0.035em]">{result.title}</h1></div><button className="inline-flex items-center gap-2 border border-[#c97940] px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em] transition hover:bg-[#171512]" onClick={() => { setResult(null); setPrefill(null); setHighlightedObjectIds([]); }} type="button"><Plus className="h-3.5 w-3.5" /> New study</button></div>
+              <div className="flex flex-wrap items-end justify-between gap-4 border border-[#8e5a31]/50 bg-[#0d0c0a] px-5 py-4"><div><p className="text-[0.62rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Study {result.designId.slice(0, 8)} · immutable v{result.version ?? 1}</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-4xl tracking-[-0.035em]">{result.title}</h1></div><div className="flex flex-wrap items-center gap-2"><Link className="inline-flex items-center gap-2 bg-[#e94300] px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea] transition hover:bg-[#ff4e00]" href={`/workspace/designs/${result.designId}/massing`}><Box className="h-3.5 w-3.5" /> Explore 3D massing</Link><button className="inline-flex items-center gap-2 border border-[#c97940] px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em] transition hover:bg-[#171512]" onClick={() => { setResult(null); setPrefill(null); setHighlightedObjectIds([]); }} type="button"><Plus className="h-3.5 w-3.5" /> New study</button></div></div>
 
               <CadWorkspace building={result.building} findings={findingInputs} highlightedObjectIds={highlightedObjectIds} projectName={result.title} storageKey={result.projectId} />
 

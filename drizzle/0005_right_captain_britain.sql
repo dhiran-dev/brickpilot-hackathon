@@ -1,0 +1,2 @@
+CREATE TYPE "public"."asset_role" AS ENUM('legacy', 'plan_reference', 'massing_front', 'massing_rear', 'massing_iso', 'exterior', 'interior');--> statement-breakpoint
+ALTER TABLE "generated_assets" ADD COLUMN "role" "asset_role" DEFAULT 'legacy' NOT NULL;

@@ -2,19 +2,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { generationJobs, webhookEvents } from "@/lib/db/schema";
+import { applyReplicatePrediction } from "@/lib/render/finalize-job";
+import { replicatePredictionSchema } from "@/lib/render/replicate";
 
 const MAX_WEBHOOK_AGE_SECONDS = 300;
-
-const replicateEventSchema = z.object({
-  id: z.string().min(1),
-  status: z.enum(["starting", "processing", "succeeded", "failed", "canceled"]),
-  output: z.unknown().optional(),
-  error: z.unknown().optional(),
-});
 
 function verifySignature(rawBody: string, headers: Headers) {
   const secret = process.env.REPLICATE_WEBHOOK_SECRET;
@@ -54,7 +48,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Webhook body must be valid JSON." }, { status: 400 });
   }
 
-  const event = replicateEventSchema.safeParse(payload);
+  const event = replicatePredictionSchema.safeParse(payload);
   if (!event.success) return NextResponse.json({ error: "Unsupported Replicate payload." }, { status: 400 });
 
   const eventId = request.headers.get("webhook-id");
@@ -79,29 +73,8 @@ export async function POST(request: Request) {
     .where(and(eq(generationJobs.provider, "replicate"), eq(generationJobs.providerJobId, event.data.id)))
     .limit(1);
 
-  const terminalStatuses = new Set(["completed", "failed", "canceled"]);
   const receivedAt = new Date();
-  if (job && !terminalStatuses.has(job.status)) {
-    const status =
-      event.data.status === "succeeded"
-        ? "completed"
-        : event.data.status === "failed"
-          ? "failed"
-          : event.data.status === "canceled"
-            ? "canceled"
-            : "processing";
-    await db
-      .update(generationJobs)
-      .set({
-        status,
-        responsePayload: payload as Record<string, unknown>,
-        failureReason: event.data.status === "failed" ? String(event.data.error ?? "Replicate failed") : null,
-        startedAt: job.startedAt ?? receivedAt,
-        completedAt: terminalStatuses.has(status) ? receivedAt : null,
-        updatedAt: receivedAt,
-      })
-      .where(eq(generationJobs.id, job.id));
-  }
+  if (job) await applyReplicatePrediction(job.id, event.data);
 
   await db.update(webhookEvents).set({ processedAt: receivedAt }).where(eq(webhookEvents.id, receivedEvent.id));
   return NextResponse.json({ received: true });
