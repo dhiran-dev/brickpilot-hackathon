@@ -20,6 +20,7 @@ import {
   LockKeyhole,
   MousePointer2,
   Move3d,
+  Presentation,
   RefreshCw,
   Rotate3d,
   Ruler,
@@ -263,7 +264,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
       <section className="overflow-hidden border border-[#8e5a31]/55 bg-[#0c0b09] shadow-[9px_10px_0_rgba(3,3,2,0.72)]">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/45 bg-[#0b0a09] px-5 py-4">
           <div><p className="text-[0.59rem] font-extrabold uppercase tracking-[0.15em] text-[#ff8d49]">Massing model · deterministic</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em]">{study.title}</h1></div>
-          <div className="flex items-center gap-2"><span className="inline-flex items-center gap-2 border border-[#38765a]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#7bc79e]"><BadgeCheck className="h-3.5 w-3.5" /> Geometry verified</span><Link className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#cdbdab] hover:bg-[#171512]" href="/workspace"><ArrowLeft className="h-3.5 w-3.5" /> Back to 2D</Link></div>
+          <div className="flex items-center gap-2"><span className="inline-flex items-center gap-2 border border-[#38765a]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#7bc79e]"><BadgeCheck className="h-3.5 w-3.5" /> Geometry verified</span>{renderState.status === "completed" ? <Link className="inline-flex items-center gap-2 border border-[#ff4e00]/70 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#ff9d6b] hover:bg-[#171512]" href={`/workspace/designs/${layoutVersionId}/deck`}><Presentation className="h-3.5 w-3.5" /> View Deck</Link> : null}<Link className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#cdbdab] hover:bg-[#171512]" href="/workspace"><ArrowLeft className="h-3.5 w-3.5" /> Back to 2D</Link></div>
         </div>
 
         <div className="grid min-h-[44rem] min-[72rem]:grid-cols-[15.5rem_minmax(0,1fr)_20rem]">
