@@ -1,5 +1,6 @@
 import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomType } from "@/lib/building/requirements";
 import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
+import { regionalIntakePrefill } from "@/lib/design/regional-packs";
 
 export type FloorProgram = { bedrooms: number; bathrooms: number; attachedBathrooms: number; studies: number; balcony: boolean };
 
@@ -85,6 +86,11 @@ export const DEFAULT_INTAKE_DRAFT: IntakeDraft = {
   taxPercent: 0,
   seed: 42,
 };
+
+/** Applies suggestions only; every returned field remains an ordinary editable intake choice. */
+export function applyRegionalPrefill(draft: IntakeDraft, countryCode = draft.countryCode, adminArea = draft.adminArea): IntakeDraft {
+  return { ...draft, ...regionalIntakePrefill(countryCode, adminArea) };
+}
 
 const ZERO_DECIMAL_CURRENCIES = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
 

@@ -41,6 +41,7 @@ export const spaceSchema = z.object({
   areaMm2: z.number().int().positive(),
   occupied: z.boolean().default(true),
   accessible: z.boolean().default(false),
+  perimeterOpen: z.boolean().optional(),
 });
 
 export const verticalConnectorSchema = z.object({
@@ -94,13 +95,24 @@ export const floorSchema = z.object({
   openings: z.array(openingSchema),
 });
 
-export const buildingSchema = z.object({
+const buildingObjectSchema = z.object({
   buildingSchemaVersion: z.literal(2),
   algorithmVersion: z.string(),
   rulePackVersion: z.string(),
   rendererVersion: z.string(),
   seed: z.number().int().nonnegative(),
-  candidate: z.object({ generatorId: z.string(), index: z.number().int().nonnegative(), score: z.number().finite(), geometryHash: z.string() }),
+  candidate: z.object({
+    generatorId: z.string(),
+    index: z.number().int().nonnegative(),
+    score: z.number().finite(),
+    geometryHash: z.string(),
+    evidence: z.array(z.string()).optional(),
+    relaxation: z.object({
+      rung: z.number().int().min(0).max(3),
+      id: z.enum(["preferred_parti", "alternate_parti", "simplified_court", "compact_fallback"]),
+      simplifiedCourt: z.boolean(),
+    }).optional(),
+  }),
   site: z.object({
     widthMm: z.number().int().positive(),
     depthMm: z.number().int().positive(),
@@ -113,6 +125,37 @@ export const buildingSchema = z.object({
   // Optional so already-persisted schema-v2 buildings remain readable. Newly generated buildings
   // always include this deterministic concept through generateBuilding().
   structuralConcept: structuralConceptSchema.optional(),
+});
+
+/**
+ * Schema-v2 compatibility normalization for entry/gallery bays generated before the explicit
+ * perimeter role was persisted. This inference is deliberately confined to the read boundary;
+ * all newly generated spaces carry `perimeterOpen` directly.
+ */
+export const buildingSchema = buildingObjectSchema.transform((building) => {
+  if (building.candidate.generatorId !== "t-hub") return building;
+  const migratedLegacyPerimeterRole = building.floors.some((floor) => floor.level > 0 && floor.spaces.some((space) => (
+    space.type === "verandah"
+    && space.perimeterOpen === undefined
+    && (space.id.endsWith("-entry-verandah") || space.id.endsWith("-covered-gallery") || space.id.endsWith("-branch"))
+  )));
+  return {
+    ...building,
+    candidate: migratedLegacyPerimeterRole ? {
+      ...building.candidate,
+      geometryHash: `${building.candidate.geometryHash}-perimeter-v1`,
+    } : building.candidate,
+    floors: building.floors.map((floor) => ({
+      ...floor,
+      spaces: floor.spaces.map((space) => {
+        if (floor.level === 0 || space.type !== "verandah" || space.perimeterOpen !== undefined) return space;
+        const isGeneratedUpperFacadeBay = space.id.endsWith("-entry-verandah")
+          || space.id.endsWith("-covered-gallery")
+          || space.id.endsWith("-branch");
+        return isGeneratedUpperFacadeBay ? { ...space, perimeterOpen: false } : space;
+      }),
+    })),
+  };
 });
 
 export type Point = z.infer<typeof pointSchema>;

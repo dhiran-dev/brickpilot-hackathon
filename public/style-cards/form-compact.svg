@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Compact form massing study</title>
+  <desc id="desc">An efficient rectangular house envelope is deepened by an external shade frame.</desc>
+  <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#564638" stroke-width="1"/></pattern></defs>
+  <rect width="720" height="432" fill="#100e0c"/>
+  <rect x="28" y="28" width="664" height="376" fill="url(#grid)" opacity=".52"/>
+  <path d="M96 349 361 176l270 120-262 106z" fill="#17130f" stroke="#806044" stroke-width="2"/>
+  <g stroke="#6f4b31" stroke-width="2" stroke-linejoin="round">
+    <path d="m191 211 213-99 168 68-216 104z" fill="#f0e2cb"/>
+    <path d="m191 211 165 73v119l-165-75z" fill="#987c61"/>
+    <path d="m356 284 216-104v119L356 403z" fill="#c3a580"/>
+  </g>
+  <g fill="#24312e" stroke="#6d7d75" stroke-width="2">
+    <path d="m227 241 52 23v54l-52-23z"/><path d="m303 275 32 14v53l-32-14z"/>
+  </g>
+  <g fill="none" stroke="#ca6d35" stroke-width="10" stroke-linejoin="round">
+    <path d="m176 196 172 76 236-114"/><path d="M176 196v148M348 272v146M584 158v150"/>
+  </g>
+  <g fill="none" stroke="#c97940" stroke-width="2"><path d="M113 130h108v17"/><path d="M510 333h92"/></g>
+  <g fill="#c5b29c" font-family="ui-monospace, monospace" font-size="13" letter-spacing="2"><text x="113" y="116">SIMPLE ENVELOPE</text><text x="510" y="355">SHADE LAYER</text></g>
+  <text x="49" y="58" fill="#f4e7d5" font-family="ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="3">ENVELOPE / FAÇADE DEPTH</text>
+</svg>

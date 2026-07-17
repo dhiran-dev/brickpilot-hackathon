@@ -8,13 +8,25 @@ const requirements = BUILDING_FIXTURES[0].requirements;
 
 describe("runDesignPipeline", () => {
   test("returns deterministic evidence, cost and a reviewed result", async () => {
+    let reviewCalls = 0;
     const result = await runDesignPipeline(requirements, {
-      reviewComplete: async () => ({ concurs: true, confidence: "high", citedConcerns: [], requirementDeltas: [] }),
+      reviewComplete: async () => {
+        reviewCalls += 1;
+        return { concurs: true, confidence: "high", citedConcerns: [], requirementDeltas: [] };
+      },
     });
     expect(result.status).toBe("generated");
     if (result.status !== "generated") throw new Error("expected generated");
     expect(result.validation.valid).toBe(true);
     expect(result.aiReview.status).toBe("reviewed");
+    expect(result.schemes.length).toBeGreaterThan(0);
+    expect(result.schemes.length).toBeLessThanOrEqual(3);
+    expect(result.selectedSchemeId).toBe(result.schemes[0].schemeId);
+    expect(result.building.candidate.geometryHash).toBe(result.schemes[0].building.candidate.geometryHash);
+    expect(result.intent.generationDiagnostics).toEqual(result.diagnostics);
+    expect(result.diagnostics.constructedCandidateCount).toBeLessThanOrEqual(result.diagnostics.plannedCandidateCount);
+    expect(result.diagnostics.quotaUsage.some((usage) => usage.attempted > 0)).toBe(true);
+    expect(reviewCalls).toBe(1);
   });
 
   test("fails open when the advisory provider times out", async () => {

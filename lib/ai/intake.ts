@@ -1,8 +1,9 @@
 import { DEFAULT_INTAKE_DRAFT, createRequirements, normalizeFloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
-import { regionForCountry } from "@/components/guided-intake/region-options";
+import { REGION_OPTIONS, regionForCountry } from "@/components/guided-intake/region-options";
 import { AiProviderError, callJsonModeCompletion } from "@/lib/ai/client";
 import { nlIntakeExtractionSchema, type NlIntakeExtraction } from "@/lib/ai/intake-schema";
 import type { BuildingRequirements } from "@/lib/building/requirements";
+import { regionalIntakePrefill, resolveRegionalPack } from "@/lib/design/regional-packs";
 
 export type IntakeParseResult =
   | { status: "parsed"; requirements: BuildingRequirements; assumptions: string[] }
@@ -58,9 +59,16 @@ function cloneDefaultDraft(): IntakeDraft {
 
 function draftFromExtraction(extraction: NlIntakeExtraction): IntakeDraft {
   const draft = cloneDefaultDraft();
-  const extractedRegion = extraction.countryCode ? regionForCountry(extraction.countryCode.toUpperCase()) : undefined;
+  const requestedCountryCode = extraction.countryCode?.toUpperCase();
+  const extractedRegion = requestedCountryCode ? regionForCountry(requestedCountryCode) : undefined;
+  const exactRegion = requestedCountryCode ? REGION_OPTIONS.find((region) => region.countryCode === requestedCountryCode) : undefined;
+  const regionalResolution = resolveRegionalPack(
+    requestedCountryCode ?? draft.countryCode,
+    extraction.adminArea ?? (requestedCountryCode ? undefined : draft.adminArea),
+  );
+  const canonicalAdminArea = regionalResolution.matchedAdminArea ?? extraction.adminArea;
   const extractedAdminArea = extractedRegion
-    ? extractedRegion.adminAreas.find((adminArea) => adminArea.value === extraction.adminArea) ?? extractedRegion.adminAreas.at(-1)!
+    ? extractedRegion.adminAreas.find((adminArea) => adminArea.value === canonicalAdminArea) ?? extractedRegion.adminAreas.at(-1)!
     : undefined;
   const extractedLocality = extractedAdminArea
     ? extractedAdminArea.localities.find((locality) => locality.value === extraction.locality) ?? extractedAdminArea.localities.at(-1)!
@@ -91,14 +99,18 @@ function draftFromExtraction(extraction: NlIntakeExtraction): IntakeDraft {
       ? extraction.siteDepthFeet * 0.3048
       : draft.siteDepth;
   const facing = extraction.facing ?? draft.facing;
+  const regionalPrefill = regionalIntakePrefill(
+    requestedCountryCode ?? draft.countryCode,
+    canonicalAdminArea ?? (requestedCountryCode ? undefined : draft.adminArea),
+  );
 
   return {
     ...draft,
     projectName: extraction.projectName ?? draft.projectName,
-    countryCode: extractedRegion?.countryCode ?? draft.countryCode,
-    adminArea: extractedAdminArea?.value ?? extraction.adminArea ?? draft.adminArea,
+    countryCode: requestedCountryCode ?? draft.countryCode,
+    adminArea: regionalResolution.matchedAdminArea ?? extractedAdminArea?.value ?? extraction.adminArea ?? draft.adminArea,
     locality: extractedLocality?.value ?? extraction.locality ?? draft.locality,
-    currency: extractedRegion?.defaultCurrency ?? extraction.currency?.toUpperCase() ?? draft.currency,
+    currency: exactRegion?.defaultCurrency ?? extraction.currency?.toUpperCase() ?? extractedRegion?.defaultCurrency ?? draft.currency,
     locale: extractedRegion?.defaultLocale ?? draft.locale,
     displayUnit: "metric",
     siteWidth,
@@ -113,12 +125,14 @@ function draftFromExtraction(extraction: NlIntakeExtraction): IntakeDraft {
     includeParking: extraction.includeParking ?? draft.includeParking,
     includePooja: extraction.includePooja ?? draft.includePooja,
     includeUtility: extraction.includeUtility ?? draft.includeUtility,
-    includeCourtyard: extraction.includeCourtyard ?? draft.includeCourtyard,
+    includeCourtyard: extraction.includeCourtyard
+      ?? (extraction.formStrategy === undefined ? regionalPrefill.includeCourtyard : extraction.formStrategy === "courtyard"),
     socialSpaceMode: extraction.socialSpaceMode ?? draft.socialSpaceMode,
-    architecturalStyle: extraction.architecturalStyle ?? draft.architecturalStyle,
-    formStrategy: extraction.formStrategy ?? draft.formStrategy,
-    roofCharacter: extraction.roofCharacter ?? draft.roofCharacter,
-    materialDirection: extraction.materialDirection ?? draft.materialDirection,
+    architecturalStyle: extraction.architecturalStyle ?? regionalPrefill.architecturalStyle,
+    formStrategy: extraction.formStrategy
+      ?? (extraction.includeCourtyard === false && regionalPrefill.formStrategy === "courtyard" ? "stepped_terraces" : regionalPrefill.formStrategy),
+    roofCharacter: extraction.roofCharacter ?? regionalPrefill.roofCharacter,
+    materialDirection: extraction.materialDirection ?? regionalPrefill.materialDirection,
     qualityTier: extraction.qualityTier ?? draft.qualityTier,
     budgetLowMajor: extraction.budgetLowMajor ?? draft.budgetLowMajor,
     budgetHighMajor: extraction.budgetHighMajor ?? draft.budgetHighMajor,
@@ -127,22 +141,31 @@ function draftFromExtraction(extraction: NlIntakeExtraction): IntakeDraft {
 
 function assumptionsFor(extraction: NlIntakeExtraction): string[] {
   const assumptions: string[] = [];
+  const countryCode = extraction.countryCode?.toUpperCase() ?? DEFAULT_INTAKE_DRAFT.countryCode;
+  const regionalResolution = resolveRegionalPack(
+    countryCode,
+    extraction.adminArea ?? (extraction.countryCode ? undefined : DEFAULT_INTAKE_DRAFT.adminArea),
+  );
   const inferredFloorCount = extraction.floorPrograms?.reduce((maximum, program) => Math.max(maximum, program.level + 1), 0) ?? 0;
   const effectiveFloorCount = Math.max(extraction.floorCount ?? 0, inferredFloorCount, 1);
   if (extraction.floorCount === undefined && inferredFloorCount <= 1) assumptions.push("Assumed a single ground floor; mention a storey count to change it.");
   if (extraction.occupants === undefined) assumptions.push(`Assumed ${DEFAULT_INTAKE_DRAFT.occupants} occupants.`);
   if (extraction.countryCode === undefined) assumptions.push(`Assumed region ${DEFAULT_INTAKE_DRAFT.adminArea}, ${DEFAULT_INTAKE_DRAFT.countryCode}.`);
   else {
-    const region = regionForCountry(extraction.countryCode.toUpperCase());
-    if (!region.adminAreas.some((adminArea) => adminArea.value === extraction.adminArea)) assumptions.push(`Used the general ${region.label} region because no matching state or province was stated.`);
-    if (extraction.currency && extraction.currency.toUpperCase() !== region.defaultCurrency) assumptions.push(`Normalized currency to ${region.defaultCurrency} to match the selected country.`);
+    const region = regionForCountry(countryCode);
+    const matchedAdminArea = regionalResolution.matchedAdminArea
+      ?? region.adminAreas.find((adminArea) => adminArea.value === extraction.adminArea)?.value;
+    if (!matchedAdminArea) assumptions.push(`Used the general ${region.label} region because no matching state or province was stated.`);
+    if (region.countryCode === countryCode && extraction.currency && extraction.currency.toUpperCase() !== region.defaultCurrency) assumptions.push(`Normalized currency to ${region.defaultCurrency} to match the selected country.`);
   }
+  if (regionalResolution.warning) assumptions.push(regionalResolution.warning.message);
   if (extraction.qualityTier === undefined) assumptions.push("Assumed a standard finish quality tier.");
   if (extraction.socialSpaceMode === undefined) assumptions.push("Assumed a combined living and dining space.");
-  if (extraction.architecturalStyle === undefined) assumptions.push("Assumed a climate-responsive contemporary tropical character; review it in the Architecture step.");
-  if (extraction.formStrategy === undefined) assumptions.push("Assumed stepped terraces rather than a plain full-height box.");
-  if ([extraction.includeParking, extraction.includePooja, extraction.includeUtility, extraction.includeCourtyard].every((value) => value === undefined)) {
-    assumptions.push("Did not add optional parking, pooja, utility, or courtyard spaces unless mentioned.");
+  if ([extraction.architecturalStyle, extraction.formStrategy, extraction.roofCharacter, extraction.materialDirection, extraction.includeCourtyard].some((value) => value === undefined)) {
+    assumptions.push(`Prefilled editable architecture choices from the ${regionalResolution.climateClass.replaceAll("_", " ")} regional pack.`);
+  }
+  if ([extraction.includeParking, extraction.includePooja, extraction.includeUtility].every((value) => value === undefined)) {
+    assumptions.push("Did not add optional parking, pooja, or utility spaces unless mentioned.");
   }
   const statedBathrooms = extraction.bathroomsGroundFloor !== undefined || extraction.floorPrograms?.some((program) => program.bathrooms !== undefined);
   const statedBedrooms = extraction.bedroomsGroundFloor !== undefined || extraction.floorPrograms?.some((program) => (program.bedrooms ?? 0) > 0);

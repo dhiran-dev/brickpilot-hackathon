@@ -137,6 +137,23 @@ describe("regional cost engine", () => {
     expect(deriveQuantityTakeoff(withOpenArea).grossFloorAreaMm2).toBe(80_000_000);
   });
 
+  test("counts covered open-sided verandahs at half area", () => {
+    const withVerandah = structuredClone(building);
+    withVerandah.floors[0].spaces.push({
+      id: "front-verandah",
+      floorId: "F0",
+      name: "Front verandah",
+      type: "verandah",
+      planningCellPolygon: { points: [{ x: 1_000, y: 11_000 }, { x: 11_000, y: 11_000 }, { x: 11_000, y: 13_000 }, { x: 1_000, y: 13_000 }] },
+      bounds: { x: 1_000, y: 11_000, width: 10_000, depth: 2_000 },
+      areaMm2: 20_000_000,
+      occupied: false,
+      accessible: false,
+    });
+
+    expect(deriveQuantityTakeoff(withVerandah).grossFloorAreaMm2).toBe(110_000_000);
+  });
+
   test("selects locality, admin-area, and labelled India reference fallback in order", () => {
     const packs = [INDIA_DELHI_FEASIBILITY_2026_07];
     const date = new Date("2026-07-15T00:00:00.000Z");

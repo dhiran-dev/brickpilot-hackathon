@@ -1,8 +1,12 @@
 import type { Building, Floor, Opening, Rectangle, WallSegment } from "@/lib/building/schema";
-import { isOpenToSkySpace } from "@/lib/building/topology";
+import { isCoveredSpace } from "@/lib/building/space-semantics";
+import { isOpenToSkySpace, isVerandahOpenEdgeWall } from "@/lib/building/topology";
 
 const MM_TO_M = 1 / 1000;
 export const SLAB_THICKNESS_M = 0.18;
+export const MASSING_SITE_GRADE_M = -0.02;
+export const MASSING_SITE_THICKNESS_M = 0.05;
+export const MASSING_GRID_Y_M = MASSING_SITE_GRADE_M + 0.004;
 
 export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair";
 
@@ -85,6 +89,58 @@ function rectanglePrimitive(
   return { id, kind, floorId, sourceId, center: [x, centreYM, z], size: [rectangle.width * MM_TO_M, heightM, rectangle.depth * MM_TO_M] };
 }
 
+function rectangleRight(rectangle: Rectangle) {
+  return rectangle.x + rectangle.width;
+}
+
+function rectangleBottom(rectangle: Rectangle) {
+  return rectangle.y + rectangle.depth;
+}
+
+/** Returns an exact, non-overlapping rectangle decomposition of subject minus cutter. */
+function subtractRectangle(subject: Rectangle, cutter: Rectangle): Rectangle[] {
+  const intersection = {
+    x: Math.max(subject.x, cutter.x),
+    y: Math.max(subject.y, cutter.y),
+    right: Math.min(rectangleRight(subject), rectangleRight(cutter)),
+    bottom: Math.min(rectangleBottom(subject), rectangleBottom(cutter)),
+  };
+  if (intersection.right <= intersection.x || intersection.bottom <= intersection.y) return [subject];
+
+  const fragments: Rectangle[] = [];
+  if (intersection.y > subject.y) {
+    fragments.push({ x: subject.x, y: subject.y, width: subject.width, depth: intersection.y - subject.y });
+  }
+  if (intersection.bottom < rectangleBottom(subject)) {
+    fragments.push({
+      x: subject.x,
+      y: intersection.bottom,
+      width: subject.width,
+      depth: rectangleBottom(subject) - intersection.bottom,
+    });
+  }
+  const middleDepth = intersection.bottom - intersection.y;
+  if (intersection.x > subject.x) {
+    fragments.push({ x: subject.x, y: intersection.y, width: intersection.x - subject.x, depth: middleDepth });
+  }
+  if (intersection.right < rectangleRight(subject)) {
+    fragments.push({
+      x: intersection.right,
+      y: intersection.y,
+      width: rectangleRight(subject) - intersection.right,
+      depth: middleDepth,
+    });
+  }
+  return fragments;
+}
+
+function subtractRectangles(subject: Rectangle, cutters: Rectangle[]) {
+  return cutters.reduce<Rectangle[]>(
+    (fragments, cutter) => fragments.flatMap((fragment) => subtractRectangle(fragment, cutter)),
+    [subject],
+  );
+}
+
 function wallPrimitive(
   building: Building,
   floor: Floor,
@@ -153,7 +209,7 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
   const includeSlabs = options.includeSlabs ?? true;
   const includeRoof = options.includeRoof ?? true;
   const includeSite = options.includeSite ?? true;
-  const includeColumns = options.includeColumns ?? includeInteriorWalls;
+  const includeColumns = options.includeColumns ?? true;
   const primitives: MassingPrimitive[] = [];
   const orderedFloors = [...building.floors].sort((left, right) => left.level - right.level);
 
@@ -163,8 +219,8 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
       { x: 0, y: 0, width: building.site.widthMm, depth: building.site.depthMm },
       "site",
       "site",
-      -0.025,
-      0.05,
+      MASSING_SITE_GRADE_M - MASSING_SITE_THICKNESS_M / 2,
+      MASSING_SITE_THICKNESS_M,
     ));
   }
 
@@ -173,11 +229,12 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
     const explodeYM = floor.level * explodeM;
     const baseYM = floor.elevationMm * MM_TO_M + explodeYM;
     const openToSkyIds = new Set(floor.spaces.filter(isOpenToSkySpace).map((space) => space.id));
-    const constructedSpaces = floor.spaces.filter((space) => !openToSkyIds.has(space.id));
+    const constructedSpaces = floor.spaces.filter(isCoveredSpace);
     if (includeSlabs) constructedSpaces.forEach((space) => primitives.push(rectanglePrimitive(building, space.bounds, `${floor.id}-slab-${space.id}`, "slab", baseYM - SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, floor.id, space.id)));
     const openingsByWall = new Map<string, Opening[]>();
     for (const opening of floor.openings) openingsByWall.set(opening.wallId, [...(openingsByWall.get(opening.wallId) ?? []), opening]);
     for (const wall of floor.walls) {
+      if (isVerandahOpenEdgeWall(wall, floor.spaces)) continue;
       const openAdjacent = wall.adjacentSpaceIds.filter((id) => openToSkyIds.has(id));
       if (openAdjacent.length === wall.adjacentSpaceIds.length) continue;
       const kindOverride = openAdjacent.length > 0 ? "exterior_wall" as const : undefined;
@@ -204,10 +261,34 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
   }
 
   const topFloor = orderedFloors.at(-1);
-  if (topFloor && visible.has(topFloor.id) && includeSlabs && includeRoof) {
-    const topYM = (topFloor.elevationMm + topFloor.floorHeightMm) * MM_TO_M + topFloor.level * explodeM;
-    topFloor.spaces.filter((space) => !isOpenToSkySpace(space))
-      .forEach((space) => primitives.push(rectanglePrimitive(building, space.bounds, `${topFloor.id}-roof-${space.id}`, "roof", topYM + SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, topFloor.id, space.id)));
+  if (includeRoof) {
+    for (let lowerIndex = 0; lowerIndex < orderedFloors.length - 1; lowerIndex += 1) {
+      const lowerFloor = orderedFloors[lowerIndex];
+      if (!visible.has(lowerFloor.id)) continue;
+      const upperFloor = orderedFloors[lowerIndex + 1];
+      const upperCoveredBounds = upperFloor.spaces.filter(isCoveredSpace).map((space) => space.bounds);
+      const roofYM = (lowerFloor.elevationMm + lowerFloor.floorHeightMm) * MM_TO_M + lowerFloor.level * explodeM;
+      for (const lowerSpace of lowerFloor.spaces.filter(isCoveredSpace)) {
+        subtractRectangles(lowerSpace.bounds, upperCoveredBounds).forEach((bounds, fragmentIndex) => {
+          primitives.push(rectanglePrimitive(
+            building,
+            bounds,
+            `${lowerFloor.id}-roof-${lowerSpace.id}-exposed-${fragmentIndex}`,
+            "roof",
+            roofYM + SLAB_THICKNESS_M / 2,
+            SLAB_THICKNESS_M,
+            lowerFloor.id,
+            lowerSpace.id,
+          ));
+        });
+      }
+    }
+
+    if (topFloor && visible.has(topFloor.id)) {
+      const topYM = (topFloor.elevationMm + topFloor.floorHeightMm) * MM_TO_M + topFloor.level * explodeM;
+      topFloor.spaces.filter(isCoveredSpace)
+        .forEach((space) => primitives.push(rectanglePrimitive(building, space.bounds, `${topFloor.id}-roof-${space.id}`, "roof", topYM + SLAB_THICKNESS_M / 2, SLAB_THICKNESS_M, topFloor.id, space.id)));
+    }
   }
 
   const physicalHeightM = topFloor ? (topFloor.elevationMm + topFloor.floorHeightMm) * MM_TO_M : 0;

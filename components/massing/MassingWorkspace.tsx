@@ -11,6 +11,7 @@ import {
   Check,
   CircleAlert,
   Clock3,
+  Columns3,
   Eye,
   EyeOff,
   Focus,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { MassingViewer, type MassingCapture, type MassingViewerHandle, type MassingView } from "@/components/massing";
+import { PreviousSchemeRenderGallery, type PreviousSchemeRenderAsset } from "@/components/massing/PreviousSchemeRenderGallery";
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import { massingMetrics } from "@/lib/render/massing";
@@ -40,13 +42,16 @@ type Study = {
   status: string;
   requirements: BuildingRequirements;
   building: Building;
+  selectedSchemeId: string | null;
+  schemes: Array<{ schemeId: string; name: string }>;
   validation: { valid: boolean; score: number; counts: { error: number; warning: number; info: number } };
 };
 
 type RenderState = {
   status: "idle" | "processing" | "partial" | "completed" | "failed";
   jobs: Array<{ id: string; purpose: "exterior_front" | "exterior_collage" | "exterior_top" | "interior" | null; status: string; failureReason: string | null; createdAt: string }>;
-  assets: Array<{ id: string; role: "exterior_front" | "exterior_collage" | "exterior_top" | "interior" | string; url: string; contentType: string; index: number }>;
+  assets: Array<{ id: string; role: "exterior_front" | "exterior_collage" | "exterior_top" | "interior" | string; url: string; contentType: string; index: number; schemeId: string | null }>;
+  previousAssets?: PreviousSchemeRenderAsset[];
   sources: Array<{ id: string; role: string; url: string; contentType: string }>;
 };
 
@@ -100,6 +105,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const [visibleFloorIds, setVisibleFloorIds] = useState<string[]>([]);
   const [explodePercent, setExplodePercent] = useState(0);
   const [showInteriorWalls, setShowInteriorWalls] = useState(true);
+  const [showColumns, setShowColumns] = useState(true);
   const [showSlabs, setShowSlabs] = useState(true);
   const [showRoof, setShowRoof] = useState(true);
   const [showSite, setShowSite] = useState(true);
@@ -109,7 +115,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const [preparing, setPreparing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", jobs: [], assets: [], sources: [] });
+  const [renderState, setRenderState] = useState<RenderState>({ status: "idle", jobs: [], assets: [], previousAssets: [], sources: [] });
 
   const loadRenderState = useCallback(async () => {
     const response = await fetch(`/api/designs/${layoutVersionId}/renders`, { cache: "no-store" });
@@ -160,8 +166,10 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const referencesCurrent = references && referenceKey === currentReferenceKey;
   const assetsByRole = useMemo(() => new Map(renderState.assets.map((asset) => [asset.role, asset])), [renderState.assets]);
   const sourcesByRole = useMemo(() => new Map((renderState.sources ?? []).map((source) => [source.role, source])), [renderState.sources]);
+  const schemeNameById = useMemo(() => new Map(study?.schemes.map((scheme) => [scheme.schemeId, scheme.name]) ?? []), [study]);
   const layerControls = [
     { label: "Internal walls", checked: showInteriorWalls, setChecked: setShowInteriorWalls, Icon: Layers3 },
+    { label: "Columns", checked: showColumns, setChecked: setShowColumns, Icon: Columns3 },
     { label: "Floor slabs", checked: showSlabs, setChecked: setShowSlabs, Icon: Box },
     { label: "Roof", checked: showRoof, setChecked: setShowRoof, Icon: Box },
     { label: "Site + grid", checked: showSite, setChecked: setShowSite, Icon: Ruler },
@@ -175,13 +183,14 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     if (!study) return;
     setPreparing(true);
     setActionError(null);
-    const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showSlabs, showRoof, showSite };
+    const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showColumns, showSlabs, showRoof, showSite };
     try {
       if (!viewerReady || !viewerRef.current) throw new Error("The 3D viewer is required to prepare the camera-locked render sources.");
       flushSync(() => {
         setVisibleFloorIds(floors.map((floor) => floor.id));
         setExplodePercent(0);
         setShowInteriorWalls(false);
+        setShowColumns(true);
         setShowSlabs(true);
         setShowRoof(true);
         setShowSite(true);
@@ -200,6 +209,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         setVisibleFloorIds(prior.visibleFloorIds);
         setExplodePercent(prior.explodePercent);
         setShowInteriorWalls(prior.showInteriorWalls);
+        setShowColumns(prior.showColumns);
         setShowSlabs(prior.showSlabs);
         setShowRoof(prior.showRoof);
         setShowSite(prior.showSite);
@@ -218,6 +228,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           geometryHash: study.building.candidate.geometryHash,
+          schemeId: study.selectedSchemeId,
           selectedInteriorSpaceId,
           references,
         }),
@@ -270,7 +281,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
           </aside>
 
           <div className="relative min-h-[44rem] overflow-hidden bg-[#080807]">
-            <MassingViewer building={study.building} explodeM={explodeM} onError={setViewerError} onReadyChange={setViewerReady} ref={viewerRef} showInteriorWalls={showInteriorWalls} showRoof={showRoof} showSite={showSite} showSlabs={showSlabs} visibleFloorIds={visibleFloorIds} />
+            <MassingViewer building={study.building} explodeM={explodeM} onError={setViewerError} onReadyChange={setViewerReady} ref={viewerRef} showColumns={showColumns} showInteriorWalls={showInteriorWalls} showRoof={showRoof} showSite={showSite} showSlabs={showSlabs} visibleFloorIds={visibleFloorIds} />
             <div className="absolute right-4 top-4 z-10 border border-[#8e5a31]/60 bg-[#0b0a09]/95 shadow-[4px_5px_0_rgba(0,0,0,0.4)]">
               <div className="grid grid-cols-4 border-b border-[#8e5a31]/45 text-[#cdbdab]">{[[Rotate3d, "Rotate"], [Move3d, "Pan"], [ZoomIn, "Zoom"], [Scan, "Fit"]].map(([Icon, label], index) => <button className="grid min-h-14 min-w-14 place-items-center border-r border-[#8e5a31]/35 px-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711]" key={label as string} onClick={() => index === 3 && viewerRef.current?.fit()} type="button"><Icon className="h-4 w-4" /><span>{label as string}</span></button>)}</div>
               <div className="grid grid-cols-6 text-[#a99a8d]">{(["front", "rear", "left", "right", "iso", "top"] as MassingView[]).map((view) => <button className="border-r border-[#8e5a31]/35 px-2 py-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711] hover:text-[#fff6ea]" key={view} onClick={() => viewerRef.current?.setView(view)} type="button">{view}</button>)}</div>
@@ -311,9 +322,10 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
           ["exterior_collage", "Four-view collage"],
           ["exterior_top", "High front-right perspective"],
           ["interior", "Furnished interior concept"],
-        ] as const).map(([role, label]) => { const asset = assetsByRole.get(role); const sourceRole = role === "exterior_front" ? "massing_front" : role === "exterior_collage" ? "massing_collage" : role === "exterior_top" ? "massing_top" : "plan_reference"; const source = sourcesByRole.get(sourceRole); return <article className="border border-[#8e5a31]/45 bg-[#090908]" key={role}><div className="relative aspect-[3/2] overflow-hidden">{asset ? <img alt={label} className="h-full w-full object-cover" loading="lazy" src={asset.url} /> : <div className="grid h-full place-items-center bg-[linear-gradient(120deg,#0b0a09,#17120f,#0b0a09)] bg-[length:220%_100%] animate-[pulse_2s_ease-in-out_infinite]"><span className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#695d53]">{label} · {renderState.status === "failed" ? "unavailable" : "rendering"}</span></div>}<span className="absolute left-3 top-3 bg-[#090908]/90 px-2 py-1 text-[0.52rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea]">{label}</span></div><div className="grid grid-cols-[7rem_1fr] items-center gap-3 border-t border-[#8e5a31]/35 p-2.5">{source ? <img alt={`${label} exact submitted source`} className="aspect-[3/2] w-full border border-[#8e5a31]/35 object-cover" src={source.url} /> : <div className="grid aspect-[3/2] place-items-center border border-[#8e5a31]/25"><Camera className="h-3.5 w-3.5 text-[#574d45]" /></div>}<p className="text-[0.56rem] leading-4 text-[#756a60]"><strong className="block uppercase tracking-[0.09em] text-[#a99a8d]">Exact submitted source</strong>Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.</p></div></article>; })}</div>
+        ] as const).map(([role, label]) => { const asset = assetsByRole.get(role); const sourceRole = role === "exterior_front" ? "massing_front" : role === "exterior_collage" ? "massing_collage" : role === "exterior_top" ? "massing_top" : "plan_reference"; const source = sourcesByRole.get(sourceRole); const schemeLabel = asset?.schemeId ? schemeNameById.get(asset.schemeId) ?? asset.schemeId : "Legacy scheme"; return <article className="border border-[#8e5a31]/45 bg-[#090908]" data-scheme-id={asset?.schemeId ?? "legacy"} key={role}><div className="relative aspect-[3/2] overflow-hidden">{asset ? <img alt={`${label} · ${schemeLabel}`} className="h-full w-full object-cover" loading="lazy" src={asset.url} /> : <div className="grid h-full place-items-center bg-[#0b0a09]"><span className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#695d53]">{label} · {renderState.status === "failed" ? "unavailable" : "rendering"}</span></div>}<span className="absolute left-3 top-3 bg-[#090908]/90 px-2 py-1 text-[0.52rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea]">{label}{asset ? ` · ${schemeLabel}` : ""}</span></div><div className="grid grid-cols-[7rem_1fr] items-center gap-3 border-t border-[#8e5a31]/35 p-2.5">{source ? <img alt={`${label} exact submitted source`} className="aspect-[3/2] w-full border border-[#8e5a31]/35 object-cover" src={source.url} /> : <div className="grid aspect-[3/2] place-items-center border border-[#8e5a31]/25"><Camera className="h-3.5 w-3.5 text-[#574d45]" /></div>}<p className="text-[0.56rem] leading-4 text-[#756a60]"><strong className="block uppercase tracking-[0.09em] text-[#a99a8d]">Exact submitted source</strong>Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.</p></div></article>; })}</div>
         {renderState.jobs.some((job) => job.failureReason) ? <div className="mt-4 border border-[#c28a2a]/50 bg-[#18140b] p-4 text-xs leading-5 text-[#d9a856]">{renderState.jobs.filter((job) => job.failureReason).map((job) => <p key={job.id}><strong className="uppercase">{job.purpose ?? "Render"}:</strong> {job.failureReason}</p>)}</div> : null}
       </section> : null}
+      <PreviousSchemeRenderGallery assets={renderState.previousAssets ?? []} schemeNameById={schemeNameById} />
     </div>
   </main>;
 }

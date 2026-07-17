@@ -161,6 +161,10 @@ export const layoutVersions = pgTable(
     validation: jsonb("validation").$type<Record<string, unknown>>(),
     costEstimate: jsonb("cost_estimate").$type<Record<string, unknown>>(),
     aiReview: jsonb("ai_review").$type<Record<string, unknown>>(),
+    // Additive multi-scheme payload. The canonical fields above always mirror the selected
+    // scheme so existing drawing, massing, cost and render consumers remain unchanged.
+    schemes: jsonb("schemes").$type<Array<Record<string, unknown>>>(),
+    selectedSchemeId: text("selected_scheme_id"),
     failureReason: text("failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

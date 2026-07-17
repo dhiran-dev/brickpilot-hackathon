@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Stepped villa massing study</title>
+  <desc id="desc">Three receding residential volumes create terraces and a shaded entry court.</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#564638" stroke-width="1"/></pattern>
+  </defs>
+  <rect width="720" height="432" fill="#100e0c"/>
+  <rect x="28" y="28" width="664" height="376" fill="url(#grid)" opacity=".52"/>
+  <path d="M77 349 357 191l286 113-276 98z" fill="#17130f" stroke="#806044" stroke-width="2"/>
+  <g stroke="#6f4b31" stroke-width="2" stroke-linejoin="round">
+    <path d="m165 263 171-83 174 70-171 82z" fill="#d7c2a4"/>
+    <path d="m165 263 174 69v55l-174-70z" fill="#8f765d"/>
+    <path d="m339 332 171-82v55l-171 82z" fill="#b29676"/>
+    <path d="m238 190 139-65 142 56-140 67z" fill="#eadbc4"/>
+    <path d="m238 190 141 58v56l-141-58z" fill="#9b8064"/>
+    <path d="m379 248 140-67v56l-140 67z" fill="#c6aa87"/>
+    <path d="m306 128 102-46 104 41-103 48z" fill="#f3e8d5"/>
+    <path d="m306 128 103 43v52l-103-42z" fill="#a98b6c"/>
+    <path d="m409 171 103-48v52l-103 48z" fill="#ceb08c"/>
+  </g>
+  <g fill="#ca6d35">
+    <path d="m177 258 8-4v68l-8-3z"/><path d="m251 185 8-4v70l-8-3z"/><path d="m318 123 8-4v66l-8-3z"/>
+  </g>
+  <g fill="none" stroke="#c97940" stroke-width="2">
+    <path d="M121 115h91"/><path d="M121 115v18"/><path d="M212 115v18"/>
+    <path d="M541 328h73"/><path d="m604 320 10 8-10 8"/>
+  </g>
+  <g fill="#c5b29c" font-family="ui-monospace, monospace" font-size="13" letter-spacing="2">
+    <text x="121" y="102">03 RECEDING PLATES</text><text x="542" y="353">ENTRY</text>
+  </g>
+  <text x="49" y="58" fill="#f4e7d5" font-family="ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="3">SECTION / TERRACE LOGIC</text>
+</svg>

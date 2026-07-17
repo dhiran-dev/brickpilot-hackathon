@@ -62,6 +62,8 @@ export type DrawingRoom = {
   polygon: Point[];
   areaMm2: number;
   accessible: boolean;
+  /** Open-sided roofed edge treatment; optional so cached pre-verandah artifacts remain readable. */
+  edgeTreatment?: "open";
   label: {
     mode: "center" | "compact" | "schedule";
     x: number;
@@ -173,12 +175,23 @@ export type DrawingFloorArtifact = {
   routes: DrawingRoute[];
   findings: DrawingFinding[];
   schedule: { ref: string; roomId: string; name: string; areaMm2: number }[];
+  areaSchedule: Array<{
+    ref: string;
+    roomId: string;
+    name: string;
+    achievedAreaMm2: number;
+    targetAreaMm2?: number;
+    underTarget: boolean;
+  }>;
   scaleBarMm: number;
   metadata: {
     algorithmVersion: string;
     rulePackVersion: string;
     seed: number;
     candidate: string;
+    schemeName?: string;
+    partiId?: string;
+    style?: string;
   };
 };
 

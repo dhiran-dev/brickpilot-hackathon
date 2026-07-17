@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Contemporary tropical villa study</title><desc id="desc">Layered villa volumes, deep roof shade, screens and planting rendered as an architectural study.</desc>
+  <defs><pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" fill="none" stroke="#342a23" stroke-width="1"/></pattern><linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dfc6a7"/><stop offset="1" stop-color="#8e694e"/></linearGradient></defs>
+  <rect width="720" height="432" fill="#090908"/><rect width="720" height="432" fill="url(#grid)"/>
+  <path d="M88 354 362 214 650 332 374 410Z" fill="#17120f" stroke="#5d4636"/>
+  <path d="m139 218 213-104 214 85-214 107Z" fill="#c49a72"/><path d="m139 218 213 88v87l-213-83Z" fill="url(#wall)"/><path d="m352 306 214-107v89L352 393Z" fill="#6d4d39"/>
+  <path d="m112 205 238-118 250 99-248 124Z" fill="#171310" stroke="#ff6a1f" stroke-width="4"/>
+  <path d="m218 246 83 34v89l-83-32Z" fill="#201711" stroke="#d69b63"/><path d="m231 258 4 74m16-66 4 74m16-66 4 74" stroke="#d69b63" stroke-width="3"/>
+  <path d="m403 279 91-45v93l-91 44Z" fill="#161a17" stroke="#7ca47d"/><path d="m420 285 57-28v58l-57 28Z" fill="#274031"/>
+  <path d="M78 353c48-38 88-46 123-20-57 4-92 20-123 20Zm470-29c42-28 77-24 105 4-45-7-76 3-105-4Z" fill="#38513c"/>
+  <path d="M104 375h522M82 394h566" stroke="#8e5a31" stroke-width="2" opacity=".65"/>
+  <circle cx="625" cy="67" r="24" fill="none" stroke="#ff6a1f"/><path d="M625 32v70M590 67h70" stroke="#ff6a1f" opacity=".5"/>
+</svg>

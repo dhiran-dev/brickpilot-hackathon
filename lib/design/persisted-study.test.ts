@@ -37,13 +37,45 @@ const building = {
 
 const validation = { rulePackVersion: "rules-v1", valid: true, score: 100, counts: { error: 0, warning: 0, info: 0 }, findings: [] };
 const costEstimate = { estimateSchemaVersion: 1, generatedAt: "2026-07-16T00:00:00.000Z", currency: "INR", locale: "en-IN", warnings: [], status: "unavailable", confidence: "unavailable", reason: "no_rate_pack", improveConfidenceActions: [] };
-const row: PersistedStudyRow = { projectId: "project", designId: "design", version: 1, title: "Saved study", status: "completed", createdAt: new Date("2026-07-16T00:00:00.000Z"), requirements, building, validation, costEstimate, aiReview: null };
+const diagnostics = { watchdogMs: 8000, candidateCeiling: 3000, plannedCandidateCount: 16, constructedCandidateCount: 4, evaluatedCandidateCount: 3, quotaUsage: [{ partiId: "t_hub", rung: 0, relaxationId: "preferred", simplifiedCourt: false, quota: 1, attempted: 1 }] };
+const row: PersistedStudyRow = { projectId: "project", designId: "design", version: 1, title: "Saved study", status: "completed", createdAt: new Date("2026-07-16T00:00:00.000Z"), requirements, building, validation, costEstimate, aiReview: null, intent: { generationDiagnostics: diagnostics } };
 
 describe("persisted study compatibility", () => {
   test("returns only schema-valid completed payloads as openable", () => {
     const result = classifyPersistedStudy(row);
     expect(result.compatible).toBe(true);
-    if (result.compatible) expect(result.study.building?.buildingSchemaVersion).toBe(2);
+    if (result.compatible) {
+      expect(result.study.building?.buildingSchemaVersion).toBe(2);
+      expect(result.study.schemes).toHaveLength(1);
+      expect(result.study.selectedSchemeId).toBe(`legacy-${building.candidate.geometryHash}`);
+      expect((result.study.intent as { generationDiagnostics: typeof diagnostics }).generationDiagnostics).toEqual(diagnostics);
+    }
+  });
+
+  test("hydrates stored schemes and rejects a selected id outside the payload", () => {
+    const scheme = {
+      schemeId: "scheme-a",
+      partiId: "t_hub",
+      name: "T Hub · Scheme A",
+      rationale: "A short public hub keeps every room within two cells of circulation.",
+      building,
+      validation,
+      evidence: ["Entry meets the road edge."],
+      ladderRung: 0,
+    };
+    expect(classifyPersistedStudy({ ...row, schemes: [scheme], selectedSchemeId: "scheme-a" })).toMatchObject({
+      compatible: true,
+      study: { selectedSchemeId: "scheme-a", schemes: [{ schemeId: "scheme-a" }] },
+    });
+    expect(classifyPersistedStudy({ ...row, schemes: [scheme], selectedSchemeId: "missing" })).toMatchObject({
+      compatible: false,
+      study: { reason: "INVALID_SCHEMES" },
+    });
+    expect(classifyPersistedStudy({
+      ...row,
+      schemes: [{ ...scheme, schemeId: "scheme-b", building: { ...building, candidate: { ...building.candidate, geometryHash: "other" } } }],
+      selectedSchemeId: "scheme-b",
+    })).toMatchObject({ compatible: false, study: { reason: "INVALID_SCHEMES" } });
   });
 
   test("marks legacy building JSON instead of returning it as openable", () => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { generateBuilding } from "@/lib/building/generate";
 import { BUILDING_FIXTURES } from "@/lib/building/fixtures";
-import { buildRenderSpecs, RENDER_CONTRACT_VERSION, RENDER_PURPOSES } from "@/lib/render/prompts";
+import { buildRenderSpecs, materialSchedule, RENDER_CONTRACT_VERSION, RENDER_PURPOSES } from "@/lib/render/prompts";
 
 describe("server-owned render prompts", () => {
   test("binds four one-image semantic jobs to exact sources", () => {
@@ -33,5 +33,19 @@ describe("server-owned render prompts", () => {
     const requirements = BUILDING_FIXTURES[0].requirements;
     const { building } = generateBuilding(requirements);
     expect(() => buildRenderSpecs({ building, requirements, selectedInteriorSpaceId: "forged" })).toThrow("INTERIOR_SPACE_NOT_FOUND");
+  });
+
+  test("locks the chosen finish direction to the resolved regional material pack", () => {
+    const requirements = {
+      ...BUILDING_FIXTURES[0].requirements,
+      region: { ...BUILDING_FIXTURES[0].requirements.region, adminArea: "Kerala", locality: "Kochi" },
+      architecture: { ...BUILDING_FIXTURES[0].requirements.architecture, materialDirection: "monochrome" as const },
+    };
+    const schedule = materialSchedule(requirements);
+    expect(schedule).toContain("chosen finish direction: refined exposed-concrete tones");
+    expect(schedule).toContain("hot humid regional performance palette");
+    expect(schedule).toContain("light mineral plaster walls");
+    expect(schedule).toContain("warm timber and local stone accents");
+    expect(schedule).toContain("timber screens and deep verandahs");
   });
 });

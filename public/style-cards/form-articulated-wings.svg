@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Articulated wings massing study</title>
+  <desc id="desc">Connected residential wings frame two side courts and a recessed arrival.</desc>
+  <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#564638" stroke-width="1"/></pattern></defs>
+  <rect width="720" height="432" fill="#100e0c"/>
+  <rect x="28" y="28" width="664" height="376" fill="url(#grid)" opacity=".52"/>
+  <path d="M91 354 355 178l277 122-259 102z" fill="#17130f" stroke="#806044" stroke-width="2"/>
+  <g stroke="#6f4b31" stroke-width="2" stroke-linejoin="round">
+    <path d="m139 249 116-61 70 29-117 62z" fill="#e5d4bb"/><path d="m139 249 69 30v83l-69-31z" fill="#92775d"/><path d="m208 279 117-62v84l-117 61z" fill="#bda080"/>
+    <path d="m396 167 122-52 67 27-122 54z" fill="#f1e3cd"/><path d="m396 167 67 29v111l-67-29z" fill="#9f8264"/><path d="m463 196 122-54v111l-122 54z" fill="#c9aa85"/>
+    <path d="m289 264 104-53 74 31-104 54z" fill="#d9c3a5"/><path d="m289 264 74 32v68l-74-32z" fill="#8d7259"/><path d="m363 296 104-54v68l-104 54z" fill="#b89a78"/>
+    <path d="m238 176 105-48 74 30-105 50z" fill="#eadbc4"/><path d="m238 176 74 32v55l-74-32z" fill="#977b61"/><path d="m312 208 105-50v55l-105 50z" fill="#c1a27f"/>
+  </g>
+  <g fill="#234b3b" stroke="#6b987e" stroke-width="2">
+    <path d="m222 299 54-28 42 18-55 28z"/><path d="m431 329 62-31 43 19-62 31z"/>
+  </g>
+  <g fill="none" stroke="#c97940" stroke-width="2"><path d="M119 125h100v18"/><path d="M557 322v42h-92"/></g>
+  <g fill="#c5b29c" font-family="ui-monospace, monospace" font-size="13" letter-spacing="2"><text x="119" y="111">WING A / PRIVATE</text><text x="463" y="383">WING B / SOCIAL</text></g>
+  <text x="49" y="58" fill="#f4e7d5" font-family="ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="3">PLAN / CONNECTED CLUSTERS</text>
+</svg>

@@ -1,17 +1,35 @@
 import type { FloorCandidate } from "@/lib/building/candidates/types";
 import { rectanglePolygon, type Floor, type Rectangle, type Space, type WallSegment } from "@/lib/building/schema";
+import { isPerimeterOpenVerandah, isVerandahSpace } from "@/lib/building/space-semantics";
 
 const EXTERIOR = "EXTERIOR";
 const OPEN_TO_SKY_TYPES = new Set<Space["type"]>(["courtyard", "terrace"]);
 
 export function isOpenToSkySpace(space: Pick<Space, "type"> | undefined) {
-  return Boolean(space && OPEN_TO_SKY_TYPES.has(space.type));
+  return Boolean(space && !isVerandahSpace(space) && OPEN_TO_SKY_TYPES.has(space.type));
 }
 
 /** Unwalled edge zones that shape the enclosed villa footprint. Parking may retain a canopy. */
-export function isPerimeterOpenSpace(space: Pick<Space, "type"> | undefined) {
-  return Boolean(space && (isOpenToSkySpace(space) || space.type === "parking"));
+export function isPerimeterOpenSpace(space: Pick<Space, "type" | "perimeterOpen"> | undefined) {
+  return Boolean(space && (
+    isOpenToSkySpace(space) ||
+    space.type === "parking" ||
+    isPerimeterOpenVerandah(space)
+  ));
 }
+
+/** A canonical reference edge used for entrance topology but omitted from physical walls. */
+export function isVerandahOpenEdgeWall(
+  wall: Pick<WallSegment, "adjacentSpaceIds">,
+  spaces: Pick<Space, "id" | "type" | "perimeterOpen">[],
+) {
+  const byId = new Map(spaces.map((space) => [space.id, space]));
+  const adjacent = wall.adjacentSpaceIds.map((id) => byId.get(id)).filter(Boolean);
+  return adjacent.length > 0 && adjacent.some(isVerandahSpace) && adjacent.every(isPerimeterOpenSpace);
+}
+
+/** @deprecated Compatibility alias for dev/HMR graphs compiled during the edge-helper rename. */
+export const isPhysicalVerandahOpenEdgeWall = isVerandahOpenEdgeWall;
 
 function right(rectangle: Rectangle) {
   return rectangle.x + rectangle.width;
@@ -104,7 +122,9 @@ export function buildCanonicalWalls(floorId: string, envelope: Rectangle, spaces
 
   return mergeRawWalls(rawWalls).flatMap((wall) => {
     const adjacentSpaces = wall.adjacentSpaceIds.map((id) => spacesById.get(id)).filter(Boolean) as Space[];
-    if (adjacentSpaces.length > 0 && adjacentSpaces.every(isPerimeterOpenSpace)) return [];
+    // Keep a non-physical reference edge for verandahs so entrance topology can explicitly start
+    // at the open perimeter. Drawing and massing consumers identify and omit this open edge.
+    if (adjacentSpaces.length > 0 && adjacentSpaces.every(isPerimeterOpenSpace) && !adjacentSpaces.some(isVerandahSpace)) return [];
     const isExterior = wall.adjacentSpaceIds.length === 1 || adjacentSpaces.some(isPerimeterOpenSpace);
     const suffix = `${wall.orientation}-${wall.line}-${wall.from}-${wall.to}`;
     return [{
@@ -170,6 +190,7 @@ export function normalizeFloorTopology(candidate: FloorCandidate, envelope: Rect
     areaMm2: cell.bounds.width * cell.bounds.depth,
     occupied: cell.occupied,
     accessible: cell.accessible,
+    perimeterOpen: cell.perimeterOpen,
   }));
   return {
     id: candidate.floor.id,

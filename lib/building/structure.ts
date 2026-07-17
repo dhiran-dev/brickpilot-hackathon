@@ -70,7 +70,12 @@ function axisCoordinates(origin: number, length: number) {
 }
 
 function safeOnEveryServedFloor(column: StructuralColumn, floors: Floor[]) {
+  const columnBounds = structuralColumnBounds(column);
   return floors.every((floor) => {
+    const overlapsOpenToSkySpace = floor.spaces.some((space) => (
+      isOpenToSkySpace(space) && rectanglesOverlap(columnBounds, space.bounds)
+    ));
+    if (overlapsOpenToSkySpace) return false;
     const supported = floor.spaces.some((space) => (
       !isOpenToSkySpace(space)
       && column.center.x >= space.bounds.x

@@ -4,6 +4,7 @@ import { forwardRef, useId } from "react";
 
 import { areaLabel } from "@/lib/drawing/build-drawing";
 import { visibilityForPreset, type DrawingAppearance, type DrawingDimension, type DrawingFloorArtifact, type DrawingFurniture, type DrawingOpening, type DrawingRoadCorridor, type LayerVisibility, type RoomZone } from "@/lib/drawing/schema";
+import type { RoomType } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
 
 type Theme = {
@@ -61,7 +62,7 @@ const ZONE_LABEL: Record<RoomZone, string> = {
   sacred: "Sacred",
 };
 
-const ROOM_MARK: Record<string, string> = {
+const ROOM_MARK: Record<RoomType, string> = {
   living: "LIV",
   dining: "DIN",
   kitchen: "KIT",
@@ -78,6 +79,7 @@ const ROOM_MARK: Record<string, string> = {
   store: "STO",
   courtyard: "CYD",
   terrace: "TER",
+  verandah: "VER",
 };
 
 function polygonPoints(points: { x: number; y: number }[]) {
@@ -138,7 +140,13 @@ function OpeningSymbol({ opening, theme }: { opening: DrawingOpening; theme: The
     const tickY = horizontal ? opening.wallThicknessMm * 0.72 : 0;
     const midX = (opening.start.x + opening.end.x) / 2;
     const midY = (opening.start.y + opening.end.y) / 2;
-    return <g aria-label="Open connection"><line stroke={theme.sheet} strokeWidth={eraseStroke} x1={opening.start.x} x2={opening.end.x} y1={opening.start.y} y2={opening.end.y} /><line stroke={theme.secondary} strokeWidth="1.25" vectorEffect="non-scaling-stroke" x1={opening.start.x - tickX} x2={opening.start.x + tickX} y1={opening.start.y - tickY} y2={opening.start.y + tickY} /><line stroke={theme.secondary} strokeWidth="1.25" vectorEffect="non-scaling-stroke" x1={opening.end.x - tickX} x2={opening.end.x + tickX} y1={opening.end.y - tickY} y2={opening.end.y + tickY} /><line stroke={theme.construction} strokeDasharray="80 65" strokeWidth="0.8" vectorEffect="non-scaling-stroke" x1={opening.start.x} x2={opening.end.x} y1={opening.start.y} y2={opening.end.y} />{opening.widthMm >= 1200 ? <text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="135" fontWeight="550" letterSpacing="18" textAnchor="middle" transform={horizontal ? undefined : `rotate(-90 ${midX} ${midY})`} x={midX} y={midY - 105}>OPEN</text> : null}</g>;
+    const entryMark = opening.isEntrance ? (
+      <g aria-label="Main entry">
+        <line markerEnd="url(#cad-entry-arrow)" stroke={theme.accent} strokeWidth="1.7" vectorEffect="non-scaling-stroke" x1={horizontal ? midX : midX + 760} x2={midX} y1={horizontal ? midY + 760 : midY} y2={midY} />
+        <text fill={theme.accent} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="180" fontWeight="700" letterSpacing="18" textAnchor="middle" transform={horizontal ? undefined : `rotate(-90 ${midX + 1020} ${midY})`} x={horizontal ? midX : midX + 1020} y={horizontal ? midY + 1020 : midY + 60}>MAIN ENTRY</text>
+      </g>
+    ) : null;
+    return <g aria-label="Open connection"><line stroke={theme.sheet} strokeWidth={eraseStroke} x1={opening.start.x} x2={opening.end.x} y1={opening.start.y} y2={opening.end.y} /><line stroke={theme.secondary} strokeWidth="1.25" vectorEffect="non-scaling-stroke" x1={opening.start.x - tickX} x2={opening.start.x + tickX} y1={opening.start.y - tickY} y2={opening.start.y + tickY} /><line stroke={theme.secondary} strokeWidth="1.25" vectorEffect="non-scaling-stroke" x1={opening.end.x - tickX} x2={opening.end.x + tickX} y1={opening.end.y - tickY} y2={opening.end.y + tickY} /><line stroke={theme.construction} strokeDasharray="80 65" strokeWidth="0.8" vectorEffect="non-scaling-stroke" x1={opening.start.x} x2={opening.end.x} y1={opening.start.y} y2={opening.end.y} />{opening.widthMm >= 1200 ? <text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="135" fontWeight="550" letterSpacing="18" textAnchor="middle" transform={horizontal ? undefined : `rotate(-90 ${midX} ${midY})`} x={midX} y={midY - 105}>OPEN</text> : null}{entryMark}</g>;
   }
   const closedPoint = opening.hingePoint.x === opening.start.x && opening.hingePoint.y === opening.start.y ? opening.end : opening.start;
   const sweep = opening.swing === "counterclockwise" ? 0 : 1;
@@ -181,11 +189,12 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
   const titleHeight = artifact.annotationLayout.titleHeight;
   const northX = artifact.siteBounds.x + artifact.siteBounds.width - 900;
   const northY = artifact.siteBounds.y + 1200;
+  const accessiblePlanLabel = `Pinned plan · ${artifact.metadata.schemeName ?? projectName} · ${artifact.floorLabel}`;
 
   return (
-    <svg ref={ref} aria-label={`${artifact.floorLabel} professional architectural concept plan`} className={className} preserveAspectRatio="xMidYMid meet" role="img" viewBox={`${renderedViewBox.x} ${renderedViewBox.y} ${renderedViewBox.width} ${renderedViewBox.depth}`}>
-      <title>{projectName} · {artifact.floorLabel}</title>
-      <desc>Layered architectural concept drawing with site, room zoning, walls, openings, dimensions, furniture, validation, north arrow, scale bar, legend and title block.</desc>
+    <svg ref={ref} aria-label={accessiblePlanLabel} className={className} preserveAspectRatio="xMidYMid meet" role="img" viewBox={`${renderedViewBox.x} ${renderedViewBox.y} ${renderedViewBox.width} ${renderedViewBox.depth}`}>
+      <title>{`${projectName} · ${artifact.floorLabel}`}</title>
+      <desc>{`${artifact.metadata.schemeName ?? "Canonical scheme"}${artifact.metadata.partiId ? `, ${artifact.metadata.partiId.replaceAll("_", " ")} parti` : ""}, ${artifact.floorLabel}. Layered architectural concept drawing with site, room zoning, walls, openings, dimensions, furniture, validation, north arrow, scale bar, legend and title block.`}</desc>
       <defs>
         <marker id="cad-arrow" markerHeight="6" markerUnits="strokeWidth" markerWidth="6" orient="auto-start-reverse" refX="3" refY="3" viewBox="0 0 6 6"><path d="M 0 3 L 6 0 L 4.5 3 L 6 6 Z" fill={theme.secondary} /></marker>
         <marker id="cad-entry-arrow" markerHeight="8" markerUnits="strokeWidth" markerWidth="8" orient="auto" refX="7" refY="4" viewBox="0 0 8 8"><path d="M 0 0 L 8 4 L 0 8 Z" fill={theme.accent} /></marker>
@@ -195,35 +204,48 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
             <line stroke={color} strokeOpacity="0.7" strokeWidth="42" x1="0" x2="0" y1="0" y2="340" />
           </pattern>
         ))}
+        <pattern height="260" id={`${patternPrefix}-open-edge`} patternUnits="userSpaceOnUse" width="260">
+          <rect fill={theme.zoning.outdoor} fillOpacity={appearance === "cad-dark" ? 0.12 : 0.3} height="260" width="260" />
+          <path d="M 0 260 L 260 0 M -65 65 L 65 -65 M 195 325 L 325 195" fill="none" stroke={theme.zoning.outdoor} strokeOpacity="0.82" strokeWidth="24" />
+        </pattern>
       </defs>
       <rect fill={theme.canvas} height={vb.depth} width={vb.width} x={vb.x} y={vb.y} />
       <rect fill={theme.sheet} height={vb.depth - 400} stroke={theme.construction} strokeWidth="1" vectorEffect="non-scaling-stroke" width={vb.width - 400} x={vb.x + 200} y={vb.y + 200} />
 
-      {layers.site ? <g data-layer="site" id="layer-site">
+      {layers.site ? <g aria-hidden="true" data-layer="site" id="layer-site">
         {artifact.roadCorridors.map((road) => <RoadEdge key={road.edge} road={road} theme={theme} />)}
         <rect fill="none" height={artifact.siteBounds.depth} stroke={theme.construction} strokeDasharray="160 90" strokeWidth="1.2" vectorEffect="non-scaling-stroke" width={artifact.siteBounds.width} x={artifact.siteBounds.x} y={artifact.siteBounds.y} />
         <rect fill="none" height={artifact.envelope.depth} stroke={theme.accent} strokeDasharray="100 75" strokeWidth="1" vectorEffect="non-scaling-stroke" width={artifact.envelope.width} x={artifact.envelope.x} y={artifact.envelope.y} />
         <text fill={theme.construction} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="700" letterSpacing="36" x={artifact.siteBounds.x + 220} y={artifact.siteBounds.y + 350}>SITE BOUNDARY</text>
       </g> : null}
 
-      {layers.zoning ? <g data-layer="zoning" id="layer-zoning">
-        {artifact.rooms.map((room) => <polygon fill={`url(#${patternPrefix}-${room.zone})`} key={room.id} points={polygonPoints(room.polygon)} stroke="none" />)}
+      {layers.zoning ? <g aria-hidden="true" data-layer="zoning" id="layer-zoning">
+        {artifact.rooms.map((room) => <polygon
+          data-edge-treatment={room.edgeTreatment}
+          fill={`url(#${patternPrefix}-${room.edgeTreatment === "open" ? "open-edge" : room.zone})`}
+          key={room.id}
+          points={polygonPoints(room.polygon)}
+          stroke={room.edgeTreatment === "open" ? theme.construction : "none"}
+          strokeDasharray={room.edgeTreatment === "open" ? "180 120" : undefined}
+          strokeWidth={room.edgeTreatment === "open" ? 1.2 : undefined}
+          vectorEffect={room.edgeTreatment === "open" ? "non-scaling-stroke" : undefined}
+        />)}
       </g> : null}
 
-      {layers.circulation ? <g data-layer="circulation" id="layer-circulation">
+      {layers.circulation ? <g aria-hidden="true" data-layer="circulation" id="layer-circulation">
         {artifact.routes.map((route) => <polyline fill="none" key={route.id} opacity="0.72" points={polygonPoints(route.points)} stroke={route.accessible ? theme.info : theme.route} strokeDasharray="110 95" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.15" vectorEffect="non-scaling-stroke" />)}
       </g> : null}
 
-      {layers.walls ? <g data-layer="walls" id="layer-walls">
+      {layers.walls ? <g aria-hidden="true" data-layer="walls" id="layer-walls">
         {artifact.walls.map((wall) => <line key={wall.id} opacity={highlighted.has(wall.id) ? 1 : wall.type === "exterior" ? 0.72 : wall.type === "shaft" ? 0.62 : 0.52} stroke={highlighted.has(wall.id) ? theme.accent : wall.type === "exterior" ? theme.ink : theme.secondary} strokeLinecap="square" strokeWidth={wall.thicknessMm} x1={wall.start.x} x2={wall.end.x} y1={wall.start.y} y2={wall.end.y} />)}
         {artifact.columns.map((column) => <g aria-label={`${column.id}, conceptual column coordination`} key={column.id}><rect fill={highlighted.has(column.id) ? theme.accent : theme.ink} height={column.depthMm} opacity="0.92" stroke={theme.sheet} strokeWidth="1" vectorEffect="non-scaling-stroke" width={column.widthMm} x={column.center.x - column.widthMm / 2} y={column.center.y - column.depthMm / 2} /><circle cx={column.center.x} cy={column.center.y} fill="none" r={Math.max(column.widthMm, column.depthMm) * 0.8} stroke={theme.accent} strokeDasharray="55 35" strokeWidth="0.7" vectorEffect="non-scaling-stroke" /></g>)}
       </g> : null}
 
-      {layers.openings ? <g data-layer="openings" id="layer-openings">{artifact.openings.map((opening) => <OpeningSymbol key={opening.id} opening={opening} theme={theme} />)}</g> : null}
+      {layers.openings ? <g aria-hidden="true" data-layer="openings" id="layer-openings">{artifact.openings.map((opening) => <OpeningSymbol key={opening.id} opening={opening} theme={theme} />)}</g> : null}
 
-      {layers.furniture ? <g data-layer="furniture" id="layer-furniture">{artifact.furniture.map((item) => <FurnitureSymbol furniture={item} key={item.id} theme={theme} />)}</g> : null}
+      {layers.furniture ? <g aria-hidden="true" data-layer="furniture" id="layer-furniture">{artifact.furniture.map((item) => <FurnitureSymbol furniture={item} key={item.id} theme={theme} />)}</g> : null}
 
-      {layers.labels ? <g data-layer="labels" id="layer-labels">
+      {layers.labels ? <g aria-hidden="true" data-layer="labels" id="layer-labels">
         {artifact.rooms.map((room) => <g key={room.id}>
           {highlighted.has(room.id) ? <rect fill="none" height={room.bounds.depth - 100} stroke={theme.accent} strokeDasharray="100 70" strokeWidth="2" vectorEffect="non-scaling-stroke" width={room.bounds.width - 100} x={room.bounds.x + 50} y={room.bounds.y + 50} /> : null}
           {room.label.mode === "schedule" ? <g aria-label={`${room.label.scheduleRef}, ${room.name}, ${areaLabel(room.areaMm2)}`}>
@@ -236,24 +258,24 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
         </g>)}
       </g> : null}
 
-      {layers["dimensions-overall"] ? <g data-layer="dimensions-overall" id="layer-dimensions-overall">{artifact.dimensions.overall.map((dimension) => <Dimension dimension={dimension} key={dimension.id} theme={theme} />)}</g> : null}
-      {layers["dimensions-internal"] ? <g data-layer="dimensions-internal" id="layer-dimensions-internal">{artifact.dimensions.internal.map((dimension) => <Dimension dimension={dimension} key={dimension.id} theme={theme} />)}</g> : null}
+      {layers["dimensions-overall"] ? <g aria-hidden="true" data-layer="dimensions-overall" id="layer-dimensions-overall">{artifact.dimensions.overall.map((dimension) => <Dimension dimension={dimension} key={dimension.id} theme={theme} />)}</g> : null}
+      {layers["dimensions-internal"] ? <g aria-hidden="true" data-layer="dimensions-internal" id="layer-dimensions-internal">{artifact.dimensions.internal.map((dimension) => <Dimension dimension={dimension} key={dimension.id} theme={theme} />)}</g> : null}
 
-      {layers.validation ? <g data-layer="validation" id="layer-validation">
+      {layers.validation ? <g aria-hidden="true" data-layer="validation" id="layer-validation">
         {artifact.findings.map((finding, index) => {
           const color = finding.severity === "error" ? theme.danger : finding.severity === "warning" ? theme.warning : theme.info;
           return <g aria-label={finding.message} key={finding.id}><circle cx={finding.point.x} cy={finding.point.y} fill={theme.sheet} r="270" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" /><text fill={color} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="260" fontWeight="900" textAnchor="middle" x={finding.point.x} y={finding.point.y + 90}>{index + 1}</text></g>;
         })}
       </g> : null}
 
-      {layers.annotation ? <g data-layer="annotation" id="layer-annotation">
+      {layers.annotation ? <g aria-hidden="true" data-layer="annotation" id="layer-annotation">
         <g aria-label="Compass rose" transform={`translate(${northX} ${northY})`}><circle cx="0" cy="0" fill={theme.sheet} fillOpacity="0.86" r="370" stroke={theme.secondary} strokeWidth="1" vectorEffect="non-scaling-stroke" /><path d="M 0 -300 L 105 55 L 0 12 L -105 55 Z" fill={theme.accent} /><path d="M 0 300 L 75 -45 L 0 -12 L -75 -45 Z" fill="none" stroke={theme.secondary} strokeWidth="1" vectorEffect="non-scaling-stroke" /><line stroke={theme.secondary} strokeWidth="1" vectorEffect="non-scaling-stroke" x1="-270" x2="270" y1="0" y2="0" /><text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="165" fontWeight="700" textAnchor="middle" x="0" y="-430">N</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="120" textAnchor="middle" x="0" y="470">S</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="120" textAnchor="middle" x="470" y="42">E</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="120" textAnchor="middle" x="-470" y="42">W</text></g>
         <g aria-label="Scale bar" transform={`translate(${artifact.annotationLayout.scaleOrigin.x} ${artifact.annotationLayout.scaleOrigin.y})`}><rect fill={theme.ink} height="150" width={artifact.scaleBarMm / 2} x="0" y="0" /><rect fill="none" height="150" stroke={theme.ink} strokeWidth="1" vectorEffect="non-scaling-stroke" width={artifact.scaleBarMm / 2} x={artifact.scaleBarMm / 2} y="0" /><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="700" x="0" y="480">0</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="700" textAnchor="middle" x={artifact.scaleBarMm} y="480">{formatScale(artifact.scaleBarMm)}</text></g>
         <g aria-label="Room zoning legend" transform={`translate(${artifact.annotationLayout.legendOrigin.x} ${artifact.annotationLayout.legendOrigin.y})`}>
           {Object.entries(ZONE_LABEL).map(([zone, label], index) => <g key={zone} transform={`translate(${(index % 3) * 2500} ${Math.floor(index / 3) * 430})`}><rect fill={`url(#${patternPrefix}-${zone})`} height="230" stroke={theme.construction} strokeWidth="0.6" vectorEffect="non-scaling-stroke" width="360" x="0" y="-190" /><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="200" fontWeight="650" x="500" y="0">{label}</text></g>)}
         </g>
-        <g aria-label="Title block"><rect fill="none" height={titleHeight} stroke={theme.construction} strokeWidth="1.2" vectorEffect="non-scaling-stroke" width={artifact.siteBounds.width} x={artifact.siteBounds.x} y={titleY} /><line stroke={theme.construction} strokeWidth="1" vectorEffect="non-scaling-stroke" x1={artifact.siteBounds.x + artifact.siteBounds.width * 0.62} x2={artifact.siteBounds.x + artifact.siteBounds.width * 0.62} y1={titleY} y2={titleY + titleHeight} /><text fill={theme.accent} fontFamily="Iowan Old Style, Palatino Linotype, serif" fontSize="520" x={artifact.siteBounds.x + 430} y={titleY + 720}>BrickPilot</text><text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="260" fontWeight="800" letterSpacing="28" x={artifact.siteBounds.x + 430} y={titleY + 1260}>{projectName.toUpperCase()}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" letterSpacing="18" x={artifact.siteBounds.x + 430} y={titleY + 1720}>CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION</text><text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="350" fontWeight="800" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 630}>{artifact.floorLabel.toUpperCase()}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1090}>SEED {artifact.metadata.seed} · {artifact.metadata.algorithmVersion}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1480}>RULES {artifact.metadata.rulePackVersion}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1870}>RENDERER {artifact.rendererVersion}</text></g>
-        {artifact.schedule.length ? <g aria-label="Room schedule" transform={`translate(${artifact.annotationLayout.scheduleOrigin.x} ${artifact.annotationLayout.scheduleOrigin.y})`}><text fill={theme.accent} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="800" letterSpacing="26">ROOM SCHEDULE</text>{artifact.schedule.map((item, index) => <text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="200" key={item.ref} x={(index % 2) * (artifact.siteBounds.width / 2)} y={430 + Math.floor(index / 2) * 350}>{item.ref} · {item.name.toUpperCase()} · {areaLabel(item.areaMm2)}</text>)}</g> : null}
+        <g aria-label="Title block"><rect fill="none" height={titleHeight} stroke={theme.construction} strokeWidth="1.2" vectorEffect="non-scaling-stroke" width={artifact.siteBounds.width} x={artifact.siteBounds.x} y={titleY} /><line stroke={theme.construction} strokeWidth="1" vectorEffect="non-scaling-stroke" x1={artifact.siteBounds.x + artifact.siteBounds.width * 0.62} x2={artifact.siteBounds.x + artifact.siteBounds.width * 0.62} y1={titleY} y2={titleY + titleHeight} /><text fill={theme.accent} fontFamily="Iowan Old Style, Palatino Linotype, serif" fontSize="520" x={artifact.siteBounds.x + 430} y={titleY + 720}>BrickPilot</text><text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="260" fontWeight="800" letterSpacing="28" x={artifact.siteBounds.x + 430} y={titleY + 1260}>{projectName.toUpperCase()}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" letterSpacing="18" x={artifact.siteBounds.x + 430} y={titleY + 1720}>CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION</text>{artifact.metadata.schemeName ? <text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="700" letterSpacing="14" x={artifact.siteBounds.x + 430} y={titleY + 2210}>{artifact.metadata.schemeName.toUpperCase()} · {artifact.metadata.partiId?.replaceAll("_", " ").toUpperCase()} · {artifact.metadata.style?.replaceAll("_", " ").toUpperCase()}</text> : null}<text fill={theme.ink} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="350" fontWeight="800" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 630}>{artifact.floorLabel.toUpperCase()}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1090}>SEED {artifact.metadata.seed} · {artifact.metadata.algorithmVersion}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1480}>RULES {artifact.metadata.rulePackVersion}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="210" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 1870}>RENDERER {artifact.rendererVersion}</text><text fill={theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="190" x={artifact.siteBounds.x + artifact.siteBounds.width * 0.65} y={titleY + 2260}>CANDIDATE {artifact.metadata.candidate.toUpperCase()}</text></g>
+        {artifact.areaSchedule.length ? <g aria-label="Area schedule" transform={`translate(${artifact.annotationLayout.scheduleOrigin.x} ${artifact.annotationLayout.scheduleOrigin.y})`}><text fill={theme.accent} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="220" fontWeight="800" letterSpacing="26">AREA SCHEDULE · ACHIEVED / TARGET</text>{artifact.areaSchedule.map((item, index) => <text fill={item.underTarget ? theme.warning : theme.secondary} fontFamily="Avenir Next, Gill Sans, sans-serif" fontSize="190" fontWeight={item.underTarget ? "700" : "500"} key={item.ref} x={(index % 2) * (artifact.siteBounds.width / 2)} y={430 + Math.floor(index / 2) * 350}>{item.ref} · {item.name.toUpperCase()} · {areaLabel(item.achievedAreaMm2)} / {item.targetAreaMm2 ? areaLabel(item.targetAreaMm2) : "—"}{item.underTarget ? " · UNDER >15%" : ""}</text>)}</g> : null}
       </g> : null}
     </svg>
   );

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Modernist villa study</title><desc id="desc">A rigorous column grid supports horizontal slabs and disciplined glazed bays.</desc>
+  <defs><pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" fill="none" stroke="#302821"/></pattern><linearGradient id="concrete" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d4c8b8"/><stop offset="1" stop-color="#77736d"/></linearGradient></defs>
+  <rect width="720" height="432" fill="#090908"/><rect width="720" height="432" fill="url(#grid)"/>
+  <path d="M84 363 341 232l296 102-271 81Z" fill="#15120f" stroke="#594537"/>
+  <path d="m139 222 230-104 232 76-228 113Z" fill="url(#concrete)"/><path d="m139 222 234 85v99l-234-78Z" fill="#aaa092"/><path d="m373 307 228-113v97L373 406Z" fill="#66645f"/>
+  <path d="m114 211 255-119 263 86-259 129Z" fill="#1b1b1a" stroke="#ff6a1f" stroke-width="5"/>
+  <path d="m171 251 202 73 198-98v69l-198 96-202-67Z" fill="#152325" stroke="#718e91"/>
+  <path d="m171 251 202 73m-152-55v72m51-54v72m51-54v72m50-63v67m50-92v67m50-92v67" stroke="#d7c6b0" stroke-width="5"/>
+  <path d="m139 328 234 78 228-115" fill="none" stroke="#3d3833" stroke-width="10"/>
+  <path d="M92 379h537M122 401h476" stroke="#8e5a31" stroke-width="2" opacity=".65"/>
+  <path d="M608 53v77M570 92h76" stroke="#ff6a1f" stroke-width="2"/><rect x="594" y="78" width="28" height="28" fill="none" stroke="#ff6a1f"/>
+</svg>

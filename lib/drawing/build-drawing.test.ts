@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { CadPlan } from "@/components/cad-plan/CadPlan";
 import { buildingSchema, rectanglePolygon, type Building } from "@/lib/building/schema";
 import { placeFloorOpenings } from "@/lib/building/openings";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
@@ -47,6 +50,22 @@ describe("drawing artifact", () => {
     expect(first.floors[0].dimensions.overall).toHaveLength(4);
     expect(first.floors[0].metadata.seed).toBe(42);
     expect(first.floors[0].roadEdges).toEqual(["south"]);
+  });
+
+  test("binds scheme identity and achieved-vs-target areas into the sheet", () => {
+    const artifact = buildDrawing(building, {
+      scheme: { name: "L-Court Villa · Scheme A", partiId: "l_court", style: "warm_minimal" },
+      targetAreaByRoomId: { living: 60_000_000, bedroom: 30_000_000 },
+    }).floors[0];
+    expect(artifact.metadata).toMatchObject({ schemeName: "L-Court Villa · Scheme A", partiId: "l_court", style: "warm_minimal" });
+    expect(artifact.areaSchedule).toEqual([
+      expect.objectContaining({ roomId: "living", achievedAreaMm2: 48_000_000, targetAreaMm2: 60_000_000, underTarget: true }),
+      expect.objectContaining({ roomId: "bedroom", achievedAreaMm2: 32_000_000, targetAreaMm2: 30_000_000, underTarget: false }),
+    ]);
+    const markup = renderToStaticMarkup(createElement(CadPlan, { artifact, projectName: "Villa study" }));
+    expect(markup).toContain("L-COURT VILLA · SCHEME A");
+    expect(markup).toContain("AREA SCHEDULE · ACHIEVED / TARGET");
+    expect(markup).toContain("UNDER &gt;15%");
   });
 
   test("provides a complete independent layer state for every preset", () => {
@@ -124,9 +143,77 @@ describe("drawing artifact", () => {
   });
 
   test("chooses a generated door swing toward the room being entered", () => {
-    const floor = placeFloorOpenings(building.floors[0], { entranceSide: "south", isGroundFloor: true });
+    const perimeterCompleteFloor = structuredClone(building.floors[0]);
+    perimeterCompleteFloor.envelope.depth = 8_000;
+    const floor = placeFloorOpenings(perimeterCompleteFloor, { entranceSide: "south", isGroundFloor: true });
     const sharedDoor = floor.openings.find((opening) => opening.wallId === "shared");
     expect(sharedDoor?.connects).toEqual(["living", "bedroom"]);
     expect(sharedDoor?.swing).toBe("counterclockwise");
+  });
+
+  test("marks a verandah with an open-edge hatch and omits its perimeter wall", () => {
+    const withVerandah = structuredClone(building);
+    const floor = withVerandah.floors[0];
+    floor.spaces.push({
+      id: "front-verandah",
+      floorId: "F0",
+      name: "Front verandah",
+      type: "verandah",
+      planningCellPolygon: rectanglePolygon({ x: 1_000, y: 9_000, width: 10_000, depth: 2_000 }),
+      bounds: { x: 1_000, y: 9_000, width: 10_000, depth: 2_000 },
+      areaMm2: 20_000_000,
+      occupied: false,
+      accessible: false,
+    });
+    floor.walls[1].adjacentSpaceIds = ["living", "front-verandah"];
+    floor.walls.push({
+      id: "verandah-open-edge",
+      floorId: "F0",
+      start: { x: 1_000, y: 11_000 },
+      end: { x: 11_000, y: 11_000 },
+      thicknessMm: 230,
+      type: "exterior",
+      adjacentSpaceIds: ["front-verandah"],
+    });
+    floor.openings.push({
+      id: "verandah-entry",
+      floorId: "F0",
+      wallId: "verandah-open-edge",
+      kind: "open_connection",
+      usage: "pedestrian",
+      offsetMm: 4_500,
+      widthMm: 1_000,
+      heightMm: 2_100,
+      sillHeightMm: 0,
+      connects: ["EXTERIOR", "front-verandah"],
+      hinge: "none",
+      swing: "none",
+    });
+
+    const drawing = buildDrawing(withVerandah).floors[0];
+    expect(drawing.rooms.find((room) => room.id === "front-verandah")).toEqual(expect.objectContaining({
+      zone: "outdoor",
+      edgeTreatment: "open",
+    }));
+    expect(drawing.walls.some((wall) => wall.id === "verandah-open-edge")).toBe(false);
+    expect(drawing.walls.some((wall) => wall.id === "south-wall")).toBe(true);
+    expect(drawing.openings.find((opening) => opening.id === "verandah-entry")?.isEntrance).toBe(true);
+
+    const svg = renderToStaticMarkup(createElement(CadPlan, {
+      artifact: drawing,
+      layers: visibilityForPreset("presentation"),
+    }));
+    expect(svg).toContain('data-edge-treatment="open"');
+    expect(svg).toContain('stroke-dasharray="180 120"');
+    expect(svg).toContain("-open-edge");
+    expect(svg).toContain("MAIN ENTRY");
+
+    const closedUpperBay = structuredClone(withVerandah);
+    const closedSpace = closedUpperBay.floors[0].spaces.find((space) => space.id === "front-verandah")!;
+    closedSpace.perimeterOpen = false;
+    closedUpperBay.floors[0].openings = closedUpperBay.floors[0].openings.filter((opening) => opening.id !== "verandah-entry");
+    const closedDrawing = buildDrawing(closedUpperBay).floors[0];
+    expect(closedDrawing.rooms.find((room) => room.id === "front-verandah")?.edgeTreatment).toBeUndefined();
+    expect(closedDrawing.walls.some((wall) => wall.id === "verandah-open-edge")).toBe(true);
   });
 });

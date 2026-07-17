@@ -1,26 +1,12 @@
 import type { CardinalDirection, FormStrategy } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
 import type { CandidateRoom, FloorCandidate } from "@/lib/building/candidates/types";
+import { minimumRemainingDimensionMm } from "@/lib/building/dimensions";
 
 const MIN_RECESS_MM = 900;
 const MAX_RECESS_MM = 1_500;
-const MIN_REMAINING_DIMENSION_MM = 2_100;
-
 function minimumRemainingDimension(cell: CandidateRoom) {
-  const byType: Partial<Record<CandidateRoom["type"], number>> = {
-    bedroom: 2_700,
-    living: 2_700,
-    dining: 2_400,
-    kitchen: 2_100,
-    study: 2_100,
-    parking: 2_400,
-    bathroom: 1_200,
-    utility: 1_200,
-    foyer: 1_200,
-    pooja: 1_200,
-    store: 1_000,
-  };
-  return byType[cell.type] ?? MIN_REMAINING_DIMENSION_MM;
+  return minimumRemainingDimensionMm(cell.type);
 }
 
 const RECESS_ROOM_PRIORITY: Record<CandidateRoom["type"], number> = {
@@ -40,6 +26,7 @@ const RECESS_ROOM_PRIORITY: Record<CandidateRoom["type"], number> = {
   balcony: 13,
   courtyard: 14,
   terrace: 15,
+  verandah: 16,
 };
 
 function right(bounds: Rectangle) {

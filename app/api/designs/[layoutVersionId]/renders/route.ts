@@ -8,7 +8,7 @@ import { buildingSchema } from "@/lib/building/schema";
 import { db } from "@/lib/db";
 import { generatedAssets, generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 import { persistedValidationReportSchema } from "@/lib/design/persisted-study";
-import { applyReplicatePrediction, reconcileReplicateJob } from "@/lib/render/finalize-job";
+import { applyReplicatePrediction, reconcileReplicateJob, renderJobMatchesCanonical } from "@/lib/render/finalize-job";
 import { buildRenderSpecs, isRenderPurpose, RENDER_CONTRACT_VERSION, RENDER_PURPOSES, type RenderPurpose, type RenderSpec } from "@/lib/render/prompts";
 import { createReplicatePrediction, safePredictionPayload } from "@/lib/render/replicate";
 import { decodeReferenceDataUri, storeReferenceDataUri } from "@/lib/render/storage";
@@ -16,6 +16,7 @@ import { decodeReferenceDataUri, storeReferenceDataUri } from "@/lib/render/stor
 const referenceRoleSchema = z.enum(["plan_reference", "massing_front", "massing_collage", "massing_top"]);
 const renderRequestSchema = z.object({
   geometryHash: z.string().min(1).max(200),
+  schemeId: z.string().min(1).max(200).nullable(),
   selectedInteriorSpaceId: z.string().min(1).max(200),
   references: z.array(z.object({ role: referenceRoleSchema, dataUri: z.string().min(32).max(1_400_000) })).min(1).max(4),
 }).superRefine((value, context) => {
@@ -50,7 +51,26 @@ function purposeOf(payload: Record<string, unknown>): RenderPurpose | null {
   return payload.renderContractVersion === RENDER_CONTRACT_VERSION && isRenderPurpose(payload.renderPurpose) ? payload.renderPurpose : null;
 }
 
+export function renderJobBelongsToScheme(payload: Record<string, unknown>, selectedSchemeId: string | null, geometryHash: string | null) {
+  return renderJobMatchesCanonical(payload, selectedSchemeId, geometryHash);
+}
+
+export function renderSourceStoragePrefix(layoutVersionId: string, payload: Record<string, unknown>) {
+  const packageId = typeof payload.packageId === "string" ? payload.packageId : "";
+  const rawBinding = typeof payload.schemeId === "string" ? payload.schemeId : `legacy-${String(payload.geometryHash ?? "unknown")}`;
+  const binding = rawBinding.replace(/[^a-zA-Z0-9_-]/g, "-");
+  return `sources/${layoutVersionId}/${binding}/${packageId}/`;
+}
+
+function renderContractLockKey(layoutVersionId: string) {
+  return `brickpilot:render-contract:${layoutVersionId}`;
+}
+
 async function renderState(layoutVersionId: string) {
+  const [layout] = await db.select({ selectedSchemeId: layoutVersions.selectedSchemeId, building: layoutVersions.layoutJson })
+    .from(layoutVersions).where(eq(layoutVersions.id, layoutVersionId)).limit(1);
+  const canonicalBuilding = buildingSchema.safeParse(layout?.building);
+  const geometryHash = canonicalBuilding.success ? canonicalBuilding.data.candidate.geometryHash : null;
   const jobs = await db.select().from(generationJobs)
     .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")))
     .orderBy(generationJobs.createdAt);
@@ -59,6 +79,7 @@ async function renderState(layoutVersionId: string) {
     .orderBy(generatedAssets.createdAt);
   const latestByPurpose = new Map<RenderPurpose, typeof generationJobs.$inferSelect>();
   for (const job of jobs) {
+    if (!renderJobBelongsToScheme(job.requestPayload, layout?.selectedSchemeId ?? null, geometryHash)) continue;
     const purpose = purposeOf(job.requestPayload);
     if (purpose) latestByPurpose.set(purpose, job);
   }
@@ -69,20 +90,51 @@ async function renderState(layoutVersionId: string) {
     status: job.status,
     failureReason: job.failureReason,
     createdAt: job.createdAt,
+    schemeDisposition: "current" as const,
   }));
   const requiredRoles = new Set<string>(RENDER_PURPOSES);
   const currentProviderJobIds = new Set(latestJobs.map((job) => job.providerJobId).filter((id): id is string => Boolean(id)));
   const currentAssets = assets.filter((asset) => asset.type === "render" && requiredRoles.has(asset.role) && Boolean(asset.providerJobId) && currentProviderJobIds.has(asset.providerJobId!));
-  const publicAssets = currentAssets.map((asset, index) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType, index }));
+  const publicAssets = currentAssets.map((asset, index) => {
+    const job = latestJobs.find((candidate) => candidate.providerJobId === asset.providerJobId);
+    return { id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType, index, schemeId: typeof job?.requestPayload.schemeId === "string" ? job.requestPayload.schemeId : null };
+  });
+  const previousJobs = jobs.filter((job) => !renderJobBelongsToScheme(job.requestPayload, layout?.selectedSchemeId ?? null, geometryHash));
+  const previousProviderJobIds = new Set(previousJobs.map((job) => job.providerJobId).filter((id): id is string => Boolean(id)));
+  const previousAssets = assets
+    .filter((asset) => asset.type === "render" && Boolean(asset.providerJobId) && previousProviderJobIds.has(asset.providerJobId!))
+    .map((asset, index) => {
+      const job = previousJobs.find((candidate) => candidate.providerJobId === asset.providerJobId);
+      return {
+        id: asset.id,
+        role: asset.role,
+        url: asset.url,
+        contentType: asset.contentType,
+        index,
+        schemeId: typeof job?.requestPayload.schemeId === "string" ? job.requestPayload.schemeId : null,
+        schemeDisposition: "previous" as const,
+      };
+    });
   const latestSourceByRole = new Map<string, typeof generatedAssets.$inferSelect>();
-  for (const asset of assets.filter((candidate) => candidate.type === "source")) latestSourceByRole.set(asset.role, asset);
+  const currentSourcePrefixes = latestJobs.flatMap((job) => {
+    const prefixes = [renderSourceStoragePrefix(layoutVersionId, job.requestPayload)];
+    // Read-only migration exemption for source assets created before scheme-bound paths.
+    if (job.requestPayload.schemeId == null && typeof job.requestPayload.packageId === "string") {
+      prefixes.push(`sources/${layoutVersionId}/${job.requestPayload.packageId}/`);
+    }
+    return prefixes;
+  });
+  for (const asset of assets.filter((candidate) => candidate.type === "source")) {
+    const belongsToCurrentPackage = currentSourcePrefixes.some((prefix) => asset.storageKey.startsWith(prefix));
+    if (belongsToCurrentPackage) latestSourceByRole.set(asset.role, asset);
+  }
   const publicSources = [...latestSourceByRole.values()].map((asset) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType }));
   const active = latestJobs.some((job) => job.status === "queued" || job.status === "processing");
   const completedRoles = new Set(currentAssets.map((asset) => asset.role));
   const complete = RENDER_PURPOSES.every((purpose) => completedRoles.has(purpose));
   const failed = latestJobs.some((job) => job.status === "failed" || job.status === "canceled");
   const status = complete ? "completed" : active ? "processing" : currentAssets.length > 0 ? "partial" : failed ? "failed" : "idle";
-  return { status, jobs: publicJobs, assets: publicAssets, sources: publicSources };
+  return { status, jobs: publicJobs, assets: publicAssets, previousAssets, sources: publicSources };
 }
 
 async function ownedStudy(layoutVersionId: string, userId: string) {
@@ -94,6 +146,7 @@ async function ownedStudy(layoutVersionId: string, userId: string) {
     building: layoutVersions.layoutJson,
     validation: layoutVersions.validation,
     requirements: projectRequirements.inputJson,
+    selectedSchemeId: layoutVersions.selectedSchemeId,
   })
     .from(layoutVersions)
     .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
@@ -108,8 +161,12 @@ export async function GET(request: Request, context: { params: Promise<{ layoutV
   if (!user) return errorResponse("Authentication is required.", 401, "AUTH_REQUIRED");
   const { layoutVersionId } = await context.params;
   if (!await ownedStudy(layoutVersionId, user.id)) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
-  const active = await db.select({ id: generationJobs.id }).from(generationJobs)
+  const row = await ownedStudy(layoutVersionId, user.id);
+  if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
+  const building = buildingSchema.safeParse(row.building);
+  const activeJobs = await db.select().from(generationJobs)
     .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render"), inArray(generationJobs.status, ["queued", "processing"])));
+  const active = activeJobs.filter((job) => renderJobBelongsToScheme(job.requestPayload, row.selectedSchemeId, building.success ? building.data.candidate.geometryHash : null));
   await Promise.allSettled(active.map((job) => reconcileReplicateJob(job.id)));
   return NextResponse.json(await renderState(layoutVersionId));
 }
@@ -144,6 +201,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   const validation = persistedValidationReportSchema.safeParse(row.validation);
   if (!building.success || !requirements.success || !validation.success) return errorResponse("This saved study is incompatible with the render pipeline.", 409, "INCOMPATIBLE_STUDY");
   if (!validation.data.valid) return errorResponse("Resolve hard validation errors before creating concept renders.", 409, "VALIDATION_BLOCKED");
+  if (parsed.data.schemeId !== row.selectedSchemeId) return errorResponse("The reference package belongs to a different selected scheme. Reload the study and capture again.", 409, "STALE_SCHEME");
   if (parsed.data.geometryHash !== building.data.candidate.geometryHash) return errorResponse("The 3D references belong to an older geometry revision. Reload the study and capture again.", 409, "STALE_GEOMETRY");
   const selected = building.data.floors.flatMap((floor) => floor.spaces).find((space) => space.id === parsed.data.selectedInteriorSpaceId);
   if (!selected || !selected.occupied || ["parking", "circulation", "stair", "courtyard", "terrace", "balcony"].includes(selected.type)) {
@@ -157,20 +215,30 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   const dayStart = new Date(now);
   dayStart.setUTCHours(0, 0, 0, 0);
   const packageId = crypto.randomUUID();
-  let reserved: { reused: boolean; jobs: Array<typeof generationJobs.$inferSelect>; specs: RenderSpec[] };
+  let reserved: { reused: boolean; jobs: Array<typeof generationJobs.$inferSelect>; specs: RenderSpec[]; binding: { schemeId: string | null; geometryHash: string } };
   try {
     reserved = await db.transaction(async (transaction) => {
-      await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:render:${layoutVersionId}`}, 0))`);
+      await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${renderContractLockKey(layoutVersionId)}, 0))`);
+      const [currentLayout] = await transaction.select({
+        selectedSchemeId: layoutVersions.selectedSchemeId,
+        building: layoutVersions.layoutJson,
+      }).from(layoutVersions).where(eq(layoutVersions.id, layoutVersionId)).limit(1);
+      const currentBuilding = buildingSchema.safeParse(currentLayout?.building);
+      if (!currentBuilding.success || currentBuilding.data.candidate.geometryHash !== parsed.data.geometryHash) throw new Error("STALE_GEOMETRY");
+      const selectedSchemeId = currentLayout?.selectedSchemeId ?? null;
+      if (selectedSchemeId !== parsed.data.schemeId) throw new Error("STALE_SCHEME");
+      const binding = { schemeId: selectedSchemeId, geometryHash: currentBuilding.data.candidate.geometryHash };
       const existing = await transaction.select().from(generationJobs)
         .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")))
         .orderBy(generationJobs.createdAt);
-      const active = existing.filter((job) => job.status === "queued" || job.status === "processing");
-      if (active.length > 0) return { reused: true, jobs: active, specs: [] };
-      const completedPurposes = new Set(existing.filter((job) => job.status === "completed").map((job) => purposeOf(job.requestPayload)).filter(Boolean));
+      const currentExisting = existing.filter((job) => renderJobBelongsToScheme(job.requestPayload, selectedSchemeId, currentBuilding.data.candidate.geometryHash));
+      const active = currentExisting.filter((job) => job.status === "queued" || job.status === "processing");
+      if (active.length > 0) return { reused: true, jobs: active, specs: [], binding };
+      const completedPurposes = new Set(currentExisting.filter((job) => job.status === "completed").map((job) => purposeOf(job.requestPayload)).filter(Boolean));
       const missingSpecs = specs.filter((spec) => !completedPurposes.has(spec.purpose));
-      if (missingSpecs.length === 0) return { reused: true, jobs: existing.filter((job) => job.status === "completed"), specs: [] };
+      if (missingSpecs.length === 0) return { reused: true, jobs: currentExisting.filter((job) => job.status === "completed"), specs: [], binding };
       for (const spec of missingSpecs) {
-        const attempts = existing.filter((job) => purposeOf(job.requestPayload) === spec.purpose).length;
+        const attempts = currentExisting.filter((job) => purposeOf(job.requestPayload) === spec.purpose).length;
         if (attempts >= MAX_RENDER_ATTEMPTS_PER_PURPOSE) throw new Error(`RETRY_LIMIT:${spec.purpose}`);
       }
       const requestedNow = missingSpecs.reduce((sum, spec) => sum + spec.requestedOutputCount, 0);
@@ -198,7 +266,8 @@ export async function POST(request: Request, context: { params: Promise<{ layout
             renderContractVersion: RENDER_CONTRACT_VERSION,
             renderPurpose: spec.purpose,
             requestedOutputCount: spec.requestedOutputCount,
-            geometryHash: building.data.candidate.geometryHash,
+            geometryHash: binding.geometryHash,
+            schemeId: selectedSchemeId ?? undefined,
             selectedInteriorSpaceId: selected.id,
             referenceRoles: [spec.sourceRole],
             prompt: spec.prompt,
@@ -207,11 +276,13 @@ export async function POST(request: Request, context: { params: Promise<{ layout
         }).returning();
         jobs.push(job);
       }
-      return { reused: false, jobs, specs: missingSpecs };
+      return { reused: false, jobs, specs: missingSpecs, binding };
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "RENDER_RESERVATION_FAILED";
     if (message.startsWith("RETRY_LIMIT:")) return errorResponse(`The ${message.split(":")[1]} render reached its retry limit.`, 409, "RENDER_RETRY_LIMIT");
+    if (message === "STALE_SCHEME") return errorResponse("The selected scheme changed before render reservation. Reload and capture the references again.", 409, "STALE_SCHEME");
+    if (message === "STALE_GEOMETRY") return errorResponse("The selected scheme changed before render reservation. Reload and capture the references again.", 409, "STALE_GEOMETRY");
     if (message === "USER_IMAGE_LIMIT") return errorResponse("Daily image limit reached. Try again tomorrow.", 429, "IMAGE_RATE_LIMITED");
     if (message === "GLOBAL_IMAGE_LIMIT") return errorResponse("The global image budget is paused for today.", 503, "GLOBAL_IMAGE_CAP_REACHED");
     console.error("Render reservation failed", error);
@@ -220,9 +291,14 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   if (reserved.reused) return NextResponse.json(await renderState(layoutVersionId));
 
   try {
+    const sourcePrefix = renderSourceStoragePrefix(layoutVersionId, {
+      packageId,
+      schemeId: reserved.binding.schemeId ?? undefined,
+      geometryHash: reserved.binding.geometryHash,
+    });
     const stored = await Promise.all(orderedReferences.map((reference) => storeReferenceDataUri(
       reference.dataUri,
-      `sources/${layoutVersionId}/${packageId}/${reference.role}.webp`,
+      `${sourcePrefix}${reference.role}.webp`,
     )));
     await db.transaction(async (transaction) => {
       for (const [index, asset] of stored.entries()) {

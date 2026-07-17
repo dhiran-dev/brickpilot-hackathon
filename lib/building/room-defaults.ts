@@ -17,6 +17,7 @@ export const ROOM_AREAS: Record<RoomType, { min: number; target: number }> = {
   store: { min: 2, target: 3 },
   courtyard: { min: 8, target: 14 },
   terrace: { min: 8, target: 16 },
+  verandah: { min: 6, target: 12 },
 };
 
 export function roomAreaDefaultsMm2(type: RoomType) {

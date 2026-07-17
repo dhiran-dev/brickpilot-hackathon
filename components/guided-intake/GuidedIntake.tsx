@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Building2, Check, CircleDollarSign, Compass, Home, LoaderCircle, MapPinned, Palette, RotateCcw, Ruler, Sparkles, UsersRound } from "lucide-react";
 
 import { BUILDING_TYPE_OPTIONS, buildingRequirementsSchema, type BuildingRequirements } from "@/lib/building/requirements";
-import { assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
+import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS, formStrategyPatch, type ArchitecturePreviewOption } from "@/components/guided-intake/architecture-options";
+import { applyRegionalPrefill, assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
 import { adminAreaForRegion, CURRENCY_OPTIONS, LOCALE_OPTIONS, REGION_OPTIONS, regionForCountry } from "@/components/guided-intake/region-options";
+import { resolveRegionalPack } from "@/lib/design/regional-packs";
 
 const STEPS = [
   { id: "project", label: "Project", question: "What are we planning?", icon: Home },
@@ -18,7 +20,7 @@ const STEPS = [
   { id: "review", label: "Review", question: "Is this the brief to solve?", icon: Check },
 ] as const;
 
-const CONTROL = "mt-2 w-full border border-[#8e5a31]/60 bg-[#12100e] px-3 py-2.5 text-sm text-[#fff6ea] outline-none transition-colors placeholder:text-[#655d55] focus:border-[#fff6ea] focus:ring-1 focus:ring-[#fff6ea]";
+const CONTROL = "mt-2 min-h-11 w-full border border-[#8e5a31]/60 bg-[#12100e] px-3 py-2.5 text-sm text-[#fff6ea] outline-none transition-colors placeholder:text-[#655d55] focus:border-[#fff6ea] focus:ring-1 focus:ring-[#fff6ea]";
 const LABEL = "text-[0.65rem] font-extrabold uppercase tracking-[0.12em] text-[#c97940]";
 const DIRECTIONS = ["north", "east", "south", "west"] as const;
 const FLOOR_HEIGHT_OPTIONS = [
@@ -54,11 +56,82 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function NumberControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix?: string; onChange: (value: number) => void }) {
-  return <div className="flex items-center justify-between gap-3 border-b border-[#8e5a31]/30 py-3"><span className="text-sm text-[#cbbcab]">{label}</span><div className="flex items-center"><button aria-label={`Decrease ${label}`} className="grid h-8 w-8 place-items-center border border-[#8e5a31]/50 text-lg text-[#c97940] hover:bg-[#20160f] disabled:opacity-30" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} type="button">−</button><output className="min-w-12 px-2 text-center font-[family-name:var(--font-display)] text-xl">{value}{suffix}</output><button aria-label={`Increase ${label}`} className="grid h-8 w-8 place-items-center border border-[#8e5a31]/50 text-lg text-[#c97940] hover:bg-[#20160f] disabled:opacity-30" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} type="button">+</button></div></div>;
+  return <div className="flex items-center justify-between gap-3 border-b border-[#8e5a31]/30 py-3"><span className="text-sm text-[#cbbcab]">{label}</span><div className="flex items-center"><button aria-label={`Decrease ${label}`} className="grid h-11 w-11 place-items-center border border-[#8e5a31]/50 text-lg text-[#c97940] hover:bg-[#20160f] disabled:opacity-30" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} type="button">−</button><output className="min-w-12 px-2 text-center font-[family-name:var(--font-display)] text-xl">{value}{suffix}</output><button aria-label={`Increase ${label}`} className="grid h-11 w-11 place-items-center border border-[#8e5a31]/50 text-lg text-[#c97940] hover:bg-[#20160f] disabled:opacity-30" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} type="button">+</button></div></div>;
 }
 
 function Choice({ checked, title, detail, disabled, badge, onClick }: { checked: boolean; title: string; detail: string; disabled?: boolean; badge?: string; onClick: () => void }) {
   return <button aria-pressed={checked} className={`relative min-h-28 border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea] ${disabled ? "cursor-not-allowed border-[#45392f]/55 bg-[#0b0a09] text-[#655d55]" : checked ? "border-[#ff4e00] bg-[#25150e] text-[#fff6ea] shadow-[inset_0_-2px_#ff4e00]" : "border-[#8e5a31]/45 bg-[#11100e] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea]"}`} disabled={disabled} onClick={onClick} type="button"><span className="block text-[0.69rem] font-extrabold uppercase tracking-[0.1em]">{title}</span><span className="mt-2 block text-xs leading-5 opacity-80">{detail}</span>{badge ? <span className="absolute right-2 top-2 border border-current px-1.5 py-0.5 text-[0.52rem] font-bold uppercase tracking-[0.08em]">{badge}</span> : null}</button>;
+}
+
+export function ArchitectureReferencePicker<Value extends string>({
+  legend,
+  description,
+  name,
+  options,
+  value,
+  suggestedValue,
+  suggestionLabel,
+  onChange,
+}: {
+  legend: string;
+  description: string;
+  name: string;
+  options: readonly ArchitecturePreviewOption<Value>[];
+  value: Value;
+  suggestedValue?: Value;
+  suggestionLabel?: string;
+  onChange: (value: Value) => void;
+}) {
+  const descriptionId = useId();
+  const radioName = `${name}-${useId().replaceAll(":", "")}`;
+  const [failedSources, setFailedSources] = useState<ReadonlySet<string>>(() => new Set());
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  if (!selected) return null;
+  const imageFailed = failedSources.has(selected.imageSrc);
+
+  return <fieldset aria-describedby={descriptionId} className="intake-reference-fieldset">
+    <legend className="intake-reference-legend">{legend}</legend>
+    <p className="intake-reference-description" id={descriptionId}>{description}</p>
+    <div className="intake-reference-picker" data-layout="pinned-reference-choice-rail">
+      <figure className="intake-reference-sheet">
+        <div className="intake-reference-sheet__media">
+          <div aria-hidden={!imageFailed} aria-label={`${selected.title} reference illustration unavailable`} className="intake-reference-placeholder" role={imageFailed ? "img" : undefined}>
+            <span className="intake-reference-placeholder__frame" />
+            <span className="intake-reference-placeholder__roof" />
+            <span className="intake-reference-placeholder__ground" />
+            <span className="intake-reference-placeholder__copy">{selected.title}<br />reference unavailable</span>
+          </div>
+          {!imageFailed ? <img alt={selected.imageAlt} className="intake-reference-sheet__image" draggable={false} onError={() => setFailedSources((current) => new Set(current).add(selected.imageSrc))} src={selected.imageSrc} /> : null}
+          <span className="intake-reference-plate">{selected.plate}</span>
+          <span className="intake-reference-selected"><Check aria-hidden="true" className="h-3.5 w-3.5" /> Selected reference</span>
+        </div>
+        <figcaption className="intake-reference-sheet__caption">
+          <span className="intake-reference-sheet__eyebrow">Pinned reference</span>
+          <span className="intake-reference-sheet__title">{selected.title}</span>
+          <span className="intake-reference-sheet__detail">{selected.detail}</span>
+        </figcaption>
+      </figure>
+      <div className="intake-choice-rail" role="presentation">
+        {options.map((option) => {
+          const checked = option.value === value;
+          const suggested = option.value === suggestedValue;
+          return <label className="intake-choice-rail__option" key={option.value}>
+            <input checked={checked} className="intake-radio-input" name={radioName} onChange={() => onChange(option.value)} type="radio" value={option.value} />
+            <span className="intake-choice-rail__body">
+              <span aria-hidden="true" className="intake-choice-rail__marker">{checked ? <Check className="h-3.5 w-3.5" /> : null}</span>
+              <span className="intake-choice-rail__copy">
+                <span className="intake-choice-rail__plate">{option.plate}{suggested && suggestionLabel ? <> · <span className="intake-choice-rail__suggestion">Suggested for {suggestionLabel}</span></> : null}</span>
+                <span className="intake-choice-rail__title">{option.title}</span>
+                <span className="intake-choice-rail__detail">{option.detail}</span>
+              </span>
+              <span className="intake-choice-rail__state">{checked ? "Selected" : "Choose"}</span>
+            </span>
+          </label>;
+        })}
+      </div>
+    </div>
+    <p aria-live="polite" className="sr-only">Selected {selected.title}. {selected.detail}</p>
+  </fieldset>;
 }
 
 function Toggle({ checked, label, detail, onChange }: { checked: boolean; label: string; detail?: string; onChange: (checked: boolean) => void }) {
@@ -85,6 +158,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   const unitLabel = draft.displayUnit === "metric" ? "m" : "ft";
   const currentRegion = regionForCountry(draft.countryCode);
   const currentAdminArea = adminAreaForRegion(currentRegion, draft.adminArea);
+  const regionalResolution = resolveRegionalPack(draft.countryCode, draft.adminArea);
   const requirements = useMemo(() => {
     try { return createRequirements(draft); } catch { return null; }
   }, [draft]);
@@ -139,18 +213,19 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   function changeCountry(countryCode: string) {
     const region = regionForCountry(countryCode);
     const adminArea = region.adminAreas[0];
-    patch({
+    patch(applyRegionalPrefill({
+      ...draft,
       countryCode: region.countryCode,
       adminArea: adminArea.value,
       locality: adminArea.localities[0].value,
       currency: region.defaultCurrency,
       locale: region.defaultLocale,
-    });
+    }, region.countryCode, adminArea.value));
   }
 
   function changeAdminArea(adminAreaValue: string) {
     const adminArea = adminAreaForRegion(currentRegion, adminAreaValue);
-    patch({ adminArea: adminArea.value, locality: adminArea.localities[0].value });
+    patch(applyRegionalPrefill({ ...draft, adminArea: adminArea.value, locality: adminArea.localities[0].value }, draft.countryCode, adminArea.value));
   }
 
   function updateProgram(level: number, next: Partial<FloorProgram>) {
@@ -207,15 +282,15 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   }
 
   return (
-    <section className={`border border-[#8e5a31]/55 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`}>
+    <section className={`guided-intake border border-[#8e5a31]/55 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`}>
       <header className="border-b border-[#8e5a31]/45 px-5 py-5 sm:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#ff6a1f]">Guided residential brief</p><h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl font-normal tracking-[-0.035em]">Questions before coordinates<span className="text-[#ff4e00]">.</span></h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#9f9183]">Every answer becomes a measurable planning constraint. No room geometry or cost is invented from a sentence.</p></div><button className="inline-flex items-center gap-2 border border-[#8e5a31]/45 px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#a8998b] hover:border-[#c97940] hover:text-[#fff6ea]" onClick={reset} type="button"><RotateCcw className="h-3.5 w-3.5" /> Reset</button></div>
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#ff6a1f]">Guided residential brief</p><h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl font-normal tracking-[-0.035em]">Questions before coordinates<span className="text-[#ff4e00]">.</span></h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#9f9183]">Every answer becomes a measurable planning constraint. No room geometry or cost is invented from a sentence.</p></div><button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/45 px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#a8998b] hover:border-[#c97940] hover:text-[#fff6ea]" onClick={reset} type="button"><RotateCcw className="h-3.5 w-3.5" /> Reset</button></div>
       </header>
 
       <div className="grid lg:grid-cols-[13rem_minmax(0,1fr)]">
         <nav aria-label="Brief steps" className="border-b border-[#8e5a31]/40 bg-[#0a0908] p-2 lg:border-b-0 lg:border-r">
           <ol className="grid grid-cols-4 gap-px sm:grid-cols-7 lg:block">
-            {STEPS.map((item, index) => { const Icon = item.icon; const complete = index < stepIndex && stepReady(item.id, draft); return <li key={item.id}><button aria-current={index === stepIndex ? "step" : undefined} className={`flex w-full items-center gap-3 px-2 py-3 text-left transition-colors lg:border-b lg:border-[#8e5a31]/25 lg:px-3 ${index === stepIndex ? "bg-[#25150e] text-[#fff6ea] shadow-[inset_2px_0_#ff4e00]" : index < stepIndex ? "text-[#c5b5a5]" : "text-[#625a52] hover:text-[#a8998b]"}`} onClick={() => setStepIndex(index)} type="button"><span className={`grid h-7 w-7 shrink-0 place-items-center border ${complete ? "border-[#4a8d68] text-[#77c497]" : index === stepIndex ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]"}`}>{complete ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}</span><span className="hidden text-[0.64rem] font-bold uppercase tracking-[0.1em] sm:block lg:block">{item.label}</span></button></li>; })}
+            {STEPS.map((item, index) => { const Icon = item.icon; const complete = index < stepIndex && stepReady(item.id, draft); return <li key={item.id}><button aria-current={index === stepIndex ? "step" : undefined} className={`flex w-full items-center gap-3 px-2 py-3 text-left transition-colors lg:border-b lg:border-[#8e5a31]/25 lg:px-3 ${index === stepIndex ? "bg-[#25150e] text-[#fff6ea] shadow-[inset_2px_0_#ff4e00]" : index < stepIndex ? "text-[#c5b5a5]" : "text-[#8f8275] hover:text-[#c5b5a5]"}`} onClick={() => setStepIndex(index)} type="button"><span className={`grid h-7 w-7 shrink-0 place-items-center border ${complete ? "border-[#4a8d68] text-[#77c497]" : index === stepIndex ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]"}`}>{complete ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}</span><span className="hidden text-[0.8125rem] font-bold uppercase tracking-[0.1em] sm:block lg:block">{item.label}</span></button></li>; })}
           </ol>
         </nav>
 
@@ -229,6 +304,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           </div> : null}
 
           {step.id === "region" ? <div className="space-y-7">
+            {regionalResolution.warning ? <p className="border border-[#d69b35]/65 bg-[#17140d] p-3 text-xs leading-5 text-[#e4bd6a]" role="status">{regionalResolution.warning.message}</p> : null}
             <div className="grid gap-5 sm:grid-cols-2">
               <Field label="Country / region" hint="The ISO country code is stored automatically with the selection."><select className={CONTROL} id="region-country" onChange={(event) => changeCountry(event.target.value)} value={draft.countryCode}>{!REGION_OPTIONS.some((region) => region.countryCode === draft.countryCode) ? <option value={draft.countryCode}>General / other region ({draft.countryCode})</option> : null}{REGION_OPTIONS.map((region) => <option key={region.countryCode} value={region.countryCode}>{region.label} · {region.countryCode}</option>)}</select></Field>
               <Field label="State / province / emirate"><select className={CONTROL} id="region-admin-area" onChange={(event) => changeAdminArea(event.target.value)} value={draft.adminArea}>{!currentRegion.adminAreas.some((adminArea) => adminArea.value === draft.adminArea) ? <option value={draft.adminArea}>General / other region ({draft.adminArea})</option> : null}{currentRegion.adminAreas.map((adminArea) => <option key={adminArea.value} value={adminArea.value}>{adminArea.label}</option>)}</select></Field>
@@ -260,20 +336,10 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             <div><p className={LABEL}>Ground-floor priorities</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.includeParking} label="Covered parking" onChange={(includeParking) => patch({ includeParking })} /><Toggle checked={draft.includeUtility} label="Utility / laundry" onChange={(includeUtility) => patch({ includeUtility })} /><Toggle checked={draft.includePooja} label="Pooja / sacred room" onChange={(includePooja) => patch({ includePooja })} /><Toggle checked={draft.includeCourtyard} detail="Creates an exterior planning void, not leftover gap." label="Central courtyard" onChange={(includeCourtyard) => patch({ includeCourtyard })} /></div></div>
           </div> : null}
 
-          {step.id === "architecture" ? <div className="space-y-7">
-            <div><p className={LABEL}>Architectural character</p><p className="mt-2 max-w-3xl text-xs leading-5 text-[#8f8275]">This is a design constraint, not a decorative label. It controls the elevation vocabulary, shade, roof expression and the material brief sent to visualization.</p><div className="mt-3 grid gap-2 md:grid-cols-3">{([
-              ["contemporary_tropical", "Contemporary tropical", "Deep shade, screened openings, planted edges and warm natural finishes."],
-              ["kerala_contemporary", "Kerala contemporary", "Regional roof cues, rain protection and modern planning without imitation ornament."],
-              ["warm_minimal", "Warm minimal", "Quiet planes, timber warmth and restrained, human-scaled detail."],
-              ["courtyard_vernacular", "Courtyard vernacular", "An inward-looking shaded heart with regionally grounded proportions."],
-              ["modernist", "Modernist", "Clear structural rhythm, strong horizontal lines and disciplined openings."],
-            ] as const).map(([value, title, detail]) => <Choice checked={draft.architecturalStyle === value} detail={detail} key={value} onClick={() => patch({ architecturalStyle: value })} title={title} />)}</div></div>
-            <div><p className={LABEL}>Built-form strategy</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{([
-              ["stepped_terraces", "Stepped villa", "Sectioned setbacks on every level create shaded entry courts, terraces and a receding villa silhouette."],
-              ["articulated_wings", "Courts + wings", "Use mixed room clusters, an entry recess and side courts to form practical connected villa wings."],
-              ["courtyard", "Courtyard form", "Reserve an open-to-sky planning heart; this automatically includes a courtyard in the brief."],
-              ["compact", "Compact", "A simpler, efficient envelope with architectural depth coming from shade and façade layers."],
-            ] as const).map(([value, title, detail]) => <Choice checked={draft.formStrategy === value} detail={detail} key={value} onClick={() => patch({ formStrategy: value, ...(value === "courtyard" ? { includeCourtyard: true } : {}) })} title={title} />)}</div></div>
+          {step.id === "architecture" ? <div className="space-y-10">
+            {regionalResolution.warning ? <p className="border border-[#8e5a31]/65 bg-[#171512] p-4 text-base leading-7 text-[#b5a697]" role="status">{regionalResolution.warning.message} Every reference remains editable.</p> : null}
+            <ArchitectureReferencePicker description="This is a design constraint, not a decorative label. It controls elevation vocabulary, shade, roof expression and the visualization brief." legend="Choose the villa language" name="architectural-style" onChange={(architecturalStyle) => patch({ architecturalStyle })} options={ARCHITECTURAL_STYLE_PREVIEWS} suggestedValue={regionalResolution.pack.intakeStyle} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.architecturalStyle} />
+            <ArchitectureReferencePicker description="Choose the volumetric rule that organizes rooms, courts and terraces. The plate is a strategy preview, not a generated façade." legend="Choose the built-form strategy" name="form-strategy" onChange={(formStrategy) => patch(formStrategyPatch(formStrategy))} options={FORM_STRATEGY_PREVIEWS} suggestedValue={regionalResolution.pack.defaultFormStrategy} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.formStrategy} />
             <div className="grid gap-5 sm:grid-cols-2"><Field label="Roof character"><select className={CONTROL} onChange={(event) => patch({ roofCharacter: event.target.value as IntakeDraft["roofCharacter"] })} value={draft.roofCharacter}><option value="mixed">Mixed · shelter + terraces</option><option value="sloped">Predominantly sloped</option><option value="flat_parapet">Flat parapet</option></select></Field><Field label="Material direction"><select className={CONTROL} onChange={(event) => patch({ materialDirection: event.target.value as IntakeDraft["materialDirection"] })} value={draft.materialDirection}><option value="warm_natural">Warm natural · timber + stone + mineral plaster</option><option value="earthy_textured">Earthy textured · brick + lime + local stone</option><option value="light_mineral">Light mineral · pale plaster + restrained timber</option><option value="monochrome">Monochrome · concrete + dark metal + clear glazing</option></select></Field></div>
             <div className="border-l-2 border-[#c97940] bg-[#17120e] p-4 text-xs leading-6 text-[#aa9b8d]"><strong className="text-[#fff6ea]">Plot and house are separate decisions.</strong> A rectangular site may contain stepped, winged or courtyard-based built form. BrickPilot still keeps every room and support concept inside the verified buildable envelope.</div>
           </div> : null}
@@ -287,7 +353,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           {step.id === "review" ? <Review capacity={capacity} draft={draft} requirements={requirements} /> : null}
 
           {error ? <p className="mt-6 border border-[#ff5b45]/70 bg-[#1a0c09] p-3 text-sm text-[#ff9e91]" role="alert">{error}</p> : null}
-          <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/35 pt-5"><button className="inline-flex items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.67rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={stepIndex === 0 || isSubmitting} onClick={() => setStepIndex((index) => Math.max(0, index - 1))} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>{stepIndex < STEPS.length - 1 ? <button className="inline-flex items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.68rem] font-extrabold uppercase tracking-[0.12em] text-white transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!stepReady(step.id, draft)} onClick={() => setStepIndex((index) => Math.min(STEPS.length - 1, index + 1))} type="button">Confirm & continue <ArrowRight className="h-4 w-4" /></button> : <button className="inline-flex items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.68rem] font-extrabold uppercase tracking-[0.12em] text-white transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!requirements || capacity?.blocking || isSubmitting} onClick={submit} type="button">{isSubmitting ? "Solving the brief" : capacity?.blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>}</footer>
+          <footer className="intake-actions mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/35 pt-5"><button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={stepIndex === 0 || isSubmitting} onClick={() => setStepIndex((index) => Math.max(0, index - 1))} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>{stepIndex < STEPS.length - 1 ? <button className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!stepReady(step.id, draft)} onClick={() => setStepIndex((index) => Math.min(STEPS.length - 1, index + 1))} type="button">Confirm & continue <ArrowRight className="h-4 w-4" /></button> : <button className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!requirements || capacity?.blocking || isSubmitting} onClick={submit} type="button">{isSubmitting ? "Solving the brief" : capacity?.blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>}</footer>
         </div>
       </div>
     </section>

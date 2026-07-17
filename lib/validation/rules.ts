@@ -1,6 +1,6 @@
 import type { ValidationCategory, ValidationFinding, ValidationSeverity } from "@/lib/validation/types";
 
-export const RULE_PACK_VERSION = "residential-baseline-2026.4";
+export const RULE_PACK_VERSION = "residential-baseline-2026.5";
 export const MIN_CONCEPT_PASSAGE_WIDTH_MM = 700;
 export const MIN_VEHICLE_ACCESS_WIDTH_MM = 2400;
 
@@ -29,6 +29,11 @@ export const RULES = {
   roomMinimumArea: "PLANNING_ROOM_MIN_AREA",
   roomMinimumDimension: "PLANNING_ROOM_MIN_DIMENSION",
   roomAspect: "PLANNING_ROOM_ASPECT",
+  roomProportion: "ROOM_PROPORTION",
+  parallelBands: "PARALLEL_BANDS",
+  circulationRatio: "CIRCULATION_RATIO",
+  galleryLength: "GALLERY_LENGTH",
+  floatingVolume: "FLOATING_VOLUME",
   exteriorPreference: "PLANNING_EXTERIOR_ROOM",
   daylight: "PLANNING_DAYLIGHT_INDICATION",
   relationshipConnect: "PLANNING_MUST_CONNECT",

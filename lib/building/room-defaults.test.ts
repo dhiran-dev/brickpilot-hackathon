@@ -13,6 +13,7 @@ describe("room area defaults", () => {
     const types = Object.keys(ROOM_AREAS);
     expect(types).toContain("courtyard");
     expect(types).toContain("terrace");
-    expect(types.length).toBe(16);
+    expect(types).toContain("verandah");
+    expect(types.length).toBe(17);
   });
 });

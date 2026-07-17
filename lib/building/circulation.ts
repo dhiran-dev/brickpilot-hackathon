@@ -1,6 +1,7 @@
 import type { Building, Floor, Opening, Space, WallSegment } from "@/lib/building/schema";
 import type { BuildingRequirements, RoomType } from "@/lib/building/requirements";
 import { EXTERIOR } from "@/lib/building/topology";
+import { isVerandahSpace, VERANDAH_SEMANTICS } from "@/lib/building/space-semantics";
 
 export type AdjacencyEdge = { wall: WallSegment; from: string; to: string };
 
@@ -20,7 +21,13 @@ function openingPassable(opening: Opening) {
 
 export function spaceAccessSemantics(space: Pick<Space, "occupied" | "type">) {
   return {
-    pedestrian: space.occupied || ["balcony", "courtyard", "parking"].includes(space.type),
+    pedestrian: isVerandahSpace(space)
+      ? VERANDAH_SEMANTICS.pedestrian
+      : space.type === "parking"
+        ? false
+        : space.type === "courtyard"
+          ? space.occupied
+          : space.occupied || space.type === "balcony",
     vehicleRoad: space.type === "parking",
   };
 }
@@ -35,7 +42,9 @@ const CIRCULATION_BACKBONE_TYPES = new Set<RoomType>([
 
 /** Rooms that may form the shared access spine rather than acting only as destinations. */
 export function isCirculationBackboneSpace(space: Pick<Space, "type">) {
-  return CIRCULATION_BACKBONE_TYPES.has(space.type);
+  return isVerandahSpace(space)
+    ? VERANDAH_SEMANTICS.circulationBackbone
+    : CIRCULATION_BACKBONE_TYPES.has(space.type);
 }
 
 export function buildReachabilityGraph(floors: Floor[]) {

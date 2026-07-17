@@ -1,9 +1,11 @@
 import type { BuildingRequirements } from "@/lib/building/requirements";
+import { MINIMUM_CLEAR_DIMENSION_MM } from "@/lib/building/dimensions";
 import type { Building, Floor, Opening, Rectangle, WallSegment } from "@/lib/building/schema";
 import { circulationPassageConflicts, openingUsage, spacesWithNoPassableOpening, unreachableOccupiedSpaces } from "@/lib/building/circulation";
 import { columnConflictsWithOpening, columnConflictsWithStair } from "@/lib/building/structure";
 import { analyzeCoverage, isOpenToSkySpace, rectangleIntersectionArea, wallLength } from "@/lib/building/topology";
 import { finding, MIN_CONCEPT_PASSAGE_WIDTH_MM, MIN_VEHICLE_ACCESS_WIDTH_MM, RULE_PACK_VERSION, RULES } from "@/lib/validation/rules";
+import { shapeRuleFindings } from "@/lib/validation/shape-rules";
 import type { ValidationFinding, ValidationReport, ValidationSeverity } from "@/lib/validation/types";
 
 function boundsRight(bounds: Rectangle) { return bounds.x + bounds.width; }
@@ -132,7 +134,7 @@ function openingFindings(floor: Floor, roadEdges: Building["site"]["roadEdges"])
       ));
     }
     const edgeClearance = Math.min(opening.offsetMm, wallLength(wall) - opening.offsetMm - opening.widthMm);
-    if (edgeClearance < 50) findings.push(finding(
+    if (opening.kind !== "open_connection" && edgeClearance < 50) findings.push(finding(
       RULES.openingClearance, "error", "opening", "Opening is too close to a wall junction.",
       { floorId: floor.id, objectIds: [opening.id, wall.id], measured: { value: edgeClearance, unit: "mm" }, required: { min: 50, unit: "mm" } },
     ));
@@ -348,19 +350,6 @@ function structuralFindings(building: Building) {
 function planningFindings(building: Building, requirements?: BuildingRequirements) {
   const findings: ValidationFinding[] = [];
   const requirementById = new Map(requirements?.rooms.map((room) => [room.id, room]) ?? []);
-  const minimumClearDimension: Partial<Record<BuildingRequirements["rooms"][number]["type"], number>> = {
-    bedroom: 2_700,
-    living: 2_700,
-    dining: 2_400,
-    kitchen: 2_100,
-    study: 2_100,
-    parking: 2_400,
-    bathroom: 1_200,
-    utility: 1_200,
-    foyer: 1_200,
-    pooja: 1_200,
-    store: 1_000,
-  };
   for (const floor of building.floors) {
     for (const opening of floor.openings.filter((candidate) => candidate.kind === "door")) {
       const accessibleRoute = opening.connects.some((id) => floor.spaces.find((space) => space.id === id)?.accessible);
@@ -377,7 +366,7 @@ function planningFindings(building: Building, requirements?: BuildingRequirement
         { floorId: floor.id, objectIds: [space.id], measured: { value: space.areaMm2, unit: "mm2" }, required: { min: requirement.minAreaMm2, unit: "mm2" }, suggestedAction: "Relax the room program or enlarge the buildable envelope." },
         "baseline_heuristic",
       ));
-      const requiredDimension = requirement ? minimumClearDimension[space.type] : undefined;
+      const requiredDimension = requirement ? MINIMUM_CLEAR_DIMENSION_MM[space.type] : undefined;
       const shortDimension = Math.min(space.bounds.width, space.bounds.depth);
       const longDimension = Math.max(space.bounds.width, space.bounds.depth);
       const parkingTooShort = space.type === "parking" && longDimension < 4_800;
@@ -396,13 +385,13 @@ function planningFindings(building: Building, requirements?: BuildingRequirement
         "baseline_heuristic",
       ));
       const aspect = Math.max(space.bounds.width / space.bounds.depth, space.bounds.depth / space.bounds.width);
-      if (aspect > 4 && !["circulation", "stair", "terrace", "balcony", "parking"].includes(space.type)) findings.push(finding(
+      if (aspect > 4 && !["circulation", "stair", "terrace", "balcony", "parking", "verandah"].includes(space.type)) findings.push(finding(
         RULES.roomAspect, "warning", "planning", `${space.name} has an inefficient aspect ratio.`,
         { floorId: floor.id, objectIds: [space.id], measured: { value: Number(aspect.toFixed(2)), unit: "ratio" }, required: { max: 4, unit: "ratio" } },
         "baseline_heuristic",
       ));
       const exteriorWalls = floor.walls.filter((wall) => wall.type === "exterior" && wall.adjacentSpaceIds.includes(space.id));
-      const intrinsicallyExterior = ["balcony", "courtyard", "terrace"].includes(space.type);
+      const intrinsicallyExterior = ["balcony", "courtyard", "terrace", "verandah"].includes(space.type);
       if (requirement?.mustBeExterior && !intrinsicallyExterior && exteriorWalls.length === 0) findings.push(finding(
         RULES.exteriorPreference, "error", "planning", `${space.name} requires an exterior wall but has none.`,
         { floorId: floor.id, objectIds: [space.id] }, "baseline_heuristic",
@@ -461,6 +450,7 @@ export function validateBuilding(building: Building, requirements?: BuildingRequ
     ...verticalFindings(building),
     ...structuralFindings(building),
     ...planningFindings(building, requirements),
+    ...shapeRuleFindings(building),
     ...circulationQualityFindings(building, requirements),
   ];
   for (const space of unreachableOccupiedSpaces(building)) findings.push(finding(

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Courtyard vernacular house study</title><desc id="desc">Four sheltered wings surround an open planted courtyard with a warm masonry plinth.</desc>
+  <defs><pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" fill="none" stroke="#342a23"/></pattern><linearGradient id="earth" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c78e5e"/><stop offset="1" stop-color="#734531"/></linearGradient></defs>
+  <rect width="720" height="432" fill="#090908"/><rect width="720" height="432" fill="url(#grid)"/>
+  <path d="m88 349 275-158 279 134-277 91Z" fill="#17120f" stroke="#5d4636"/>
+  <path d="m145 231 218-117 214 94-214 126Z" fill="url(#earth)"/><path d="m145 231 218 103v76l-218-94Z" fill="#9e6848"/><path d="m363 334 214-126v76L363 410Z" fill="#5f3b2d"/>
+  <path d="m231 237 133-70 126 55-128 75Z" fill="#0f1712" stroke="#ff6a1f" stroke-width="4"/>
+  <path d="m252 240 112-57 104 43-106 61Z" fill="#304b35"/><circle cx="362" cy="230" r="18" fill="#6d8d56"/><path d="M362 247v28m-23-24 23-21 24 20" stroke="#b8cf8a" stroke-width="5" fill="none"/>
+  <path d="m145 231 218-117 214 94M185 251l178-93 174 75" fill="none" stroke="#e4b076" stroke-width="4"/>
+  <path d="m183 284 61 28v62l-61-25Zm302-16 55-31v62l-55 30Z" fill="#1f1915"/>
+  <path d="M92 376h541M121 399h480" stroke="#8e5a31" stroke-width="2" opacity=".65"/>
+  <path d="M608 56v74m-37-37h74" stroke="#ff6a1f"/><path d="m596 81 12-12 12 12-12 12Z" fill="#ff6a1f"/>
+</svg>

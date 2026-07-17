@@ -160,3 +160,25 @@ export const BUILDING_FIXTURES: BuildingFixture[] = [
     ],
   }),
 ];
+
+/** Hot-humid, single-storey integration brief for the named verandah-bungalow parti. */
+export const VERANDAH_BUNGALOW_FIXTURE: BuildingFixture = (() => {
+  const source = BUILDING_FIXTURES.find((candidate) => candidate.id === "east-facing-3bhk-30x50");
+  if (!source) throw new Error("VERANDAH_BUNGALOW_FIXTURE_SOURCE_MISSING");
+  const requirements = structuredClone(source.requirements);
+  requirements.projectName = "Goa verandah bungalow concept";
+  requirements.region = {
+    countryCode: "IN",
+    adminArea: "Goa",
+    locality: "Panaji",
+    locale: "en-IN",
+    currency: "INR",
+  };
+  requirements.seed = 17;
+  return {
+    id: "verandah-bungalow-hot-humid",
+    label: "Hot-humid verandah bungalow",
+    description: "A one-storey Goa brief that selects the covered, open-sided verandah parti.",
+    requirements: buildingRequirementsSchema.parse(requirements),
+  };
+})();

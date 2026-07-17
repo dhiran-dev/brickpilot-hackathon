@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BadgeCheck, Download, Info, Maximize2, Minus, Plus, Printer, Scan } from "lucide-react";
 
 import { CadPlan } from "@/components/cad-plan";
+import { DrawingUnavailableState } from "@/components/cad-workspace/DrawingUnavailableState";
 import { LayerPanel } from "@/components/cad-workspace/LayerPanel";
 import type { Building } from "@/lib/building/schema";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
@@ -17,6 +18,8 @@ export type CadWorkspaceProps = {
   initialFloorId?: string;
   storageKey?: string;
   className?: string;
+  scheme?: { name: string; partiId: string; style: string };
+  targetAreaByRoomId?: Readonly<Record<string, number>>;
 };
 
 type SavedPresentation = { version: 2; appearance: DrawingAppearance; layers: LayerVisibility; preset?: DrawingPreset; floorId?: string };
@@ -33,8 +36,8 @@ function clampViewport(viewport: ViewportState, bounds: { width: number; depth: 
   };
 }
 
-export function CadWorkspace({ building, projectName = "Residential feasibility study", findings = [], highlightedObjectIds = [], initialFloorId, storageKey, className }: CadWorkspaceProps) {
-  const drawing = useMemo(() => buildDrawing(building, { findings }), [building, findings]);
+export function CadWorkspace({ building, projectName = "Residential feasibility study", findings = [], highlightedObjectIds = [], initialFloorId, storageKey, className, scheme, targetAreaByRoomId }: CadWorkspaceProps) {
+  const drawing = useMemo(() => buildDrawing(building, { findings, scheme, targetAreaByRoomId }), [building, findings, scheme, targetAreaByRoomId]);
   const [floorId, setFloorId] = useState(initialFloorId ?? drawing.floors[0]?.floorId ?? "");
   const [appearance, setAppearance] = useState<DrawingAppearance>("cad-dark");
   const [layers, setLayers] = useState<LayerVisibility>(() => visibilityForPreset("architectural"));
@@ -150,7 +153,7 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
     window.setTimeout(() => printWindow.print(), 100);
   }
 
-  if (!artifact) return <div className="border border-[#ff4e00] bg-[#160d09] p-5 text-sm text-[#fff6ea]">No floor drawing is available for this building.</div>;
+  if (!artifact) return <DrawingUnavailableState />;
 
   const findingCounts = findings.reduce((counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }), { error: 0, warning: 0, info: 0 });
   const topologyFindings = findings.filter((finding) => /^(GEOMETRY|CIRCULATION|OPENING|PLANNING_MUST_CONNECT|VERTICAL)/.test(finding.ruleId) && finding.severity !== "info");
@@ -191,8 +194,8 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
       </header>
 
       <div className="flex overflow-x-auto border-b border-[#8e5a31]/45 bg-[#0b0a09]" role="tablist" aria-label="Building floors">
-        {drawing.floors.map((floor) => <button aria-controls={`cad-floor-${floor.floorId}`} aria-selected={floor.floorId === artifact.floorId} className={`min-w-24 border-r border-[#8e5a31]/35 px-4 py-3 text-[0.67rem] font-extrabold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#fff6ea] ${floor.floorId === artifact.floorId ? "bg-[#25170f] text-[#ff9a58] shadow-[inset_0_-2px_#ff4e00]" : "text-[#8f8275] hover:bg-[#171512] hover:text-[#fff6ea]"}`} id={`cad-tab-${floor.floorId}`} key={floor.floorId} onClick={() => setFloorId(floor.floorId)} role="tab" type="button"><span className="block">{floor.floorLabel}</span><span className="mt-0.5 block text-[0.54rem] font-medium text-[#74685d]">Level {floor.floorLevel}</span></button>)}
-        <span className="ml-auto hidden shrink-0 items-center px-4 text-[0.58rem] font-bold uppercase tracking-[0.1em] text-[#74685d] sm:flex">Theme + layers apply to every floor</span>
+        {drawing.floors.map((floor) => <button aria-controls={`cad-floor-${floor.floorId}`} aria-selected={floor.floorId === artifact.floorId} className={`min-w-24 border-r border-[#8e5a31]/35 px-4 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#fff6ea] ${floor.floorId === artifact.floorId ? "bg-[#25170f] text-[#ff9a58] shadow-[inset_0_-2px_#ff4e00]" : "text-[#9f9183] hover:bg-[#171512] hover:text-[#fff6ea]"}`} id={`cad-tab-${floor.floorId}`} key={floor.floorId} onClick={() => setFloorId(floor.floorId)} role="tab" type="button"><span className="block">{floor.floorLabel}</span><span className="mt-0.5 block text-[0.8125rem] font-medium text-[#b5a697]">Level {floor.floorLevel}</span></button>)}
+        <span className="ml-auto hidden shrink-0 items-center px-4 text-[0.8125rem] font-bold uppercase tracking-[0.1em] text-[#9f9183] sm:flex">Theme + layers apply to every floor</span>
       </div>
 
       {topologyFindings.length ? <div className={`border-b px-4 py-3 ${topologyBlocked ? "border-[#ff5b45]/45 bg-[#1b0d09]" : "border-[#c28a2a]/40 bg-[#18140b]"}`} role="alert">
@@ -231,7 +234,7 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
           }}
           onPointerCancel={() => { dragRef.current = null; }}
         >
-          <div className="absolute right-4 top-4 z-10 flex items-center border border-[#8e5a31]/60 bg-[#0b0a09]/95 text-[#cdbdab] shadow-[4px_5px_0_rgba(0,0,0,0.35)]" aria-label="Drawing zoom controls">
+          <div className="absolute right-4 top-4 z-10 flex items-center border border-[#8e5a31]/60 bg-[#0b0a09]/95 text-[#cdbdab] shadow-[4px_5px_0_rgba(0,0,0,0.35)]" aria-label="Drawing zoom controls" role="group">
             <button aria-label="Zoom out" className="grid h-9 w-9 place-items-center border-r border-[#8e5a31]/45 hover:bg-[#211711] disabled:cursor-not-allowed disabled:opacity-35" disabled={viewport.zoom === 1} onClick={() => setZoom(viewport.zoom - 0.25)} type="button"><Minus className="h-3.5 w-3.5" /></button>
             <span className="min-w-14 px-2 text-center font-mono text-[0.64rem]" aria-live="polite">{Math.round(viewport.zoom * 100)}%</span>
             <button aria-label="Zoom in" className="grid h-9 w-9 place-items-center border-l border-[#8e5a31]/45 hover:bg-[#211711] disabled:cursor-not-allowed disabled:opacity-35" disabled={viewport.zoom === 3} onClick={() => setZoom(viewport.zoom + 0.25)} type="button"><Plus className="h-3.5 w-3.5" /></button>
@@ -241,7 +244,7 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
         </div>
         <div className={`${controlsOpen ? "block" : "hidden"} border-l border-[#8e5a31]/45 bg-[#0d0c0a] xl:block`}><LayerPanel activePreset={preset} appearance={appearance} floorCount={drawing.floors.length} layerCounts={layerCounts} layers={layers} onAppearanceChange={(next) => { setAppearance(next); setPreset(undefined); }} onLayerChange={changeLayer} onPresetChange={applyPreset} /></div>
       </div>
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[#8e5a31]/45 bg-[#0b0a09] px-4 py-2.5 text-[0.6rem] uppercase tracking-[0.1em] text-[#74685d]"><span>1 SVG unit = 1 canonical mm · geometry unchanged by appearance</span><span>Concept feasibility output · professional verification required</span></footer>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[#8e5a31]/45 bg-[#0b0a09] px-4 py-2.5 text-[0.8125rem] uppercase tracking-[0.1em] text-[#9f9183]"><span>1 SVG unit = 1 canonical mm · geometry unchanged by appearance</span><span>Concept feasibility output · professional verification required</span></footer>
     </section>
   );
 }

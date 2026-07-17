@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { buildingSchema } from "@/lib/building/schema";
 import { db } from "@/lib/db";
 import { generatedAssets, generationJobs, layoutVersions } from "@/lib/db/schema";
 import { isRenderPurpose } from "@/lib/render/prompts";
@@ -7,6 +8,12 @@ import { getReplicatePrediction, predictionOutputs, providerStatus, safePredicti
 import { storeRemoteRender } from "@/lib/render/storage";
 
 const ACTIVE_STATUSES = ["queued", "processing"] as const;
+
+export function renderJobMatchesCanonical(payload: Record<string, unknown>, selectedSchemeId: string | null, geometryHash: string | null) {
+  if (payload.schemeDisposition === "previous" || !geometryHash || payload.geometryHash !== geometryHash) return false;
+  if (selectedSchemeId) return payload.schemeId === selectedSchemeId;
+  return payload.schemeId == null;
+}
 
 function requestMetadata(value: Record<string, unknown>) {
   // Keep accepting contract-v1 jobs that were already in flight during rollout.
@@ -35,7 +42,12 @@ async function failJob(jobId: string, message: string, payload?: Record<string, 
 
 export async function applyReplicatePrediction(jobId: string, prediction: ReplicatePrediction) {
   const [row] = await db
-    .select({ job: generationJobs, projectId: layoutVersions.projectId })
+    .select({
+      job: generationJobs,
+      projectId: layoutVersions.projectId,
+      selectedSchemeId: layoutVersions.selectedSchemeId,
+      building: layoutVersions.layoutJson,
+    })
     .from(generationJobs)
     .innerJoin(layoutVersions, eq(generationJobs.layoutVersionId, layoutVersions.id))
     .where(eq(generationJobs.id, jobId))
@@ -43,6 +55,12 @@ export async function applyReplicatePrediction(jobId: string, prediction: Replic
   if (!row || row.job.provider !== "replicate") return;
   if (["completed", "failed", "canceled"].includes(row.job.status)) return;
   if (row.job.providerJobId && row.job.providerJobId !== prediction.id) return;
+  const canonicalBuilding = buildingSchema.safeParse(row.building);
+  const canonicalGeometryHash = canonicalBuilding.success ? canonicalBuilding.data.candidate.geometryHash : null;
+  if (!renderJobMatchesCanonical(row.job.requestPayload, row.selectedSchemeId, canonicalGeometryHash)) {
+    await failJob(jobId, "Render source no longer matches the selected canonical scheme");
+    return;
+  }
 
   const normalized = providerStatus(prediction.status);
   const safePayload = safePredictionPayload(prediction) as Record<string, unknown>;

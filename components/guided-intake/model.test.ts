@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { buildingRequirementsSchema } from "@/lib/building/requirements";
 import { generateBuilding } from "@/lib/building/generate";
-import { assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram } from "@/components/guided-intake/model";
+import { MAIN_ENTRY_CLEAR_WIDTH_MM } from "@/lib/building/openings";
+import { partiStairAnchor } from "@/lib/building/partis";
+import { analyzeCoverage } from "@/lib/building/topology";
+import { applyRegionalPrefill, assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
 
 describe("guided intake mapping", () => {
   test("emits a schema-valid structured ground-floor brief", () => {
@@ -25,6 +28,7 @@ describe("guided intake mapping", () => {
     const requirements = createRequirements(DEFAULT_INTAKE_DRAFT);
     const generated = generateBuilding(requirements);
     expect(generated.validation.valid).toBe(true);
+    expect(generated.building.floors[0].openings.find((opening) => opening.id === "F0-entrance")?.widthMm).toBe(MAIN_ENTRY_CLEAR_WIDTH_MM);
     expect(requirements.relationships).toContainEqual({
       type: "must_connect",
       fromRoomId: "bedroom-f0-1",
@@ -32,7 +36,50 @@ describe("guided intake mapping", () => {
     });
   });
 
-  test("defaults a three-floor villa to practical clusters, an open car court, and upper setbacks", () => {
+  test("generates a real perimeter entrance on every single-road orientation", () => {
+    for (const facing of ["north", "east", "south", "west"] as const) {
+      const generated = generateBuilding(createRequirements({
+        ...DEFAULT_INTAKE_DRAFT,
+        facing,
+        roadEdges: [facing],
+      }));
+      const floor = generated.building.floors[0];
+      const entrance = floor.openings.find((opening) => opening.id === "F0-entrance");
+      const wall = floor.walls.find((candidate) => candidate.id === entrance?.wallId);
+      expect(generated.validation.valid).toBe(true);
+      expect(entrance?.connects).toContain("EXTERIOR");
+      expect(entrance?.widthMm).toBe(MAIN_ENTRY_CLEAR_WIDTH_MM);
+      expect(wall).toBeDefined();
+      if (!wall) continue;
+      if (facing === "north") expect(wall.start.y).toBe(floor.envelope.y);
+      if (facing === "south") expect(wall.start.y).toBe(floor.envelope.y + floor.envelope.depth);
+      if (facing === "west") expect(wall.start.x).toBe(floor.envelope.x);
+      if (facing === "east") expect(wall.start.x).toBe(floor.envelope.x + floor.envelope.width);
+    }
+  });
+
+  test("keeps a valid road-facing entry when a projected courtyard constrains the 1200 mm bay", () => {
+    for (const facing of ["north", "east", "south", "west"] as const) {
+      const generated = generateBuilding(createRequirements({
+        ...DEFAULT_INTAKE_DRAFT,
+        facing,
+        roadEdges: [facing],
+        floorCount: 2,
+        includeCourtyard: true,
+      }));
+      const ground = generated.building.floors[0];
+      const entrance = ground.openings.find((opening) => opening.id === "F0-entrance");
+      const wall = ground.walls.find((candidate) => candidate.id === entrance?.wallId);
+      expect(generated.validation.valid).toBe(true);
+      expect(entrance?.widthMm).toBeGreaterThanOrEqual(900);
+      if (facing === "north") expect(wall?.start.y).toBe(ground.envelope.y);
+      if (facing === "south") expect(wall?.start.y).toBe(ground.envelope.y + ground.envelope.depth);
+      if (facing === "west") expect(wall?.start.x).toBe(ground.envelope.x);
+      if (facing === "east") expect(wall?.start.x).toBe(ground.envelope.x + ground.envelope.width);
+    }
+  });
+
+  test("defaults a three-floor villa to practical clusters, an open car court, and a coordinated top-floor setback", () => {
     const requirements = createRequirements({ ...DEFAULT_INTAKE_DRAFT, floorCount: 3 });
     const generated = generateBuilding(requirements);
     const ground = generated.building.floors[0];
@@ -40,6 +87,7 @@ describe("guided intake mapping", () => {
     const upperFloors = generated.building.floors.slice(1);
 
     expect(generated.validation.valid).toBe(true);
+    expect(ground.openings.find((opening) => opening.id === "F0-entrance")?.widthMm).toBe(MAIN_ENTRY_CLEAR_WIDTH_MM);
     expect(requirements.rooms.filter((room) => room.floorId === "F2" && room.type === "bedroom")).toHaveLength(2);
     expect(requirements.rooms.some((room) => room.id === "family-lounge-f1" && room.type === "living")).toBe(true);
     expect(requirements.rooms.some((room) => room.id === "family-lounge-f2" && room.type === "living")).toBe(true);
@@ -47,14 +95,29 @@ describe("guided intake mapping", () => {
     expect(ground.spaces.filter((space) => space.type === "circulation").length).toBeGreaterThan(1);
     expect(ground.walls.some((wall) => wall.type === "exterior" && wall.adjacentSpaceIds.includes(parking.id))).toBe(true);
     expect(ground.walls.some((wall) => wall.adjacentSpaceIds.length === 1 && wall.adjacentSpaceIds.includes(parking.id))).toBe(false);
-    expect(upperFloors.every((floor) => floor.spaces.some((space) => space.type === "terrace"))).toBe(true);
+    for (const floor of upperFloors) {
+      const generatedFacadeBays = floor.spaces.filter((space) => (
+        space.type === "verandah"
+        && (space.id.endsWith("-entry-verandah") || space.id.endsWith("-covered-gallery") || space.id.endsWith("-branch"))
+      ));
+      expect(generatedFacadeBays.length).toBeGreaterThan(0);
+      expect(generatedFacadeBays.every((space) => space.perimeterOpen === false)).toBe(true);
+      expect(generatedFacadeBays.some((space) => floor.walls.some((wall) => (
+        wall.adjacentSpaceIds.length === 1 && wall.adjacentSpaceIds.includes(space.id)
+      )))).toBe(true);
+    }
+    expect(upperFloors.every((floor) => floor.spaces.some((space) => ["balcony", "terrace"].includes(space.type)))).toBe(true);
+    expect(upperFloors.at(-1)?.spaces.some((space) => space.type === "terrace")).toBe(true);
+    expect(generated.validation.findings.some((finding) => finding.ruleId === "FLOATING_VOLUME")).toBe(false);
     for (const floor of upperFloors) {
       const envelopeArea = floor.envelope.width * floor.envelope.depth;
       const outdoorArea = floor.spaces
         .filter((space) => ["balcony", "terrace"].includes(space.type))
         .reduce((sum, space) => sum + space.areaMm2, 0);
-      expect(outdoorArea / envelopeArea).toBeGreaterThan(0.08);
-      expect(outdoorArea / envelopeArea).toBeLessThan(0.25);
+      if (floor.spaces.some((space) => space.type === "terrace")) {
+        expect(outdoorArea / envelopeArea).toBeGreaterThan(0.08);
+        expect(outdoorArea / envelopeArea).toBeLessThan(0.25);
+      }
       expect(floor.spaces
         .filter((space) => space.name === "Sectioned setback terrace")
         .every((space) => Math.min(space.bounds.width, space.bounds.depth) <= 2_400 && space.areaMm2 <= 13_000_000)).toBe(true);
@@ -69,6 +132,7 @@ describe("guided intake mapping", () => {
     expect(requirements.rooms.some((room) => room.accessible && room.floorId === "F0" && room.type === "bedroom")).toBe(true);
     expect(requirements.relationships.some((relationship) => relationship.type === "stack_with")).toBe(true);
     const generated = generateBuilding(requirements);
+    expect(generated.validation.valid).toBe(true);
     expect(generated.building.floors.every((floor) => floor.spaces.filter((space) => space.type === "stair").length === 1)).toBe(true);
   });
 
@@ -107,6 +171,102 @@ describe("guided intake mapping", () => {
     expect(assessment.blocking).toBe(true);
     expect(assessment.floors.some((floor) => floor.status === "over_capacity")).toBe(true);
     expect(assessment.actions.length).toBeGreaterThan(0);
+  });
+
+  test("generates the exact wide G+2 courtyard brief accepted by questionnaire preflight", () => {
+    const draft: IntakeDraft = {
+      ...DEFAULT_INTAKE_DRAFT,
+      projectName: "Wide-envelope judge regression",
+      siteWidth: 20,
+      siteDepth: 18,
+      facing: "north",
+      roadEdges: ["south", "east"],
+      floorCount: 3,
+      socialSpaceMode: "combined",
+      architecturalStyle: "courtyard_vernacular",
+      formStrategy: "articulated_wings",
+      roofCharacter: "mixed",
+      materialDirection: "monochrome",
+      includeCourtyard: true,
+      qualityTier: "premium",
+      seed: 1_710_739_781,
+    };
+    const requirements = createRequirements(draft);
+
+    expect(assessBriefCapacity(requirements).blocking).toBe(false);
+    const generated = generateBuilding(requirements);
+    expect(generated.validation.valid).toBe(true);
+    expect(generated.validation.findings.some((finding) => finding.ruleId === "GALLERY_LENGTH")).toBe(false);
+    expect(generated.validation.findings.some((finding) => finding.ruleId === "ROOM_PROPORTION")).toBe(false);
+    const stair = generated.building.verticalConnectors[0];
+    expect(stair).toBeDefined();
+    expect(new Set(Object.values(stair.boundsByFloor).map((bounds) => JSON.stringify(bounds))).size).toBe(1);
+    const courtBounds = generated.building.floors.map((floor) => floor.spaces.find((space) => space.type === "courtyard")?.bounds);
+    expect(new Set(courtBounds.map((bounds) => JSON.stringify(bounds))).size).toBe(1);
+    for (const floor of generated.building.floors) {
+      expect(floor.spaces.find((space) => space.type === "stair")?.bounds).toEqual(stair.boundsByFloor[floor.id]);
+      expect(floor.spaces
+        .filter((space) => space.type === "circulation")
+        .every((space) => Math.max(space.bounds.width, space.bounds.depth) <= floor.envelope.depth * 0.4)).toBe(true);
+      expect(analyzeCoverage(floor.envelope, floor.spaces)).toMatchObject({
+        gapAreaMm2: 0,
+        overlapAreaMm2: 0,
+        outsideAreaMm2: 0,
+      });
+    }
+
+    for (const seed of [1, 17, 42, 101, 997, 4096, 65_537, 2_871_937_447]) {
+      expect(generateBuilding(createRequirements({ ...draft, seed })).validation.valid).toBe(true);
+    }
+  });
+
+  test("keeps wide-envelope entrances on the requested road edge after quarter-turning the parti", () => {
+    for (const facing of ["north", "east", "south", "west"] as const) {
+      const generated = generateBuilding(createRequirements({
+        ...DEFAULT_INTAKE_DRAFT,
+        siteWidth: 20,
+        siteDepth: 18,
+        floorCount: 3,
+        facing,
+        roadEdges: [facing],
+        includeCourtyard: true,
+      }));
+      const ground = generated.building.floors[0];
+      const entrance = ground.openings.find((opening) => opening.id === "F0-entrance");
+      const wall = ground.walls.find((candidate) => candidate.id === entrance?.wallId);
+      const partiId = (["t_hub", "l_court", "courtyard", "verandah_bungalow", "compact"] as const)
+        .find((id) => id === generated.building.candidate.generatorId);
+      expect(partiId).toBeDefined();
+      if (!partiId) continue;
+      const expectedStairBounds = partiStairAnchor(
+        partiId,
+        createRequirements({
+          ...DEFAULT_INTAKE_DRAFT,
+          siteWidth: 20,
+          siteDepth: 18,
+          floorCount: 3,
+          facing,
+          roadEdges: [facing],
+          includeCourtyard: true,
+        }),
+        ground.envelope,
+      );
+
+      expect(generated.validation.valid).toBe(true);
+      expect(entrance?.connects).toContain("EXTERIOR");
+      expect(wall).toBeDefined();
+      expect(generated.building.floors.every((floor) =>
+        JSON.stringify(floor.spaces.find((space) => space.type === "stair")?.bounds) === JSON.stringify(expectedStairBounds)
+      )).toBe(true);
+      const connector = generated.building.verticalConnectors[0];
+      expect(Object.values(connector.boundsByFloor)
+        .every((bounds) => JSON.stringify(bounds) === JSON.stringify(expectedStairBounds))).toBe(true);
+      expect(["east", "west"].includes(connector.direction)).toBe(expectedStairBounds.width >= expectedStairBounds.depth);
+      if (facing === "north") expect(wall?.start.y).toBe(ground.envelope.y);
+      if (facing === "south") expect(wall?.start.y).toBe(ground.envelope.y + ground.envelope.depth);
+      if (facing === "west") expect(wall?.start.x).toBe(ground.envelope.x);
+      if (facing === "east") expect(wall?.start.x).toBe(ground.envelope.x + ground.envelope.width);
+    }
   });
 
   test("normalizes imperial display values into integer millimetres", () => {
@@ -210,6 +370,29 @@ describe("guided intake mapping", () => {
       materialDirection: "earthy_textured",
       includeCourtyard: true,
     });
+  });
+
+  test("prefills regional suggestions while round-tripping every editable architecture field", () => {
+    const prefilled = applyRegionalPrefill({ ...DEFAULT_INTAKE_DRAFT, countryCode: "IN", adminArea: "Delhi" });
+    const requirements = createRequirements(prefilled);
+
+    expect(prefilled).toMatchObject({
+      architecturalStyle: "courtyard_vernacular",
+      formStrategy: "courtyard",
+      roofCharacter: "flat_parapet",
+      materialDirection: "earthy_textured",
+      includeCourtyard: true,
+    });
+    expect(draftFromRequirements(requirements)).toMatchObject({
+      architecturalStyle: prefilled.architecturalStyle,
+      formStrategy: prefilled.formStrategy,
+      roofCharacter: prefilled.roofCharacter,
+      materialDirection: prefilled.materialDirection,
+      includeCourtyard: true,
+    });
+
+    const edited = createRequirements({ ...prefilled, architecturalStyle: "modernist", roofCharacter: "mixed" });
+    expect(draftFromRequirements(edited)).toMatchObject({ architecturalStyle: "modernist", roofCharacter: "mixed" });
   });
 
   test("upgrades legacy requirements with stable architectural defaults", () => {

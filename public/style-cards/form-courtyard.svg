@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Courtyard form massing study</title>
+  <desc id="desc">A ring of residential volumes encloses an open-to-sky planted courtyard.</desc>
+  <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#564638" stroke-width="1"/></pattern></defs>
+  <rect width="720" height="432" fill="#100e0c"/>
+  <rect x="28" y="28" width="664" height="376" fill="url(#grid)" opacity=".52"/>
+  <path d="M95 346 358 171l272 124-258 107z" fill="#17130f" stroke="#806044" stroke-width="2"/>
+  <g stroke="#6f4b31" stroke-width="2" stroke-linejoin="round">
+    <path d="m160 243 190-96 203 84-193 101z" fill="#eadbc4"/>
+    <path d="m160 243 200 89v71l-200-90z" fill="#92775d"/>
+    <path d="m360 332 193-101v72L360 403z" fill="#bda080"/>
+    <path d="m246 244 108-54 111 46-108 57z" fill="#214536"/>
+    <path d="m246 244 111 49v42l-111-50z" fill="#163227"/>
+    <path d="m357 293 108-57v42l-108 57z" fill="#2e6049"/>
+  </g>
+  <g fill="#c97940">
+    <circle cx="353" cy="248" r="8"/><circle cx="380" cy="254" r="5"/><circle cx="326" cy="259" r="4"/>
+  </g>
+  <g fill="none" stroke="#c97940" stroke-width="2">
+    <path d="M351 117v53"/><path d="m343 127 8-10 8 10"/>
+    <path d="M118 161h91v17"/>
+  </g>
+  <g fill="#c5b29c" font-family="ui-monospace, monospace" font-size="13" letter-spacing="2"><text x="297" y="101">OPEN TO SKY</text><text x="118" y="147">ROOM RING</text></g>
+  <text x="49" y="58" fill="#f4e7d5" font-family="ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="3">VOID / PROGRAMME CONSTRAINT</text>
+</svg>

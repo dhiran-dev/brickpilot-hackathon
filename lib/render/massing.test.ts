@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildingSchema, rectanglePolygon, type Building } from "@/lib/building/schema";
-import { buildMassingModel, massingMetrics, wallPanels } from "@/lib/render/massing";
+import {
+  buildMassingModel,
+  MASSING_GRID_Y_M,
+  MASSING_SITE_GRADE_M,
+  massingMetrics,
+  SLAB_THICKNESS_M,
+  wallPanels,
+} from "@/lib/render/massing";
 
 const building: Building = buildingSchema.parse({
   buildingSchemaVersion: 2,
@@ -38,6 +45,46 @@ const building: Building = buildingSchema.parse({
   }],
 });
 
+function replaceSpaceBounds(
+  target: Building,
+  floorId: string,
+  spaceId: string,
+  bounds: { x: number; y: number; width: number; depth: number },
+) {
+  const space = target.floors.find((floor) => floor.id === floorId)?.spaces.find((candidate) => candidate.id === spaceId);
+  if (!space) throw new Error(`Missing test space ${floorId}/${spaceId}`);
+  space.bounds = bounds;
+  space.planningCellPolygon = rectanglePolygon(bounds);
+  space.areaMm2 = bounds.width * bounds.depth;
+  return space;
+}
+
+function addOpenSpace(
+  target: Building,
+  floorId: string,
+  id: string,
+  type: "courtyard" | "terrace",
+  bounds: { x: number; y: number; width: number; depth: number },
+) {
+  const floor = target.floors.find((candidate) => candidate.id === floorId);
+  if (!floor) throw new Error(`Missing test floor ${floorId}`);
+  floor.spaces.push({
+    id,
+    floorId,
+    name: type === "courtyard" ? "Coordinated court void" : "Open terrace / unbuilt",
+    type,
+    planningCellPolygon: rectanglePolygon(bounds),
+    bounds,
+    areaMm2: bounds.width * bounds.depth,
+    occupied: false,
+    accessible: false,
+  });
+}
+
+function planAreaM2(primitives: ReturnType<typeof buildMassingModel>["primitives"]) {
+  return primitives.reduce((sum, primitive) => sum + primitive.size[0] * primitive.size[2], 0);
+}
+
 describe("deterministic massing model", () => {
   test("splits a wall around doors and windows without filling the openings", () => {
     const floor = building.floors[0];
@@ -59,11 +106,44 @@ describe("deterministic massing model", () => {
     expect(model.primitives.filter((primitive) => primitive.kind === "stair").length).toBeGreaterThan(8);
   });
 
+  test("separates site grade, analysis grid and finished-floor surfaces", () => {
+    const model = buildMassingModel(building);
+    const site = model.primitives.find((primitive) => primitive.kind === "site")!;
+    const groundSlab = model.primitives.find((primitive) => primitive.kind === "slab" && primitive.floorId === "F0")!;
+    const siteTop = site.center[1] + site.size[1] / 2;
+    const finishedFloorTop = groundSlab.center[1] + groundSlab.size[1] / 2;
+
+    expect(siteTop).toBeCloseTo(MASSING_SITE_GRADE_M, 8);
+    expect(MASSING_GRID_Y_M).toBeGreaterThan(siteTop);
+    expect(MASSING_GRID_Y_M).toBeLessThan(finishedFloorTop);
+    expect(finishedFloorTop - MASSING_GRID_Y_M).toBeGreaterThan(0.01);
+  });
+
   test("supports floor isolation and optional analysis layers", () => {
     const model = buildMassingModel(building, { visibleFloorIds: ["F1"], includeInteriorWalls: false, includeSlabs: false, includeSite: false });
     expect(model.primitives.every((primitive) => primitive.floorId === "F1")).toBe(true);
     expect(model.primitives.some((primitive) => primitive.kind === "interior_wall")).toBe(false);
     expect(model.primitives.some((primitive) => primitive.kind === "slab" || primitive.kind === "site")).toBe(false);
+    expect(model.primitives.some((primitive) => primitive.kind === "roof")).toBe(true);
+  });
+
+  test("keeps structural columns independent from the internal-wall layer", () => {
+    const withColumns = structuredClone(building);
+    withColumns.structuralConcept = {
+      structuralConceptVersion: 1,
+      scope: "conceptual_column_coordination_only",
+      disclaimer: "Conceptual column coordination only; member sizing, loads, foundations and code compliance require a licensed structural engineer.",
+      baselineMaxBayMm: 6_000,
+      axes: [],
+      columns: [{ id: "column-a", center: { x: 2_000, y: 2_000 }, widthMm: 300, depthMm: 300, servedFloorIds: ["F0", "F1"] }],
+    };
+
+    const wallsOff = buildMassingModel(withColumns, { includeInteriorWalls: false });
+    expect(wallsOff.primitives.some((primitive) => primitive.kind === "interior_wall")).toBe(false);
+    expect(wallsOff.primitives.filter((primitive) => primitive.kind === "column")).toHaveLength(2);
+
+    const columnsOff = buildMassingModel(withColumns, { includeColumns: false });
+    expect(columnsOff.primitives.some((primitive) => primitive.kind === "column")).toBe(false);
   });
 
   test("can reveal the top-floor partitions without removing its floor slab", () => {
@@ -92,6 +172,105 @@ describe("deterministic massing model", () => {
     expect(model.primitives.some((primitive) => primitive.kind === "slab" && primitive.sourceId === "terrace-1")).toBe(false);
     expect(model.primitives.some((primitive) => primitive.kind === "roof" && primitive.sourceId === "terrace-1")).toBe(false);
     expect(model.primitives.some((primitive) => primitive.kind === "exterior_wall" && primitive.sourceId === "terrace-boundary")).toBe(true);
+  });
+
+  test("caps a covered lower room beneath an upper-floor open terrace", () => {
+    const articulated = structuredClone(building);
+    const livingBounds = { ...articulated.floors[0].spaces.find((space) => space.id === "living-0")!.bounds };
+    const upperLiving = articulated.floors[1].spaces.find((space) => space.id === "living-1")!;
+    articulated.floors[1].spaces = articulated.floors[1].spaces.filter((space) => space.id !== upperLiving.id);
+    addOpenSpace(articulated, "F1", "terrace-over-living", "terrace", livingBounds);
+
+    const roofs = buildMassingModel(articulated).primitives.filter((primitive) => (
+      primitive.kind === "roof" && primitive.floorId === "F0" && primitive.sourceId === "living-0"
+    ));
+
+    expect(roofs).toHaveLength(1);
+    expect(planAreaM2(roofs)).toBeCloseTo(80, 8);
+    expect(roofs[0].center[1]).toBeCloseTo(3.1 + SLAB_THICKNESS_M / 2, 8);
+  });
+
+  test("decomposes only the partially exposed lower footprint into capping roofs", () => {
+    const articulated = structuredClone(building);
+    replaceSpaceBounds(articulated, "F1", "living-1", { x: 1_000, y: 1_000, width: 6_000, depth: 8_000 });
+    addOpenSpace(articulated, "F1", "terrace-over-living", "terrace", { x: 7_000, y: 1_000, width: 4_000, depth: 8_000 });
+
+    const roofs = buildMassingModel(articulated).primitives.filter((primitive) => (
+      primitive.kind === "roof" && primitive.floorId === "F0" && primitive.sourceId === "living-0"
+    ));
+
+    expect(planAreaM2(roofs)).toBeCloseTo(32, 8);
+    expect(roofs).toEqual([
+      expect.objectContaining({ center: [3, 3.19, -4], size: [4, SLAB_THICKNESS_M, 8] }),
+    ]);
+  });
+
+  test("keeps a vertically aligned courtyard open through every floor", () => {
+    const withCourt = structuredClone(building);
+    const courtBounds = { x: 7_000, y: 1_000, width: 4_000, depth: 8_000 };
+    replaceSpaceBounds(withCourt, "F0", "living-0", { x: 1_000, y: 1_000, width: 6_000, depth: 8_000 });
+    replaceSpaceBounds(withCourt, "F1", "living-1", { x: 1_000, y: 1_000, width: 6_000, depth: 8_000 });
+    addOpenSpace(withCourt, "F0", "court-0", "courtyard", courtBounds);
+    addOpenSpace(withCourt, "F1", "court-1", "courtyard", courtBounds);
+
+    const courtyardCaps = buildMassingModel(withCourt).primitives.filter((primitive) => (
+      primitive.kind === "roof"
+      && primitive.center[0] === 3
+      && primitive.center[2] === -4
+      && primitive.size[0] === 4
+      && primitive.size[2] === 8
+    ));
+
+    expect(courtyardCaps).toHaveLength(0);
+  });
+
+  test("roofs a verandah canopy while leaving its perimeter edge physically open", () => {
+    const withVerandah = structuredClone(building);
+    const floor = withVerandah.floors[1];
+    floor.spaces.push({
+      id: "verandah-1",
+      floorId: "F1",
+      name: "Front verandah",
+      type: "verandah",
+      planningCellPolygon: rectanglePolygon({ x: 4_000, y: 9_000, width: 7_000, depth: 3_000 }),
+      bounds: { x: 4_000, y: 9_000, width: 7_000, depth: 3_000 },
+      areaMm2: 21_000_000,
+      occupied: false,
+      accessible: false,
+    });
+    floor.walls.push(
+      { id: "verandah-facade", floorId: "F1", start: { x: 4_000, y: 9_000 }, end: { x: 11_000, y: 9_000 }, thicknessMm: 230, type: "exterior", adjacentSpaceIds: ["living-1", "verandah-1"] },
+      { id: "verandah-open-edge", floorId: "F1", start: { x: 4_000, y: 12_000 }, end: { x: 11_000, y: 12_000 }, thicknessMm: 230, type: "exterior", adjacentSpaceIds: ["verandah-1"] },
+    );
+
+    const model = buildMassingModel(withVerandah);
+    expect(model.primitives.some((primitive) => primitive.kind === "slab" && primitive.sourceId === "verandah-1")).toBe(true);
+    expect(model.primitives.some((primitive) => primitive.kind === "roof" && primitive.sourceId === "verandah-1")).toBe(true);
+    expect(model.primitives.some((primitive) => primitive.sourceId === "verandah-facade")).toBe(true);
+    expect(model.primitives.some((primitive) => primitive.sourceId === "verandah-open-edge")).toBe(false);
+
+    const closedUpperBay = structuredClone(withVerandah);
+    closedUpperBay.floors[1].spaces.find((space) => space.id === "verandah-1")!.perimeterOpen = false;
+    const closedModel = buildMassingModel(closedUpperBay);
+    expect(closedModel.primitives.some((primitive) => primitive.sourceId === "verandah-open-edge")).toBe(true);
+  });
+
+  test("normalizes legacy t-hub upper facade bays to the persisted closed role", () => {
+    const legacy = structuredClone(building);
+    legacy.candidate.generatorId = "t-hub";
+    const upper = legacy.floors[1];
+    const upperLiving = upper.spaces.find((space) => space.id === "living-1")!;
+    upperLiving.id = "F1-covered-gallery";
+    upperLiving.type = "verandah";
+    upperLiving.occupied = false;
+    delete upperLiving.perimeterOpen;
+    for (const wall of upper.walls) {
+      wall.adjacentSpaceIds = wall.adjacentSpaceIds.map((id) => id === "living-1" ? upperLiving.id : id);
+    }
+
+    const parsed = buildingSchema.parse(legacy);
+    expect(parsed.floors[1].spaces.find((space) => space.id === upperLiving.id)?.perimeterOpen).toBe(false);
+    expect(parsed.candidate.geometryHash).toBe(`${legacy.candidate.geometryHash}-perimeter-v1`);
   });
 
   test("reports exact building-wide evidence", () => {

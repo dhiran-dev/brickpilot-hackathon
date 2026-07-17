@@ -1,6 +1,7 @@
 import type { RoomType } from "@/lib/building/requirements";
 import type { Building, Floor, Opening, Point, Rectangle, Space, WallSegment } from "@/lib/building/schema";
-import { EXTERIOR } from "@/lib/building/topology";
+import { isVerandahSpace } from "@/lib/building/space-semantics";
+import { EXTERIOR, isPerimeterOpenSpace, isVerandahOpenEdgeWall } from "@/lib/building/topology";
 
 import {
   RENDERER_VERSION,
@@ -41,6 +42,7 @@ const ROOM_ZONE: Record<RoomType, RoomZone> = {
   store: "utility",
   courtyard: "outdoor",
   terrace: "outdoor",
+  verandah: "outdoor",
 };
 
 const FURNITURE_KIND: Record<RoomType, FurnitureKind> = {
@@ -60,6 +62,7 @@ const FURNITURE_KIND: Record<RoomType, FurnitureKind> = {
   store: "storage",
   courtyard: "landscape",
   terrace: "landscape",
+  verandah: "landscape",
 };
 
 function formatMetres(mm: number) {
@@ -138,7 +141,7 @@ function openingGeometry(opening: Opening, wall: WallSegment, floor?: Floor): Dr
     swing,
     widthMm: opening.widthMm,
     wallThicknessMm: wall.thicknessMm,
-    isEntrance: opening.kind === "door" && opening.connects.includes(EXTERIOR),
+    isEntrance: opening.kind !== "window" && opening.connects.includes(EXTERIOR),
     interiorPoint,
   };
 }
@@ -166,7 +169,7 @@ function furnitureForSpace(space: Space): DrawingFurniture {
 function routesForFloor(floor: Floor): DrawingRoute[] {
   const wallById = new Map(floor.walls.map((wall) => [wall.id, wall]));
   const roomById = new Map(floor.spaces.map((space) => [space.id, space]));
-  const entrance = floor.openings.find((opening) => opening.kind === "door" && opening.connects.includes(EXTERIOR));
+  const entrance = floor.openings.find((opening) => opening.kind !== "window" && opening.connects.includes(EXTERIOR));
   const entranceRoomId = entrance?.connects.find((roomId) => roomId !== EXTERIOR);
   const origin = roomById.get(entranceRoomId ?? "")
     ?? floor.spaces.find((space) => space.type === "stair")
@@ -279,7 +282,13 @@ function roadCorridors(siteBounds: Rectangle, edges: Building["site"]["roadEdges
   });
 }
 
-function floorArtifact(building: Building, floor: Floor, findings: DrawingFindingInput[]): DrawingFloorArtifact {
+type DrawingBuildOptions = {
+  findings?: DrawingFindingInput[];
+  scheme?: { name: string; partiId: string; style: string };
+  targetAreaByRoomId?: Readonly<Record<string, number>>;
+};
+
+function floorArtifact(building: Building, floor: Floor, options: DrawingBuildOptions): DrawingFloorArtifact {
   const siteBounds = { x: 0, y: 0, width: building.site.widthMm, depth: building.site.depthMm };
   const baseMargin = Math.max(1600, Math.round(Math.min(siteBounds.width, siteBounds.depth) * 0.11));
   const rooms = floor.spaces.map((space, index): DrawingRoom => ({
@@ -291,16 +300,30 @@ function floorArtifact(building: Building, floor: Floor, findings: DrawingFindin
     polygon: space.planningCellPolygon.points,
     areaMm2: space.areaMm2,
     accessible: space.accessible,
+    edgeTreatment: isVerandahSpace(space) && isPerimeterOpenSpace(space) ? "open" : undefined,
     label: labelForSpace(space, index),
   }));
   const schedule = rooms
     .filter((room) => room.label.mode === "schedule")
     .map((room) => ({ ref: room.label.scheduleRef!, roomId: room.id, name: room.name, areaMm2: room.areaMm2 }));
+  const areaSchedule = rooms
+    .filter((room) => !["circulation", "stair"].includes(room.type))
+    .map((room, index) => {
+      const targetAreaMm2 = options.targetAreaByRoomId?.[room.id];
+      return {
+        ref: `R${String(index + 1).padStart(2, "0")}`,
+        roomId: room.id,
+        name: room.name,
+        achievedAreaMm2: room.areaMm2,
+        targetAreaMm2,
+        underTarget: Boolean(targetAreaMm2 && room.areaMm2 < targetAreaMm2 * 0.85),
+      };
+    });
   const roads = roadCorridors(siteBounds, building.site.roadEdges);
   const hasRoad = (edge: Building["site"]["roadEdges"][number]) => building.site.roadEdges.includes(edge);
   const annotationTop = siteBounds.y + siteBounds.depth + (hasRoad("south") ? ROAD_OUTER_EXTENT_MM + 700 : 900);
   const titleY = annotationTop + 2200;
-  const titleHeight = 2400;
+  const titleHeight = 2800;
   const annotationLayout: DrawingAnnotationLayout = {
     scaleOrigin: { x: siteBounds.x + 500, y: annotationTop },
     legendOrigin: { x: siteBounds.x + 500, y: annotationTop + 800 },
@@ -308,8 +331,8 @@ function floorArtifact(building: Building, floor: Floor, findings: DrawingFindin
     titleHeight,
     scheduleOrigin: { x: siteBounds.x + 500, y: titleY + titleHeight + 520 },
   };
-  const scheduleRows = Math.ceil(schedule.length / 2);
-  const scheduleBottom = schedule.length
+  const scheduleRows = Math.ceil(areaSchedule.length / 2);
+  const scheduleBottom = areaSchedule.length
     ? annotationLayout.scheduleOrigin.y + 430 + (scheduleRows - 1) * 350 + 300
     : annotationLayout.titleY + annotationLayout.titleHeight;
   const drawingBottom = Math.max(annotationLayout.titleY + annotationLayout.titleHeight, scheduleBottom) + 700;
@@ -341,7 +364,9 @@ function floorArtifact(building: Building, floor: Floor, findings: DrawingFindin
     siteBounds,
     envelope: floor.envelope,
     rooms,
-    walls: floor.walls.map(({ id, start, end, thicknessMm, type }) => ({ id, start, end, thicknessMm, type })),
+    walls: floor.walls
+      .filter((wall) => !isVerandahOpenEdgeWall(wall, floor.spaces))
+      .map(({ id, start, end, thicknessMm, type }) => ({ id, start, end, thicknessMm, type })),
     columns: (building.structuralConcept?.columns ?? [])
       .filter((column) => column.servedFloorIds.includes(floor.id))
       .map(({ id, center, widthMm, depthMm }) => ({ id, center, widthMm, depthMm })),
@@ -352,23 +377,27 @@ function floorArtifact(building: Building, floor: Floor, findings: DrawingFindin
     furniture: floor.spaces.map(furnitureForSpace),
     dimensions: { overall: overallDimensions(siteBounds, floor.envelope), internal: internalDimensions(floor.spaces) },
     routes: routesForFloor(floor),
-    findings: findingsForFloor(findings, floor),
+    findings: findingsForFloor(options.findings ?? [], floor),
     schedule,
+    areaSchedule,
     scaleBarMm: siteBounds.width >= 10_000 ? 5000 : 2000,
     metadata: {
       algorithmVersion: building.algorithmVersion,
       rulePackVersion: building.rulePackVersion,
       seed: building.seed,
       candidate: `${building.candidate.generatorId} / ${building.candidate.index}`,
+      schemeName: options.scheme?.name,
+      partiId: options.scheme?.partiId,
+      style: options.scheme?.style,
     },
   };
 }
 
-export function buildDrawing(building: Building, options: { findings?: DrawingFindingInput[] } = {}): BuildingDrawing {
+export function buildDrawing(building: Building, options: DrawingBuildOptions = {}): BuildingDrawing {
   return {
     rendererVersion: RENDERER_VERSION,
     buildingId: building.candidate.geometryHash,
-    floors: building.floors.map((floor) => floorArtifact(building, floor, options.findings ?? [])),
+    floors: building.floors.map((floor) => floorArtifact(building, floor, options)),
   };
 }
 

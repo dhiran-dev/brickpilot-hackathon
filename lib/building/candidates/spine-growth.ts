@@ -2,6 +2,7 @@ import type { RoomRequirement } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
 import { candidateRoom, type CandidateGeneratorOptions, type CandidateRoom, type FloorCandidate } from "@/lib/building/candidates/types";
 import { splitOversizedBalconies } from "@/lib/building/candidates/balcony-remainder";
+import { minimumClearDimensionMm } from "@/lib/building/dimensions";
 
 type RoomGroup = {
   rooms: RoomRequirement[];
@@ -15,20 +16,7 @@ function roomWeight(room: RoomRequirement) {
 }
 
 function minimumClearDimension(room: RoomRequirement) {
-  const byType: Partial<Record<RoomRequirement["type"], number>> = {
-    bedroom: 2_700,
-    living: 2_700,
-    dining: 2_400,
-    kitchen: 2_100,
-    study: 2_100,
-    parking: 2_400,
-    bathroom: 1_200,
-    utility: 1_200,
-    foyer: 1_200,
-    pooja: 1_200,
-    store: 1_000,
-  };
-  return Math.max(room.accessible ? 1_200 : 900, byType[room.type] ?? 900);
+  return minimumClearDimensionMm(room.type, room.accessible);
 }
 
 function minimumRoomDepth(room: RoomRequirement, width: number) {
@@ -61,7 +49,7 @@ function minimumGroupDepth(group: RoomGroup, bounds: Rectangle) {
       Math.ceil(minimumArea / bounds.width),
     );
   }
-  if (group.rooms.length === 2 && group.rooms.every((room) => !["parking", "balcony", "courtyard", "terrace"].includes(room.type))) {
+  if (group.rooms.length === 2 && group.rooms.every((room) => !["parking", "balcony", "courtyard", "terrace", "verandah"].includes(room.type))) {
     const branchRoomWidth = bounds.width - 900;
     if (branchRoomWidth >= 1_200) return group.rooms.reduce((sum, room) => sum + minimumRoomDepth(room, branchRoomWidth), 0);
   }
@@ -193,17 +181,6 @@ function proportionalLengths(weights: number[], total: number, minimums = weight
   });
 }
 
-function pushStackedGroup(group: RoomGroup, bounds: Rectangle, output: CandidateRoom[]) {
-  const minimumDepth = (room: RoomRequirement) => minimumRoomDepth(room, bounds.width);
-  const roomDepths = proportionalLengths(group.rooms.map(roomWeight), bounds.depth, group.rooms.map(minimumDepth));
-  let roomY = bounds.y;
-  group.rooms.forEach((room, roomIndex) => {
-    const depth = roomDepths[roomIndex];
-    output.push(candidateRoom(room, { x: bounds.x, y: roomY, width: bounds.width, depth }));
-    roomY += depth;
-  });
-}
-
 function pushSuiteCluster(group: RoomGroup, bounds: Rectangle, spineEdge: "left" | "right", output: CandidateRoom[]) {
   if (group.rooms.length !== 2) return false;
   const bedroom = group.rooms.find((room) => room.type === "bedroom");
@@ -305,7 +282,7 @@ function partitionWing(
   const desiredTotal = desiredDepths.reduce((sum, depth) => sum + depth, 0);
   const rawSurplus = Math.max(0, bounds.depth - desiredTotal);
   const terraceCap = maximumSetbackDepth(options.floorLevel, bounds, spineEdge, options.variant);
-  const hasDesignedOutdoorSpace = ordered.some((group) => group.rooms.some((room) => ["balcony", "courtyard", "parking", "terrace"].includes(room.type)));
+  const hasDesignedOutdoorSpace = ordered.some((group) => group.rooms.some((room) => ["balcony", "courtyard", "parking", "terrace", "verandah"].includes(room.type)));
   // A villa setback should be a deliberate outdoor bay, not every square metre left after the
   // minimum room targets. Keep one wing deeper than the other and return the balance to usable
   // rooms. Sub-900 mm slivers are absorbed completely because they are neither useful terraces nor
@@ -336,7 +313,21 @@ function partitionWing(
     const groupBounds = { x: bounds.x, y, width: bounds.width, depth: groupDepth };
     const clustered = pushSuiteCluster(group, groupBounds, spineEdge, output)
       || pushSocialCluster(group, groupBounds, spineEdge, output);
-    if (!clustered) pushStackedGroup(group, groupBounds, output);
+    if (!clustered) {
+      // Legacy generator diagnostics retain their historical deterministic subdivision, but this
+      // path is no longer reachable from production generation after T3's parti-only cutover.
+      const roomDepths = proportionalLengths(
+        group.rooms.map(roomWeight),
+        groupBounds.depth,
+        group.rooms.map((room) => minimumRoomDepth(room, groupBounds.width)),
+      );
+      let roomY = groupBounds.y;
+      group.rooms.forEach((room, roomIndex) => {
+        const depth = roomDepths[roomIndex];
+        output.push(candidateRoom(room, { x: groupBounds.x, y: roomY, width: groupBounds.width, depth }));
+        roomY += depth;
+      });
+    }
     y += groupDepth;
   });
   if (terraceDepth > 0 && terraceBeforeIndex === ordered.length) {

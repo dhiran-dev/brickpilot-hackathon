@@ -1,5 +1,6 @@
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
+import { resolveRegionalPack } from "@/lib/design/regional-packs";
 import { massingMetrics } from "@/lib/render/massing";
 
 export const RENDER_CONTRACT_VERSION = 2;
@@ -31,14 +32,16 @@ function buildingFacts(building: Building, requirements: BuildingRequirements) {
   return `Canonical facts: exactly ${metrics.storeys} storey${metrics.storeys === 1 ? "" : "s"}; overall height ${metrics.heightM.toFixed(2)} m; site ${metres(building.site.widthMm)} × ${metres(building.site.depthMm)}; facing ${building.site.facing}; road edge(s) ${building.site.roadEdges.join(", ")}; location ${requirements.region.locality ?? requirements.region.adminArea}, ${requirements.region.countryCode}; architectural style ${requirements.architecture.style.replaceAll("_", " ")}; built-form strategy ${requirements.architecture.formStrategy.replaceAll("_", " ")}; roof character ${requirements.architecture.roofCharacter.replaceAll("_", " ")}; material direction ${requirements.architecture.materialDirection.replaceAll("_", " ")}; quality tier ${requirements.budget.qualityTier}. Floors: ${floorFacts}.`;
 }
 
-function materialSchedule(requirements: BuildingRequirements) {
+export function materialSchedule(requirements: BuildingRequirements) {
   const schedules: Record<BuildingRequirements["architecture"]["materialDirection"], string> = {
     warm_natural: "warm mineral plaster, locally appropriate stone, durable timber-toned screens and warm-grey metal",
     light_mineral: "pale mineral plaster, light local stone, restrained natural timber and champagne-grey metal",
     earthy_textured: "earth-toned lime plaster, textured brick or laterite accents, local stone and dark timber",
     monochrome: "refined exposed-concrete tones, charcoal metal, clear glazing and sparse warm timber accents",
   };
-  return schedules[requirements.architecture.materialDirection];
+  const regional = resolveRegionalPack(requirements.region.countryCode, requirements.region.adminArea);
+  const palette = regional.pack.materialPalette;
+  return `chosen finish direction: ${schedules[requirements.architecture.materialDirection]}; ${regional.climateClass.replaceAll("_", " ")} regional performance palette: ${palette.exteriorWalls} walls, ${palette.accents} accents, ${palette.roof}, with ${palette.shading}`;
 }
 
 function exteriorEditPrompt(input: {

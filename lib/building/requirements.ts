@@ -40,6 +40,7 @@ export const roomTypeSchema = z.enum([
   "store",
   "courtyard",
   "terrace",
+  "verandah",
 ]);
 export const privacySchema = z.enum(["public", "semi_private", "private", "service"]);
 export const preferredZoneSchema = z.enum([

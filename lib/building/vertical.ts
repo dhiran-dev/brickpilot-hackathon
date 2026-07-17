@@ -49,6 +49,15 @@ export function buildVerticalConnectors(requirements: BuildingRequirements, floo
   }));
   const typicalHeight = floors.slice(0, -1).reduce((sum, floor) => sum + floor.floorHeightMm, 0) / (floors.length - 1);
   const risers = Math.max(1, Math.ceil(typicalHeight / 180));
+  const representativeBounds = boundsByFloor[servedFloorIds[0]];
+  const facing = requirements.site.facing;
+  const direction = representativeBounds.width >= representativeBounds.depth
+    ? facing === "east" || facing === "west"
+      ? facing
+      : facing === "north" ? "west" : "east"
+    : facing === "north" || facing === "south"
+      ? facing
+      : facing === "west" ? "north" : "south";
   return [{
     id: "main-stair",
     kind: requirements.vertical.stairFamily === "dog_leg" ? "dog_leg_stair" : "straight_stair",
@@ -57,6 +66,6 @@ export function buildVerticalConnectors(requirements: BuildingRequirements, floo
     widthMm: requirements.vertical.stairWidthMm,
     riseMm: Math.round(typicalHeight / risers),
     runMm: 280,
-    direction: requirements.site.facing,
+    direction,
   }];
 }

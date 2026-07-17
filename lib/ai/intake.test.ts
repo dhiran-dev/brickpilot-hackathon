@@ -23,7 +23,15 @@ describe("parseNaturalLanguageIntake", () => {
     expect(result.requirements.site.facing).toBe("east");
     expect(result.requirements.household.occupants).toBe(4);
     expect(result.requirements.rooms.filter((room) => room.type === "bedroom")).toHaveLength(3);
-    expect(result.requirements.rooms.some((room) => ["parking", "pooja", "utility", "courtyard", "study"].includes(room.type))).toBe(false);
+    expect(result.requirements.rooms.some((room) => ["parking", "pooja", "utility", "study"].includes(room.type))).toBe(false);
+    expect(result.requirements.rooms.some((room) => room.type === "courtyard")).toBe(true);
+    expect(result.requirements.architecture).toEqual({
+      style: "courtyard_vernacular",
+      formStrategy: "courtyard",
+      roofCharacter: "flat_parapet",
+      materialDirection: "earthy_textured",
+    });
+    expect(result.assumptions).toContain("Prefilled editable architecture choices from the hot dry regional pack.");
     expect(result.requirements.rooms.some((room) => room.type === "dining")).toBe(false);
     expect(result.requirements.rooms.find((room) => room.id === "living")?.name).toBe("Living / dining hall");
     expect(result.requirements.seed).toBe(42);
@@ -70,6 +78,7 @@ describe("parseNaturalLanguageIntake", () => {
       roofCharacter: "mixed",
       materialDirection: "earthy_textured",
     });
+    expect(result.requirements.rooms.some((room) => room.type === "courtyard")).toBe(false);
     expect(result.assumptions.some((assumption) => assumption.startsWith("Assumed a climate-responsive"))).toBe(false);
   });
 
@@ -95,6 +104,16 @@ describe("parseNaturalLanguageIntake", () => {
     expect(result.assumptions).toContain("Assumed one shared ground-floor bathroom because none was stated.");
   });
 
+  test("lets an explicit no-courtyard choice override a court-first regional suggestion", async () => {
+    const result = await parseNaturalLanguageIntake("A home in Delhi without a courtyard", {
+      complete: async () => ({ countryCode: "IN", adminArea: "Delhi", bedroomsGroundFloor: 2, includeCourtyard: false }),
+    });
+    expect(result.status).toBe("parsed");
+    if (result.status !== "parsed") throw new Error("expected parsed");
+    expect(result.requirements.rooms.some((room) => room.type === "courtyard")).toBe(false);
+    expect(result.requirements.architecture.formStrategy).toBe("stepped_terraces");
+  });
+
   test("keeps partial country extraction internally consistent", async () => {
     const result = await parseNaturalLanguageIntake("A small home in the US", {
       complete: async () => ({ countryCode: "US", adminArea: "Kerala", locality: "Kochi", currency: "INR", bedroomsGroundFloor: 2 }),
@@ -103,6 +122,51 @@ describe("parseNaturalLanguageIntake", () => {
     if (result.status !== "parsed") throw new Error("expected parsed");
     expect(result.requirements.region).toMatchObject({ countryCode: "US", adminArea: "Other US state", locality: "General locality", locale: "en-US", currency: "USD" });
     expect(result.assumptions).toContain("Normalized currency to USD to match the selected country.");
+  });
+
+  test("canonicalizes an Indian state alias before applying and persisting its regional pack", async () => {
+    const result = await parseNaturalLanguageIntake("A two-bedroom home in KL, India", {
+      complete: async () => ({ countryCode: "IN", adminArea: "kl", bedroomsGroundFloor: 2 }),
+    });
+    expect(result.status).toBe("parsed");
+    if (result.status !== "parsed") throw new Error("expected parsed");
+    expect(result.requirements.region.adminArea).toBe("Kerala");
+    expect(result.requirements.architecture).toEqual({
+      style: "contemporary_tropical",
+      formStrategy: "articulated_wings",
+      roofCharacter: "mixed",
+      materialDirection: "warm_natural",
+    });
+    expect(result.assumptions.some((assumption) => assumption.startsWith("Used the general India"))).toBe(false);
+  });
+
+  test("persists canonical Indian states that are not listed in the compact UI menu", async () => {
+    const result = await parseNaturalLanguageIntake("A home in HP, India", {
+      complete: async () => ({ countryCode: "IN", adminArea: "HP", bedroomsGroundFloor: 2 }),
+    });
+    expect(result.status).toBe("parsed");
+    if (result.status !== "parsed") throw new Error("expected parsed");
+    expect(result.requirements.region.adminArea).toBe("Himachal Pradesh");
+    expect(result.requirements.architecture.formStrategy).toBe("compact");
+    expect(result.assumptions.some((assumption) => assumption.startsWith("Low-confidence"))).toBe(false);
+  });
+
+  test("preserves an unknown country and returns a visible low-confidence fallback warning", async () => {
+    const result = await parseNaturalLanguageIntake("A two-bedroom home in country ZZ", {
+      complete: async () => ({ countryCode: "ZZ", adminArea: "Central", bedroomsGroundFloor: 2 }),
+    });
+    expect(result.status).toBe("parsed");
+    if (result.status !== "parsed") throw new Error("expected parsed");
+    expect(result.requirements.region.countryCode).toBe("ZZ");
+    expect(result.requirements.architecture).toEqual({
+      style: "warm_minimal",
+      formStrategy: "stepped_terraces",
+      roofCharacter: "mixed",
+      materialDirection: "light_mineral",
+    });
+    const warning = result.assumptions.find((assumption) => assumption.startsWith("Low-confidence regional defaults:"));
+    expect(warning).toContain("ZZ");
+    expect(JSON.parse(JSON.stringify(result.assumptions))).toEqual(result.assumptions);
   });
 
   test("re-asks once with the schema error, then succeeds", async () => {

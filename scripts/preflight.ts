@@ -1,8 +1,13 @@
 /**
- * Phase 0 preflight: verify the three external dependencies before building.
- *   1. Self-hosted Postgres  (DATABASE_URL)
- *   2. Fireworks + MiniMax-M3 in JSON mode  (FIREWORKS_API_KEY, AI_MODEL)
- *   3. Replicate GPT Image 2  (REPLICATE_API_TOKEN)
+ * Preflight: run the automatically discovered unit/integration suite and build,
+ * then verify the three external dependencies used by a deployed environment.
+ * Browser E2E is intentionally separate (`bun run test:e2e`) because it needs a
+ * browser and live services.
+ *   1. Unit/integration tests discovered by Bun
+ *   2. Production build
+ *   3. Self-hosted Postgres  (DATABASE_URL)
+ *   4. Fireworks + MiniMax-M3 in JSON mode  (FIREWORKS_API_KEY, AI_MODEL)
+ *   5. Replicate GPT Image 2  (REPLICATE_API_TOKEN)
  *
  * Run with:  bun run preflight
  * Bun auto-loads .env.local.
@@ -21,6 +26,17 @@ const fail = (label: string, detail = "") => {
   console.log(`${RED}✗${RESET} ${label} ${DIM}${detail}${RESET}`);
   failures++;
 };
+
+async function checkCommand(label: string, command: string[]) {
+  const child = Bun.spawn(command, {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await child.exited;
+  if (exitCode === 0) ok(label);
+  else fail(label, `exited with code ${exitCode}`);
+}
 
 async function checkDb() {
   const url = process.env.DATABASE_URL;
@@ -97,13 +113,17 @@ async function checkImage() {
   }
 }
 
-console.log("\nBrickPilot preflight — Phase 0\n");
-await checkDb();
-await checkLlm();
-await checkImage();
+console.log("\nBrickPilot preflight\n");
+await checkCommand("Unit/integration tests", ["bun", "run", "test"]);
+if (failures === 0) await checkCommand("Production build", ["bun", "run", "build"]);
+if (failures === 0) {
+  await checkDb();
+  await checkLlm();
+  await checkImage();
+}
 console.log("");
 if (failures > 0) {
-  console.log(`${RED}${failures} check(s) failed — fix before Phase 1.${RESET}\n`);
+  console.log(`${RED}${failures} check(s) failed — fix before deployment.${RESET}\n`);
   process.exit(1);
 }
-console.log(`${GREEN}All checks passed. Phase 0 ready.${RESET}\n`);
+console.log(`${GREEN}All checks passed. Deployment preflight ready.${RESET}\n`);

@@ -50,10 +50,13 @@ export async function GET(request: Request) {
       status: layoutVersions.status,
       createdAt: layoutVersions.createdAt,
       requirements: projectRequirements.inputJson,
+      intent: layoutVersions.intent,
       building: layoutVersions.layoutJson,
       validation: layoutVersions.validation,
       costEstimate: layoutVersions.costEstimate,
       aiReview: layoutVersions.aiReview,
+      schemes: layoutVersions.schemes,
+      selectedSchemeId: layoutVersions.selectedSchemeId,
     })
     .from(layoutVersions)
     .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
@@ -187,7 +190,7 @@ export async function POST(request: Request) {
   try {
     const pipelineResult = await runDesignPipeline(requirements);
     if (pipelineResult.status === "failed") throw new BuildingGenerationErrorLike(pipelineResult);
-    const { building, validation, costEstimate, intent, aiReview } = pipelineResult;
+    const { building, validation, costEstimate, intent, aiReview, schemes, selectedSchemeId, diagnostics } = pipelineResult;
     const completedAt = new Date();
     const response = {
       projectId: created.id,
@@ -200,6 +203,9 @@ export async function POST(request: Request) {
       costEstimate,
       intent,
       aiReview,
+      schemes,
+      selectedSchemeId,
+      diagnostics,
     };
 
     await db.transaction(async (transaction) => {
@@ -212,6 +218,8 @@ export async function POST(request: Request) {
           validation: jsonRecord(validation),
           costEstimate: jsonRecord(costEstimate),
           aiReview: jsonRecord(aiReview),
+          schemes: schemes.map(jsonRecord),
+          selectedSchemeId,
           updatedAt: completedAt,
         })
         .where(eq(layoutVersions.id, layout.id));
@@ -234,7 +242,13 @@ export async function POST(request: Request) {
     await db.transaction(async (transaction) => {
       await transaction
         .update(layoutVersions)
-        .set({ status: "failed", failureReason: `${code}: ${message}`, validation: generationError ? jsonRecord({ conflicts: generationError.conflicts }) : undefined, updatedAt: failedAt })
+        .set({
+          status: "failed",
+          failureReason: `${code}: ${message}`,
+          validation: generationError ? jsonRecord({ conflicts: generationError.conflicts }) : undefined,
+          intent: generationError?.diagnostics ? jsonRecord({ generationDiagnostics: generationError.diagnostics }) : undefined,
+          updatedAt: failedAt,
+        })
         .where(eq(layoutVersions.id, layout.id));
       await transaction
         .update(generationJobs)
@@ -245,6 +259,11 @@ export async function POST(request: Request) {
         .set({ status: "failed", updatedAt: failedAt })
         .where(eq(projects.id, created.id));
     });
-    return errorResponse(message, generationError ? 422 : 500, code, generationError?.conflicts);
+    return errorResponse(
+      message,
+      generationError ? 422 : 500,
+      code,
+      generationError?.code === "GENERATION_TIMEOUT" ? generationError.diagnostics : generationError?.conflicts,
+    );
   }
 }

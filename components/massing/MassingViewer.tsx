@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { Building } from "@/lib/building/schema";
-import { buildMassingModel, type MassingPrimitiveKind } from "@/lib/render/massing";
+import { buildMassingModel, MASSING_GRID_Y_M, type MassingPrimitiveKind } from "@/lib/render/massing";
 
 export type MassingView = "front" | "rear" | "left" | "right" | "iso" | "top";
 export type MassingCapture = { role: "massing_front" | "massing_collage" | "massing_top"; dataUri: string };
@@ -16,6 +16,45 @@ export const MASSING_CAPTURE_LABELS = {
   collage: "SOURCE B · COLLAGE · FOUR LOCKED VIEWS",
   top: "SOURCE C · HIGH 3/4 · FRONT + RIGHT · CAMERA LOCK",
 } as const;
+
+export const MASSING_VIEWER_CLASS_NAME = "relative h-full min-h-[34rem] w-full overflow-hidden touch-none";
+
+export function configureMassingCanvas(canvas: Pick<HTMLCanvasElement, "style">) {
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.display = "block";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+}
+
+export function massingCanvasSizeChanged(width: number, height: number, lastWidth: number, lastHeight: number) {
+  return width !== lastWidth || height !== lastHeight;
+}
+
+export function retargetMassingCamera(position: THREE.Vector3, previousTarget: THREE.Vector3, nextTarget: THREE.Vector3) {
+  return nextTarget.clone().add(position.clone().sub(previousTarget));
+}
+
+export function cancelMassingViewAnimation(frame: number | null, cancel: (frame: number) => void = cancelAnimationFrame) {
+  if (frame !== null) cancel(frame);
+  return null;
+}
+
+export function massingVisibilityOptions(input: {
+  showInteriorWalls: boolean;
+  showColumns: boolean;
+  showSlabs: boolean;
+  showRoof: boolean;
+  showSite: boolean;
+}) {
+  return {
+    includeInteriorWalls: input.showInteriorWalls,
+    includeColumns: input.showColumns,
+    includeSlabs: input.showSlabs,
+    includeRoof: input.showRoof,
+    includeSite: input.showSite,
+  };
+}
 
 export type MassingViewerHandle = {
   setView: (view: MassingView) => void;
@@ -28,6 +67,7 @@ type MassingViewerProps = {
   visibleFloorIds: string[];
   explodeM: number;
   showInteriorWalls: boolean;
+  showColumns: boolean;
   showSlabs: boolean;
   showRoof: boolean;
   showSite: boolean;
@@ -42,18 +82,59 @@ type Runtime = {
   controls: OrbitControls;
   root: THREE.Group;
   animationFrame: number;
+  viewAnimationFrame: number | null;
   modelRadius: number;
+  hasFramedModel: boolean;
 };
 
-const MATERIALS: Record<MassingPrimitiveKind, { color: number; opacity?: number; edge: number }> = {
+const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> = {
   site: { color: 0x11100e, edge: 0x8e5a31 },
   slab: { color: 0x7a6a5c, edge: 0xc97940 },
   roof: { color: 0x8d7c6e, edge: 0xff9a58 },
   exterior_wall: { color: 0xd8cec0, edge: 0x5b3a22 },
-  interior_wall: { color: 0xa39486, opacity: 0.84, edge: 0x6f533e },
+  interior_wall: { color: 0xa39486, edge: 0x6f533e },
   column: { color: 0xe58a42, edge: 0x3b1d0b },
   stair: { color: 0xb96834, edge: 0x4b2a18 },
 };
+
+// Smaller polygon-offset units win when intentional box intersections share a
+// plane. The semantic order keeps columns legible, preserves continuous floor
+// plates, and lets exterior walls close internal junctions.
+const MASSING_SURFACE_DEPTH_UNITS: Record<MassingPrimitiveKind, number> = {
+  column: 1,
+  roof: 2,
+  slab: 2,
+  stair: 3,
+  exterior_wall: 4,
+  interior_wall: 5,
+  site: 6,
+};
+
+export function massingSurfaceStyle(kind: MassingPrimitiveKind) {
+  const polygonOffsetUnits = MASSING_SURFACE_DEPTH_UNITS[kind];
+  return {
+    transparent: false as const,
+    opacity: 1,
+    polygonOffset: true as const,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits,
+    renderOrder: 100 - polygonOffsetUnits,
+  };
+}
+
+export const MASSING_EDGE_DEPTH_STYLE = {
+  depthTest: true,
+  depthWrite: false,
+} as const;
+
+export function massingEdgeStyle(kind: MassingPrimitiveKind) {
+  return {
+    ...MASSING_EDGE_DEPTH_STYLE,
+    // Transparent outlines draw from low to high order. Mirror the surface
+    // priority so a column or floor edge cannot trade colours with a wall edge.
+    renderOrder: 200 - MASSING_SURFACE_DEPTH_UNITS[kind],
+  };
+}
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse((child) => {
@@ -148,6 +229,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
   visibleFloorIds,
   explodeM,
   showInteriorWalls,
+  showColumns,
   showSlabs,
   showRoof,
   showSite,
@@ -161,6 +243,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
   function setView(view: MassingView, animate = true) {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
     const target = runtime.controls.target.clone();
     const distance = Math.max(8, runtime.modelRadius * 2.25);
     const destination = target.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
@@ -177,9 +260,10 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       const eased = 1 - Math.pow(1 - raw, 3);
       runtime.camera.position.lerpVectors(start, destination, eased);
       runtime.controls.update();
-      if (raw < 1) requestAnimationFrame(move);
+      if (raw < 1) runtime.viewAnimationFrame = requestAnimationFrame(move);
+      else runtime.viewAnimationFrame = null;
     };
-    requestAnimationFrame(move);
+    runtime.viewAnimationFrame = requestAnimationFrame(move);
   }
 
   function fit() {
@@ -192,6 +276,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     async captureReferenceViews() {
       const runtime = runtimeRef.current;
       if (!runtime) throw new Error("The 3D model is not ready yet.");
+      runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
       const originalPosition = runtime.camera.position.clone();
       const originalTarget = runtime.controls.target.clone();
       const originalSize = runtime.renderer.getSize(new THREE.Vector2());
@@ -259,6 +344,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    configureMassingCanvas(renderer.domElement);
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -295,12 +381,17 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
 
     const root = new THREE.Group();
     scene.add(root);
-    const runtime: Runtime = { scene, camera, renderer, controls, root, animationFrame: 0, modelRadius: 12 };
+    const runtime: Runtime = { scene, camera, renderer, controls, root, animationFrame: 0, viewAnimationFrame: null, modelRadius: 12, hasFramedModel: false };
     runtimeRef.current = runtime;
 
+    let lastWidth = 0;
+    let lastHeight = 0;
     const resize = () => {
       const width = Math.max(1, container.clientWidth);
       const height = Math.max(1, container.clientHeight);
+      if (!massingCanvasSizeChanged(width, height, lastWidth, lastHeight)) return;
+      lastWidth = width;
+      lastHeight = height;
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -320,6 +411,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       onReadyChange?.(false);
       observer.disconnect();
       cancelAnimationFrame(runtime.animationFrame);
+      runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
       controls.dispose();
       disposeObject(root);
       renderer.dispose();
@@ -332,44 +424,57 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     facingRef.current = building.site.facing;
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
+    const previousTarget = runtime.controls.target.clone();
+    const previousCameraPosition = runtime.camera.position.clone();
     disposeObject(runtime.root);
     runtime.root.clear();
     const model = buildMassingModel(building, {
       visibleFloorIds,
       explodeM,
-      includeInteriorWalls: showInteriorWalls,
-      includeSlabs: showSlabs,
-      includeRoof: showRoof,
-      includeSite: showSite,
+      ...massingVisibilityOptions({ showInteriorWalls, showColumns, showSlabs, showRoof, showSite }),
     });
     for (const primitive of model.primitives) {
       const geometry = new THREE.BoxGeometry(...primitive.size);
       const style = MATERIALS[primitive.kind];
+      const surfaceStyle = massingSurfaceStyle(primitive.kind);
       const material = new THREE.MeshStandardMaterial({
         color: style.color,
         roughness: primitive.kind === "site" ? 0.95 : 0.72,
         metalness: 0.02,
-        transparent: style.opacity !== undefined,
-        opacity: style.opacity ?? 1,
+        transparent: surfaceStyle.transparent,
+        opacity: surfaceStyle.opacity,
+        polygonOffset: surfaceStyle.polygonOffset,
+        polygonOffsetFactor: surfaceStyle.polygonOffsetFactor,
+        polygonOffsetUnits: surfaceStyle.polygonOffsetUnits,
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.name = primitive.id;
       mesh.position.set(...primitive.center);
+      mesh.renderOrder = surfaceStyle.renderOrder;
       mesh.castShadow = primitive.kind !== "site";
       mesh.receiveShadow = true;
       runtime.root.add(mesh);
       if (primitive.kind !== "site") {
+        const edgeStyle = massingEdgeStyle(primitive.kind);
         const edges = new THREE.LineSegments(
           new THREE.EdgesGeometry(geometry, 25),
-          new THREE.LineBasicMaterial({ color: style.edge, transparent: true, opacity: 0.72 }),
+          new THREE.LineBasicMaterial({
+            color: style.edge,
+            transparent: true,
+            opacity: 0.72,
+            depthTest: edgeStyle.depthTest,
+            depthWrite: edgeStyle.depthWrite,
+          }),
         );
         edges.position.copy(mesh.position);
+        edges.renderOrder = edgeStyle.renderOrder;
         runtime.root.add(edges);
       }
     }
     if (showSite) {
       const grid = new THREE.GridHelper(Math.max(model.widthM, model.depthM) * 1.2, 24, 0x8e5a31, 0x2c241d);
-      grid.position.y = 0.006;
+      grid.position.y = MASSING_GRID_Y_M;
       (grid.material as THREE.Material).transparent = true;
       (grid.material as THREE.Material).opacity = 0.34;
       runtime.root.add(grid);
@@ -394,8 +499,14 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     }
     runtime.controls.minDistance = Math.max(3, runtime.modelRadius * 0.42);
     runtime.controls.maxDistance = runtime.modelRadius * 5;
-    setView("iso", false);
-  }, [building, explodeM, showInteriorWalls, showRoof, showSite, showSlabs, visibleFloorIds.join("|")]);
+    if (runtime.hasFramedModel) {
+      runtime.camera.position.copy(retargetMassingCamera(previousCameraPosition, previousTarget, runtime.controls.target));
+      runtime.controls.update();
+    } else {
+      runtime.hasFramedModel = true;
+      setView("iso", false);
+    }
+  }, [building, explodeM, showColumns, showInteriorWalls, showRoof, showSite, showSlabs, visibleFloorIds.join("|")]);
 
-  return <div className="h-full min-h-[34rem] w-full touch-none" ref={containerRef} role="img" aria-label="Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." />;
+  return <div className={MASSING_VIEWER_CLASS_NAME} ref={containerRef} role="img" aria-label="Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." />;
 });

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 432" role="img" aria-labelledby="title desc">
+  <title id="title">Warm minimal villa study</title><desc id="desc">Calm offset plaster boxes, a timber screen and a recessed glazed room.</desc>
+  <defs><pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" fill="none" stroke="#302821"/></pattern><linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e3d1b9"/><stop offset="1" stop-color="#9f8065"/></linearGradient></defs>
+  <rect width="720" height="432" fill="#090908"/><rect width="720" height="432" fill="url(#grid)"/>
+  <path d="M90 362 341 229l296 105-273 80Z" fill="#15120f" stroke="#594537"/>
+  <path d="m159 221 204-95 222 74-205 104Z" fill="#d9bea0"/><path d="m159 221 221 83v104l-221-79Z" fill="url(#wall)"/><path d="m380 304 205-104v103L380 408Z" fill="#735844"/>
+  <path d="m259 173 122-57 131 44-122 62Z" fill="#eddac0"/><path d="m390 222 122-62v72l-122 61Z" fill="#84664f"/><path d="m259 173 131 49v71l-131-47Z" fill="#b89a7a"/>
+  <path d="m189 255 76 28v74l-76-27Z" fill="#1b2422" stroke="#ba8b5c"/>
+  <path d="m305 268 42 16v111l-42-15Z" fill="#241811"/><path d="m315 271v105m10-101v104m10-100v104" stroke="#d59a63" stroke-width="4"/>
+  <path d="m430 281 101-51v78l-101 50Z" fill="#15211f" stroke="#8b9b8d"/>
+  <path d="M105 377h521M132 399h461" stroke="#8e5a31" stroke-width="2" opacity=".65"/>
+  <path d="M618 65h-71v71" fill="none" stroke="#ff6a1f" stroke-width="3"/><circle cx="618" cy="65" r="5" fill="#ff6a1f"/>
+</svg>

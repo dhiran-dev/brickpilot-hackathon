@@ -19,10 +19,13 @@ export async function GET(request: Request, context: { params: Promise<{ layoutV
       status: layoutVersions.status,
       createdAt: layoutVersions.createdAt,
       requirements: projectRequirements.inputJson,
+      intent: layoutVersions.intent,
       building: layoutVersions.layoutJson,
       validation: layoutVersions.validation,
       costEstimate: layoutVersions.costEstimate,
       aiReview: layoutVersions.aiReview,
+      schemes: layoutVersions.schemes,
+      selectedSchemeId: layoutVersions.selectedSchemeId,
     })
     .from(layoutVersions)
     .innerJoin(projects, eq(layoutVersions.projectId, projects.id))

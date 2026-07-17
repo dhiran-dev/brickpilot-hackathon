@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { generateBuilding, BuildingGenerationError } from "@/lib/building/generate";
+import { generateBuilding, geometryHash, BuildingGenerationError } from "@/lib/building/generate";
 import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomRequirement, type RoomType } from "@/lib/building/requirements";
-import { analyzeCoverage, deriveClearSpaceBounds, isOpenToSkySpace } from "@/lib/building/topology";
-import { circulationPassageConflicts, unreachableOccupiedSpaces } from "@/lib/building/circulation";
+import {
+  analyzeCoverage,
+  deriveClearSpaceBounds,
+  isOpenToSkySpace,
+  isVerandahOpenEdgeWall,
+} from "@/lib/building/topology";
+import { circulationPassageConflicts, isCirculationBackboneSpace, unreachableOccupiedSpaces } from "@/lib/building/circulation";
+import { MAIN_ENTRY_CLEAR_WIDTH_MM } from "@/lib/building/openings";
 import { validateBuilding } from "@/lib/validation";
 import { generateRecursiveSlicingCandidate } from "@/lib/building/candidates/recursive-slicing";
 import { generateSpineGrowthCandidate } from "@/lib/building/candidates/spine-growth";
@@ -64,7 +70,7 @@ function denseMultiStoryRecoveryRequirements(seed: number): BuildingRequirements
   const areas: Record<RoomType, readonly [number, number]> = {
     living: [15, 22], dining: [9, 13], kitchen: [8, 12], bedroom: [10, 14], bathroom: [3.2, 4.5],
     pooja: [2.5, 4], utility: [3.5, 5], foyer: [3, 5], parking: [14, 18], study: [7, 10],
-    balcony: [4, 7], circulation: [4, 8], stair: [6, 9], store: [2, 3], courtyard: [8, 14], terrace: [8, 16],
+    balcony: [4, 7], circulation: [4, 8], stair: [6, 9], store: [2, 3], courtyard: [8, 14], terrace: [8, 16], verandah: [6, 12],
   };
   const add = (
     id: string,
@@ -212,6 +218,33 @@ describe("topology-first residential generator", () => {
     }
   });
 
+  test("uses a wide ground entry while closing the repeated entry alignment bay on upper facades", () => {
+    const result = generateBuilding(requirements(3));
+    const groundEntrance = result.building.floors[0].openings.find((opening) => opening.id === "F0-entrance");
+    expect(groundEntrance?.widthMm).toBe(MAIN_ENTRY_CLEAR_WIDTH_MM);
+
+    for (const floor of result.building.floors.slice(1)) {
+      const repeatedEntryBay = floor.spaces.find((space) => space.id.endsWith("-entry-verandah"));
+      expect(repeatedEntryBay).toBeDefined();
+      expect(repeatedEntryBay?.perimeterOpen).toBe(false);
+      const openReferenceEdge = floor.walls.find((wall) => (
+        wall.adjacentSpaceIds.includes(repeatedEntryBay!.id)
+        && isVerandahOpenEdgeWall(wall, floor.spaces)
+      ));
+      const closedPerimeterWall = floor.walls.find((wall) => (
+        wall.adjacentSpaceIds.length === 1
+        && wall.adjacentSpaceIds.includes(repeatedEntryBay!.id)
+      ));
+      expect(openReferenceEdge).toBeUndefined();
+      expect(closedPerimeterWall).toBeDefined();
+    }
+
+    const changedPhysicalRole = structuredClone(result.building);
+    const upperBay = changedPhysicalRole.floors[1].spaces.find((space) => space.id.endsWith("-entry-verandah"))!;
+    upperBay.perimeterOpen = true;
+    expect(geometryHash(changedPhysicalRole.floors)).not.toBe(result.building.candidate.geometryHash);
+  });
+
   test("keeps compact villas efficient without inventing a footprint recess", () => {
     const input = requirements(2);
     input.architecture.formStrategy = "compact";
@@ -261,6 +294,16 @@ describe("topology-first residential generator", () => {
       expect(unreachableOccupiedSpaces(result.building)).toEqual([]);
       expect(circulationPassageConflicts(result.building, input)).toEqual([]);
       for (const floor of result.building.floors) {
+        const stairSpace = floor.spaces.find((space) => space.type === "stair")!;
+        expect(stairSpace.bounds.x).toBeGreaterThanOrEqual(floor.envelope.x);
+        expect(stairSpace.bounds.y).toBeGreaterThanOrEqual(floor.envelope.y);
+        expect(stairSpace.bounds.x + stairSpace.bounds.width).toBeLessThanOrEqual(floor.envelope.x + floor.envelope.width);
+        expect(stairSpace.bounds.y + stairSpace.bounds.depth).toBeLessThanOrEqual(floor.envelope.y + floor.envelope.depth);
+        expect(floor.openings.some((opening) => (
+          opening.kind !== "window"
+          && opening.connects.includes(stairSpace.id)
+          && opening.connects.some((id) => id !== stairSpace.id && id !== "EXTERIOR")
+        ))).toBe(true);
         const audit = analyzeCoverage(floor.envelope, floor.spaces);
         expect(audit.gapAreaMm2).toBe(0);
         expect(audit.overlapAreaMm2).toBe(0);
@@ -322,6 +365,35 @@ describe("topology-first residential generator", () => {
       }
     }
     expect(geometryHashes.size).toBe(1);
+  });
+
+  test("projects an eight-square-metre court without using the upper void as an access relay", () => {
+    const input = denseMultiStoryRecoveryRequirements(42);
+    const generated = generateBuilding(input);
+    const programmedCourt = input.rooms.find((room) => room.type === "courtyard")!;
+    const groundCourt = generated.building.floors[0].spaces.find((space) => space.id === programmedCourt.id)!;
+    const projectedCourts = generated.building.floors.slice(1).map((floor) => (
+      floor.spaces.find((space) => space.type === "courtyard")!
+    ));
+
+    expect(groundCourt.areaMm2).toBeGreaterThanOrEqual(programmedCourt.minAreaMm2);
+    expect(groundCourt.occupied).toBe(true);
+    expect(isCirculationBackboneSpace(groundCourt)).toBe(false);
+    expect(generated.building.floors[0].openings.some((opening) => opening.connects.includes(groundCourt.id))).toBe(true);
+    for (const [index, court] of projectedCourts.entries()) {
+      expect(court.bounds).toEqual(groundCourt.bounds);
+      expect(court.occupied).toBe(false);
+      expect(generated.building.floors[index + 1].openings.some((opening) => opening.connects.includes(court.id))).toBe(false);
+    }
+
+    const stricter = structuredClone(input);
+    stricter.rooms.find((room) => room.id === programmedCourt.id)!.minAreaMm2 = groundCourt.areaMm2 + 1;
+    const report = validateBuilding(generated.building, stricter);
+    expect(report.findings.some((finding) => (
+      finding.ruleId === "PLANNING_ROOM_MIN_AREA"
+      && finding.severity === "error"
+      && finding.objectIds.includes(groundCourt.id)
+    ))).toBe(true);
   });
 
   test("keeps dense-brief feasibility independent of a broader bounded style-seed sample", () => {

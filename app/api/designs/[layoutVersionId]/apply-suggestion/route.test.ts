@@ -4,7 +4,7 @@ process.env.DATABASE_URL ||= "postgres://brickpilot:brickpilot@127.0.0.1:5432/br
 process.env.BETTER_AUTH_SECRET ||= "brickpilot-test-secret-at-least-32-characters";
 process.env.BETTER_AUTH_URL ||= "http://localhost:3000";
 
-const { POST } = await import("@/app/api/designs/[layoutVersionId]/apply-suggestion/route");
+const { POST, markRenderPayloadForRevision } = await import("@/app/api/designs/[layoutVersionId]/apply-suggestion/route");
 
 function request() {
   return new Request("http://localhost/api/designs/00000000-0000-0000-0000-000000000000/apply-suggestion", {
@@ -15,6 +15,17 @@ function request() {
 }
 
 describe("POST /api/designs/[layoutVersionId]/apply-suggestion", () => {
+  test("preserves immutable scheme provenance while relabeling prior renders", () => {
+    expect(markRenderPayloadForRevision({ schemeId: "scheme-old", geometryHash: "hash-old", renderPurpose: "exterior_front" }, "layout-v2"))
+      .toEqual({
+        schemeId: "scheme-old",
+        geometryHash: "hash-old",
+        renderPurpose: "exterior_front",
+        schemeDisposition: "previous",
+        supersededByLayoutVersionId: "layout-v2",
+      });
+  });
+
   test("rejects unauthenticated requests", async () => {
     const response = await POST(request(), { params: Promise.resolve({ layoutVersionId: "00000000-0000-0000-0000-000000000000" }) });
     expect(response.status).toBe(401);

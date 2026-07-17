@@ -1,7 +1,7 @@
 import { reviewBuilding } from "@/lib/ai/architectural-review";
 import type { callJsonModeCompletion } from "@/lib/ai/client";
 import type { ArchitecturalReviewResult } from "@/lib/ai/schema";
-import { BuildingGenerationError, generateBuilding, type BuildingGenerationErrorCode } from "@/lib/building/generate";
+import { BuildingGenerationError, generateBuildingSchemes, type BuildingGenerationErrorCode, type GeneratedScheme, type GenerationDiagnostics } from "@/lib/building/generate";
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import { estimateBuildingCost } from "@/lib/cost";
@@ -16,8 +16,11 @@ export type PipelineResult =
       costEstimate: CostEstimate;
       intent: Record<string, unknown>;
       aiReview: ArchitecturalReviewResult;
+      schemes: GeneratedScheme[];
+      selectedSchemeId: string;
+      diagnostics: GenerationDiagnostics;
     }
-  | { status: "failed"; code: BuildingGenerationErrorCode; message: string; conflicts: ValidationFinding[] };
+  | { status: "failed"; code: BuildingGenerationErrorCode; message: string; conflicts: ValidationFinding[]; diagnostics?: GenerationDiagnostics };
 
 export async function runDesignPipeline(
   requirements: BuildingRequirements,
@@ -25,28 +28,32 @@ export async function runDesignPipeline(
 ): Promise<PipelineResult> {
   let generated;
   try {
-    generated = generateBuilding(requirements);
+    generated = generateBuildingSchemes(requirements);
   } catch (error) {
     if (error instanceof BuildingGenerationError) {
-      return { status: "failed", code: error.code, message: error.message, conflicts: error.conflicts };
+      const diagnostics = error.code === "GENERATION_TIMEOUT" ? error.cause as GenerationDiagnostics : undefined;
+      return { status: "failed", code: error.code, message: error.message, conflicts: error.conflicts, diagnostics };
     }
     throw error;
   }
 
-  const costEstimate = estimateBuildingCost(generated.building, requirements);
+  const selected = generated.schemes[0];
+  if (!selected) throw new Error("Scheme generation completed without a selectable result.");
+  const costEstimate = estimateBuildingCost(selected.building, requirements);
   const aiReview = await reviewBuilding(
-    { requirements, building: generated.building, validation: generated.validation },
+    { requirements, building: selected.building, validation: selected.validation },
     { complete: options.reviewComplete },
   );
   const intent = {
     requirementSchemaVersion: requirements.requirementSchemaVersion,
-    buildingSchemaVersion: generated.building.buildingSchemaVersion,
-    rendererVersion: generated.building.rendererVersion,
+    buildingSchemaVersion: selected.building.buildingSchemaVersion,
+    rendererVersion: selected.building.rendererVersion,
     evaluatedCandidateCount: generated.evaluatedCandidateCount,
+    generationDiagnostics: generated.diagnostics,
     assumptions: [
       "Concept feasibility geometry uses rectangular planning cells and baseline residential heuristics.",
-      generated.building.structuralConcept
-        ? `${generated.building.structuralConcept.columns.length} aligned conceptual pillar locations were coordinated through the modeled floors. This is not member sizing, load analysis, foundation design, or structural approval.`
+      selected.building.structuralConcept
+        ? `${selected.building.structuralConcept.columns.length} aligned conceptual pillar locations were coordinated through the modeled floors. This is not member sizing, load analysis, foundation design, or structural approval.`
         : "No preliminary column-coordination concept is available for this legacy result.",
       "Validation is not permit, licensed architectural, structural, MEP, or jurisdictional approval.",
       costEstimate.status === "available"
@@ -57,10 +64,13 @@ export async function runDesignPipeline(
 
   return {
     status: "generated",
-    building: generated.building,
-    validation: generated.validation,
+    building: selected.building,
+    validation: selected.validation,
     costEstimate,
     intent,
     aiReview,
+    schemes: generated.schemes,
+    selectedSchemeId: selected.schemeId,
+    diagnostics: generated.diagnostics,
   };
 }

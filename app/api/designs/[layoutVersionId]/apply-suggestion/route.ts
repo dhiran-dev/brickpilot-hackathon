@@ -6,7 +6,7 @@ import { architecturalReviewResultSchema } from "@/lib/ai/schema";
 import { requireUser } from "@/lib/auth";
 import { buildingRequirementsSchema } from "@/lib/building/requirements";
 import { db } from "@/lib/db";
-import { layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
+import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 import { runDesignPipeline } from "@/lib/server/design-pipeline";
 
 const MAX_AI_DELTA_VERSIONS = 3;
@@ -23,6 +23,14 @@ function serverSeed() {
   const values = new Uint32Array(1);
   crypto.getRandomValues(values);
   return values[0];
+}
+
+export function markRenderPayloadForRevision(payload: Record<string, unknown>, nextLayoutVersionId: string): Record<string, unknown> {
+  return {
+    ...payload,
+    schemeDisposition: "previous",
+    supersededByLayoutVersionId: nextLayoutVersionId,
+  };
 }
 
 export async function POST(request: Request, context: { params: Promise<{ layoutVersionId: string }> }) {
@@ -100,6 +108,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   let transactionResult;
   try {
     transactionResult = await db.transaction(async (transaction) => {
+      await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:render-contract:${layoutVersionId}`}, 0))`);
       await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:ai-delta:${row.projectId}`}, 0))`);
       const [{ latestVersion }] = await transaction
         .select({ latestVersion: sql<number>`coalesce(max(${layoutVersions.version}), 0)::integer` })
@@ -111,6 +120,9 @@ export async function POST(request: Request, context: { params: Promise<{ layout
         .from(projectRequirements)
         .where(and(eq(projectRequirements.projectId, row.projectId), eq(projectRequirements.source, "ai_delta")));
       if (Number(aiDeltaCount) >= MAX_AI_DELTA_VERSIONS) return { status: "limit" as const };
+      const priorRenderJobs = await transaction.select().from(generationJobs)
+        .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")));
+      if (priorRenderJobs.some((job) => job.status === "queued" || job.status === "processing")) return { status: "render_conflict" as const };
 
       const nextVersion = Number(latestVersion) + 1;
       const [requirement] = await transaction.insert(projectRequirements).values({
@@ -132,8 +144,16 @@ export async function POST(request: Request, context: { params: Promise<{ layout
         validation: jsonRecord(pipelineResult.validation),
         costEstimate: jsonRecord(pipelineResult.costEstimate),
         aiReview: jsonRecord(pipelineResult.aiReview),
+        schemes: pipelineResult.schemes.map(jsonRecord),
+        selectedSchemeId: pipelineResult.selectedSchemeId,
         updatedAt: now,
       }).returning();
+      for (const job of priorRenderJobs) {
+        await transaction.update(generationJobs).set({
+          requestPayload: markRenderPayloadForRevision(job.requestPayload, layout.id),
+          updatedAt: now,
+        }).where(eq(generationJobs.id, job.id));
+      }
       await transaction.update(projects).set({ status: "ready", updatedAt: now }).where(eq(projects.id, row.projectId));
       return { status: "created" as const, layout };
     });
@@ -143,6 +163,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   }
   if (transactionResult.status === "stale") return errorResponse("This suggestion was already applied or belongs to an older study version.", 409, "STALE_STUDY_VERSION");
   if (transactionResult.status === "limit") return errorResponse("This study has reached its limit of AI-informed revisions.", 409, "AI_DELTA_LIMIT_REACHED");
+  if (transactionResult.status === "render_conflict") return errorResponse("Wait for the active render package to finish before creating a revised scheme set.", 409, "ACTIVE_RENDER_CONFLICT");
 
   return NextResponse.json({
     projectId: row.projectId,
@@ -155,5 +176,8 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     costEstimate: pipelineResult.costEstimate,
     intent: pipelineResult.intent,
     aiReview: pipelineResult.aiReview,
+    schemes: pipelineResult.schemes,
+    selectedSchemeId: pipelineResult.selectedSchemeId,
+    diagnostics: pipelineResult.diagnostics,
   }, { status: 201 });
 }

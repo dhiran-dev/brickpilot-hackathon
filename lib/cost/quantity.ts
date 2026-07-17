@@ -1,12 +1,11 @@
 import type { Building } from "@/lib/building/schema";
+import { costQuantityFactor } from "@/lib/building/space-semantics";
 import type { QuantityTakeoff } from "@/lib/cost/schema";
-
-const OPEN_AREA_TYPES = new Set(["terrace", "courtyard"]);
 
 export function deriveQuantityTakeoff(building: Building): QuantityTakeoff {
   const floorAreasMm2 = building.floors.map((floor) => ({
     floorId: floor.id,
-    areaMm2: floor.spaces.reduce((sum, space) => sum + (OPEN_AREA_TYPES.has(space.type) ? 0 : space.areaMm2), 0),
+    areaMm2: Math.round(floor.spaces.reduce((sum, space) => sum + space.areaMm2 * costQuantityFactor(space.type), 0)),
   }));
 
   return {
