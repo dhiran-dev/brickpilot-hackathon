@@ -94,7 +94,7 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> =
   roof: { color: 0x8d7c6e, edge: 0xff9a58 },
   exterior_wall: { color: 0xd8cec0, edge: 0x5b3a22 },
   interior_wall: { color: 0xa39486, edge: 0x6f533e },
-  column: { color: 0xe58a42, edge: 0x3b1d0b },
+  column: { color: 0xc9c0b2, edge: 0x4a4038 },
   stair: { color: 0xb96834, edge: 0x4b2a18 },
 };
 
@@ -342,15 +342,15 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.12;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     configureMassingCanvas(renderer.domElement);
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x080807);
-    scene.fog = new THREE.Fog(0x080807, 32, 70);
+    scene.background = new THREE.Color(0x14120f);
+    scene.fog = new THREE.Fog(0x14120f, 32, 70);
     const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 250);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -364,7 +364,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     controls.touches.ONE = THREE.TOUCH.ROTATE;
     controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 
-    scene.add(new THREE.HemisphereLight(0xfff1df, 0x17120f, 2.3));
+    scene.add(new THREE.HemisphereLight(0xfff1df, 0x3d362e, 2.3));
     const key = new THREE.DirectionalLight(0xffe3c4, 3.4);
     key.position.set(-12, 22, 10);
     key.castShadow = true;
