@@ -48,11 +48,19 @@ export async function loadDeckPayload(layoutVersionId: string, userId: string): 
   const scheme = study.schemes.find((candidate) => candidate.schemeId === study.selectedSchemeId) ?? study.schemes[0];
   const renders = await renderState(layoutVersionId);
 
+  const assumptionsValue =
+    study.intent && typeof study.intent === "object" && "assumptions" in study.intent
+      ? (study.intent as Record<string, unknown>).assumptions
+      : [];
+  const validatedAssumptions = Array.isArray(assumptionsValue)
+    ? assumptionsValue.filter((value): value is string => typeof value === "string")
+    : [];
+
   const payload: DeckPayload = {
     projectId: study.projectId,
     designId: study.designId,
     title: study.title,
-    location: `${study.requirements.region.locality}, ${study.requirements.region.adminArea}`,
+    location: `${study.requirements.region.locality ? `${study.requirements.region.locality}, ` : ""}${study.requirements.region.adminArea}`,
     generatedAt: new Date().toISOString(),
     requirements: study.requirements,
     building: study.building,
@@ -60,7 +68,7 @@ export async function loadDeckPayload(layoutVersionId: string, userId: string): 
     costEstimate: study.costEstimate,
     aiReview: study.aiReview ?? null,
     scheme,
-    intentAssumptions: (study.intent && typeof study.intent === "object" && "assumptions" in study.intent ? (study.intent as Record<string, unknown>).assumptions : []) as string[],
+    intentAssumptions: validatedAssumptions,
     renders: {
       status: renders.status as DeckRenders["status"],
       assets: renders.assets.map((asset) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType })),
