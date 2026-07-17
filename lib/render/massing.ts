@@ -8,7 +8,7 @@ export const MASSING_SITE_GRADE_M = -0.02;
 export const MASSING_SITE_THICKNESS_M = 0.05;
 export const MASSING_GRID_Y_M = MASSING_SITE_GRADE_M + 0.004;
 
-export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair";
+export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair" | "window_glass" | "door_leaf";
 
 export type MassingPrimitive = {
   id: string;
@@ -171,6 +171,40 @@ function wallPrimitive(
   };
 }
 
+const WINDOW_PANE_THICKNESS_RATIO = 0.35;
+const DOOR_LEAF_THICKNESS_RATIO = 0.7;
+
+function openingFillPrimitive(
+  building: Building,
+  floor: Floor,
+  wall: WallSegment,
+  opening: Opening,
+  baseYM: number,
+  kind: "window_glass" | "door_leaf",
+): MassingPrimitive | null {
+  const dx = wall.end.x - wall.start.x;
+  const dz = wall.end.y - wall.start.y;
+  const lengthMm = Math.hypot(dx, dz);
+  const clamped = clampOpening(opening, lengthMm, floor.floorHeightMm);
+  if (clamped.toMm <= clamped.fromMm || clamped.topMm <= clamped.bottomMm) return null;
+  const ux = dx / lengthMm;
+  const uz = dz / lengthMm;
+  const midpointMm = (clamped.fromMm + clamped.toMm) / 2;
+  const [x, z] = planToScene(building, wall.start.x + ux * midpointMm, wall.start.y + uz * midpointMm);
+  const horizontal = Math.abs(dx) >= Math.abs(dz);
+  const fillLengthM = (clamped.toMm - clamped.fromMm) * MM_TO_M;
+  const fillHeightM = (clamped.topMm - clamped.bottomMm) * MM_TO_M;
+  const thicknessM = wall.thicknessMm * MM_TO_M * (kind === "window_glass" ? WINDOW_PANE_THICKNESS_RATIO : DOOR_LEAF_THICKNESS_RATIO);
+  return {
+    id: `${opening.id}-fill`,
+    kind,
+    floorId: floor.id,
+    sourceId: opening.id,
+    center: [x, baseYM + (clamped.bottomMm + clamped.topMm) * MM_TO_M / 2, z],
+    size: horizontal ? [fillLengthM, fillHeightM, thicknessM] : [thicknessM, fillHeightM, fillLengthM],
+  };
+}
+
 function stairPrimitives(building: Building, floor: Floor, explodeYM: number): MassingPrimitive[] {
   const connector = building.verticalConnectors.find((candidate) => candidate.servedFloorIds.includes(floor.id));
   const bounds = connector?.boundsByFloor[floor.id];
@@ -241,6 +275,12 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
       if (!includeInteriorWalls && wall.type !== "exterior" && !kindOverride) continue;
       wallPanels(wall, openingsByWall.get(wall.id) ?? [], floor.floorHeightMm)
         .forEach((panel, index) => primitives.push(wallPrimitive(building, floor, wall, panel, baseYM, index, kindOverride)));
+      for (const opening of openingsByWall.get(wall.id) ?? []) {
+        if (opening.usage === "vehicle") continue; // carport columns handle vehicle entries (Task 6)
+        if (opening.kind === "open_connection") continue; // intentional pass-throughs stay open
+        const fill = openingFillPrimitive(building, floor, wall, opening, baseYM, opening.kind === "window" ? "window_glass" : "door_leaf");
+        if (fill) primitives.push(fill);
+      }
     }
     if (includeColumns) {
       for (const column of building.structuralConcept?.columns ?? []) {

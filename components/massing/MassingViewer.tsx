@@ -96,6 +96,8 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> =
   interior_wall: { color: 0xa39486, edge: 0x6f533e },
   column: { color: 0xc9c0b2, edge: 0x4a4038 },
   stair: { color: 0xb96834, edge: 0x4b2a18 },
+  window_glass: { color: 0x9ec4d4, edge: 0x8e5a31 },
+  door_leaf: { color: 0x8a5f38, edge: 0x2f1d0e },
 };
 
 // Smaller polygon-offset units win when intentional box intersections share a
@@ -109,13 +111,19 @@ const MASSING_SURFACE_DEPTH_UNITS: Record<MassingPrimitiveKind, number> = {
   exterior_wall: 4,
   interior_wall: 5,
   site: 6,
+  window_glass: 4,
+  door_leaf: 4,
 };
+
+export const MASSING_TRANSPARENT_KINDS = new Set<MassingPrimitiveKind>(["window_glass"]);
 
 export function massingSurfaceStyle(kind: MassingPrimitiveKind) {
   const polygonOffsetUnits = MASSING_SURFACE_DEPTH_UNITS[kind];
+  const transparent = MASSING_TRANSPARENT_KINDS.has(kind);
   return {
-    transparent: false as const,
-    opacity: 1,
+    transparent,
+    opacity: transparent ? 0.45 : 1,
+    depthWrite: !transparent,
     polygonOffset: true as const,
     polygonOffsetFactor: 1,
     polygonOffsetUnits,
@@ -445,10 +453,11 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       const surfaceStyle = massingSurfaceStyle(primitive.kind);
       const material = new THREE.MeshStandardMaterial({
         color: style.color,
-        roughness: primitive.kind === "site" ? 0.95 : 0.72,
+        roughness: primitive.kind === "site" ? 0.95 : MASSING_TRANSPARENT_KINDS.has(primitive.kind) ? 0.18 : 0.72,
         metalness: 0.02,
         transparent: surfaceStyle.transparent,
         opacity: surfaceStyle.opacity,
+        depthWrite: surfaceStyle.depthWrite,
         polygonOffset: surfaceStyle.polygonOffset,
         polygonOffsetFactor: surfaceStyle.polygonOffsetFactor,
         polygonOffsetUnits: surfaceStyle.polygonOffsetUnits,

@@ -140,4 +140,17 @@ describe("fixed render source cameras", () => {
     const front = massingViewVector("front", side);
     expect(new THREE.Vector3(front.x, 0, front.z).normalize().dot(roadVectors.south)).toBeGreaterThan(0.85);
   });
+
+  test("renders fill kinds per the transparent depth discipline", () => {
+    const glass = massingSurfaceStyle("window_glass");
+    expect(glass.transparent).toBe(true);
+    expect(glass.opacity).toBeLessThan(1);
+    expect(glass.depthWrite).toBe(false);
+    expect(glass.polygonOffsetUnits).toBe(massingSurfaceStyle("exterior_wall").polygonOffsetUnits);
+
+    const leaf = massingSurfaceStyle("door_leaf");
+    expect(leaf.transparent).toBe(false);
+    expect(leaf.opacity).toBe(1);
+    expect(leaf.depthWrite).toBe(true);
+  });
 });

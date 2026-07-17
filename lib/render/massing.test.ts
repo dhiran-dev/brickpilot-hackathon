@@ -273,6 +273,56 @@ describe("deterministic massing model", () => {
     expect(parsed.candidate.geometryHash).toBe(`${legacy.candidate.geometryHash}-perimeter-v1`);
   });
 
+  test("fills window and door openings with glass panes and door leaves", () => {
+    const model = buildMassingModel(building);
+    const glass = model.primitives.filter((primitive) => primitive.kind === "window_glass");
+    const leaves = model.primitives.filter((primitive) => primitive.kind === "door_leaf");
+    expect(glass).toHaveLength(2);
+    expect(leaves).toHaveLength(2);
+
+    const groundGlass = glass.find((primitive) => primitive.sourceId === "window-0")!;
+    expect(groundGlass.floorId).toBe("F0");
+    expect(groundGlass.center[0]).toBeCloseTo(-0.1, 6);   // wall x 1000 + (4000+5800)/2 = 5900 → −0.1
+    expect(groundGlass.center[1]).toBeCloseTo(1.5, 6);    // (900+2100)/2 mm
+    expect(groundGlass.center[2]).toBeCloseTo(0, 6);
+    expect(groundGlass.size[0]).toBeCloseTo(1.8, 6);
+    expect(groundGlass.size[1]).toBeCloseTo(1.2, 6);
+    expect(groundGlass.size[2]).toBeCloseTo(0.23 * 0.35, 6); // thin pane, 35% of wall thickness
+
+    const groundLeaf = leaves.find((primitive) => primitive.sourceId === "door-0")!;
+    expect(groundLeaf.center[0]).toBeCloseTo(-3.55, 6);   // wall x 1000 + (1000+1900)/2 = 2450 → −3.55
+    expect(groundLeaf.center[1]).toBeCloseTo(1.05, 6);
+    expect(groundLeaf.size[1]).toBeCloseTo(2.1, 6);
+    expect(groundLeaf.size[2]).toBeCloseTo(0.23 * 0.7, 6); // thicker leaf, 70% of wall thickness
+
+    const firstFloorGlass = glass.find((primitive) => primitive.sourceId === "window-1")!;
+    expect(firstFloorGlass.center[1]).toBeCloseTo(3.1 + 1.5, 6); // rides the floor's baseY
+  });
+
+  test("does not fill vehicle openings with glass or door leaves", () => {
+    const withVehicle = structuredClone(building);
+    withVehicle.floors[0].openings.push({
+      id: "vehicle-0", floorId: "F0", wallId: "south-0", kind: "open_connection", usage: "vehicle",
+      offsetMm: 7000, widthMm: 2400, heightMm: 2400, sillHeightMm: 0,
+      connects: ["EXTERIOR", "living-0"], hinge: "none", swing: "none",
+    });
+    const model = buildMassingModel(withVehicle);
+    expect(model.primitives.some((primitive) =>
+      (primitive.kind === "window_glass" || primitive.kind === "door_leaf") && primitive.sourceId === "vehicle-0",
+    )).toBe(false);
+  });
+
+  test("leaves non-vehicle open connections unfilled", () => {
+    const withPassThrough = structuredClone(building);
+    withPassThrough.floors[0].openings.push({
+      id: "arch-0", floorId: "F0", wallId: "internal-0", kind: "open_connection",
+      offsetMm: 2000, widthMm: 1500, heightMm: 2400, sillHeightMm: 0,
+      connects: ["living-0", "stair-0"], hinge: "none", swing: "none",
+    });
+    const model = buildMassingModel(withPassThrough);
+    expect(model.primitives.some((primitive) => primitive.sourceId === "arch-0")).toBe(false);
+  });
+
   test("reports exact building-wide evidence", () => {
     expect(massingMetrics(building)).toEqual({ storeys: 2, heightM: 6.2, builtAreaM2: 174.08, openingCount: 4, stairAligned: true, columnCount: 0 });
   });
