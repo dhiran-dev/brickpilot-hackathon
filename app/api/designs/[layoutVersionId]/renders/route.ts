@@ -66,7 +66,7 @@ function renderContractLockKey(layoutVersionId: string) {
   return `brickpilot:render-contract:${layoutVersionId}`;
 }
 
-async function renderState(layoutVersionId: string) {
+export async function renderState(layoutVersionId: string) {
   const [layout] = await db.select({ selectedSchemeId: layoutVersions.selectedSchemeId, building: layoutVersions.layoutJson })
     .from(layoutVersions).where(eq(layoutVersions.id, layoutVersionId)).limit(1);
   const canonicalBuilding = buildingSchema.safeParse(layout?.building);
