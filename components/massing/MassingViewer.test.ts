@@ -153,6 +153,10 @@ describe("fixed render source cameras", () => {
     expect(leaf.transparent).toBe(false);
     expect(leaf.opacity).toBe(1);
     expect(leaf.depthWrite).toBe(true);
+
+    const parapet = massingSurfaceStyle("parapet");
+    expect(parapet.transparent).toBe(true);
+    expect(parapet.depthWrite).toBe(false);
   });
 
   test("capture layer contract suppresses scale references in GPT sources", () => {

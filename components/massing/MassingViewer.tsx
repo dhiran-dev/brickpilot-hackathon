@@ -109,6 +109,7 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> =
   stair: { color: 0xb96834, edge: 0x4b2a18 },
   window_glass: { color: 0x9ec4d4, edge: 0x8e5a31 },
   door_leaf: { color: 0x8a5f38, edge: 0x2f1d0e },
+  parapet: { color: 0x9ec4d4, edge: 0x8e5a31 },
 };
 
 // Smaller polygon-offset units win when intentional box intersections share a
@@ -124,9 +125,10 @@ const MASSING_SURFACE_DEPTH_UNITS: Record<MassingPrimitiveKind, number> = {
   site: 6,
   window_glass: 4,
   door_leaf: 4,
+  parapet: 4,
 };
 
-export const MASSING_TRANSPARENT_KINDS = new Set<MassingPrimitiveKind>(["window_glass"]);
+export const MASSING_TRANSPARENT_KINDS = new Set<MassingPrimitiveKind>(["window_glass", "parapet"]);
 
 export function massingSurfaceStyle(kind: MassingPrimitiveKind) {
   const polygonOffsetUnits = MASSING_SURFACE_DEPTH_UNITS[kind];

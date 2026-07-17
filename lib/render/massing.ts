@@ -8,7 +8,7 @@ export const MASSING_SITE_GRADE_M = -0.02;
 export const MASSING_SITE_THICKNESS_M = 0.05;
 export const MASSING_GRID_Y_M = MASSING_SITE_GRADE_M + 0.004;
 
-export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair" | "window_glass" | "door_leaf";
+export type MassingPrimitiveKind = "site" | "slab" | "roof" | "exterior_wall" | "interior_wall" | "column" | "stair" | "window_glass" | "door_leaf" | "parapet";
 
 export type MassingPrimitive = {
   id: string;
@@ -205,6 +205,26 @@ function openingFillPrimitive(
   };
 }
 
+const PARAPET_HEIGHT_M = 1.0;
+
+/** Glass guard on a fully open-to-sky perimeter edge: same footprint and axis as the skipped wall, base at the floor top. */
+function parapetPrimitive(building: Building, floor: Floor, wall: WallSegment, baseYM: number): MassingPrimitive {
+  const dx = wall.end.x - wall.start.x;
+  const dz = wall.end.y - wall.start.y;
+  const [x, z] = planToScene(building, (wall.start.x + wall.end.x) / 2, (wall.start.y + wall.end.y) / 2);
+  const horizontal = Math.abs(dx) >= Math.abs(dz);
+  const lengthM = Math.hypot(dx, dz) * MM_TO_M;
+  const thicknessM = wall.thicknessMm * MM_TO_M;
+  return {
+    id: `${wall.id}-parapet`,
+    kind: "parapet",
+    floorId: floor.id,
+    sourceId: wall.id,
+    center: [x, baseYM + PARAPET_HEIGHT_M / 2, z],
+    size: horizontal ? [lengthM, PARAPET_HEIGHT_M, thicknessM] : [thicknessM, PARAPET_HEIGHT_M, lengthM],
+  };
+}
+
 function stairPrimitives(building: Building, floor: Floor, explodeYM: number): MassingPrimitive[] {
   const connector = building.verticalConnectors.find((candidate) => candidate.servedFloorIds.includes(floor.id));
   const bounds = connector?.boundsByFloor[floor.id];
@@ -270,7 +290,10 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
     for (const wall of floor.walls) {
       if (isVerandahOpenEdgeWall(wall, floor.spaces)) continue;
       const openAdjacent = wall.adjacentSpaceIds.filter((id) => openToSkyIds.has(id));
-      if (openAdjacent.length === wall.adjacentSpaceIds.length) continue;
+      if (openAdjacent.length === wall.adjacentSpaceIds.length) {
+        if (openAdjacent.length > 0) primitives.push(parapetPrimitive(building, floor, wall, baseYM));
+        continue;
+      }
       const kindOverride = openAdjacent.length > 0 ? "exterior_wall" as const : undefined;
       if (!includeInteriorWalls && wall.type !== "exterior" && !kindOverride) continue;
       wallPanels(wall, openingsByWall.get(wall.id) ?? [], floor.floorHeightMm)

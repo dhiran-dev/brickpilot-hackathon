@@ -323,6 +323,28 @@ describe("deterministic massing model", () => {
     expect(model.primitives.some((primitive) => primitive.sourceId === "arch-0")).toBe(false);
   });
 
+  test("adds a glass parapet on fully open terrace perimeter edges only", () => {
+    const articulated = structuredClone(building);
+    addOpenSpace(articulated, "F1", "terrace-1", "terrace", { x: 8000, y: 9000, width: 3000, depth: 3000 });
+    articulated.floors[1].walls.push(
+      { id: "terrace-boundary", floorId: "F1", start: { x: 8000, y: 9000 }, end: { x: 8000, y: 12_000 }, thicknessMm: 115, type: "interior", adjacentSpaceIds: ["living-1", "terrace-1"] },
+      { id: "terrace-open-edge", floorId: "F1", start: { x: 8000, y: 12_000 }, end: { x: 11_000, y: 12_000 }, thicknessMm: 230, type: "exterior", adjacentSpaceIds: ["terrace-1"] },
+    );
+    const model = buildMassingModel(articulated);
+
+    const parapets = model.primitives.filter((primitive) => primitive.kind === "parapet");
+    expect(parapets).toHaveLength(1);
+    expect(parapets[0].sourceId).toBe("terrace-open-edge");
+    expect(parapets[0].floorId).toBe("F1");
+    expect(parapets[0].size[1]).toBeCloseTo(1, 8);                    // ~1.0 m tall
+    expect(parapets[0].center[1]).toBeCloseTo(3.1 + 0.5, 8);          // base at the floor's baseY
+    expect(parapets[0].size[0]).toBeCloseTo(3, 8);                    // same footprint as the skipped wall
+    expect(parapets[0].size[2]).toBeCloseTo(0.23, 8);
+    // the mixed wall still becomes a solid exterior wall, not a parapet
+    expect(model.primitives.some((primitive) => primitive.kind === "exterior_wall" && primitive.sourceId === "terrace-boundary")).toBe(true);
+    expect(model.primitives.some((primitive) => primitive.kind !== "parapet" && primitive.sourceId === "terrace-open-edge")).toBe(false);
+  });
+
   test("reports exact building-wide evidence", () => {
     expect(massingMetrics(building)).toEqual({ storeys: 2, heightM: 6.2, builtAreaM2: 174.08, openingCount: 4, stairAligned: true, columnCount: 0 });
   });
