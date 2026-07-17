@@ -2,6 +2,7 @@ import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import type { CostEstimate } from "@/lib/cost/schema";
 import type { PersistedScheme } from "@/lib/design/persisted-study";
+import type { DrawingFloorArtifact } from "@/lib/drawing/schema";
 import type { ArchitecturalReviewResult } from "@/lib/ai/schema";
 import type { ValidationReport } from "@/lib/validation";
 
@@ -78,6 +79,21 @@ const RENDER_TILES: Array<{ role: string; label: string }> = [
   { role: "exterior_top", label: "High front-right perspective" },
   { role: "interior", label: "Furnished interior concept" },
 ];
+
+/**
+ * Crop a floor drawing to the plan region only — the sheet annotation below
+ * (scale bar, legend, title block, schedule) is redundant in the deck, where
+ * the sidebar carries that data. Cutting it lets the plan fill the frame.
+ */
+export function planCropViewBox(artifact: DrawingFloorArtifact) {
+  const cropBottom = artifact.annotationLayout.scaleOrigin.y - 320;
+  return {
+    x: artifact.viewBox.x,
+    y: artifact.viewBox.y,
+    width: artifact.viewBox.width,
+    depth: Math.max(1000, cropBottom - artifact.viewBox.y),
+  };
+}
 
 export function deriveDeckSlides(payload: DeckPayload): DeckSlideWithSheet[] {
   const floorSlides: DeckSlide[] = payload.building.floors.map((floor, index) => ({

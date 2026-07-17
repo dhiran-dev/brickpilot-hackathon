@@ -3,48 +3,61 @@
 import { motion } from "framer-motion";
 
 import { useDeckMotionVariants } from "@/components/deck/motion";
-import { SheetFrame } from "@/components/deck/SheetFrame";
-import { deckCostView } from "@/lib/design/deck-content";
-import type { DeckPayload, DeckSlideWithSheet } from "@/lib/design/deck";
+import { FooterFact, SlideFooter, SlideHeader } from "@/components/deck/slides/chrome";
+import { formatCurrencyMinor } from "@/lib/cost/format";
+import type { DeckPayload } from "@/lib/design/deck";
 
-export function CostSlide({ payload, slide }: { payload: DeckPayload; slide: DeckSlideWithSheet }) {
-  const { item } = useDeckMotionVariants();
-  const cost = deckCostView(payload);
+export function CostSlide({ payload, sheetLabel }: { payload: DeckPayload; sheetLabel: string }) {
+  const { container, item } = useDeckMotionVariants();
+  const { costEstimate } = payload;
 
-  if (cost.status === "unavailable") {
+  if (costEstimate.status === "unavailable") {
     return (
-      <SheetFrame payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} subtitle="Why no band is shown, and how to get one" title="Build cost estimate">
-        <motion.div className="flex h-full flex-col justify-center gap-4 p-8 md:p-11" variants={item}>
-          <p className="max-w-[60ch] font-[family-name:var(--font-display)] text-[1.3rem] leading-[1.5] text-[#fff6ea]">{cost.reason}</p>
-          <ul className="flex flex-col gap-2">
-            {cost.actions.map((action) => (
-              <li className="relative pl-4 text-[0.84rem] leading-6 text-[#b5a697] before:absolute before:left-0 before:content-['—'] before:text-[#c97940]" key={action}>{action}</li>
+      <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
+        <SlideHeader eyebrow={`${sheetLabel} — Build Cost Estimate`} title="Cost estimate unavailable" />
+        <motion.div className="flex-1 px-10 py-8 md:px-12" variants={item}>
+          <p className="max-w-[60ch] text-[0.95rem] leading-7 text-[#b5a697]">
+            {costEstimate.reason === "unsupported_region" ? "This region does not yet have a supported cost rate pack." : costEstimate.reason === "currency_mismatch" ? "The requested currency does not match any available rate pack." : "No matching rate pack was found for this study."}
+          </p>
+          <ul className="mt-5 flex flex-col gap-2.5">
+            {costEstimate.improveConfidenceActions.map((action) => (
+              <li className="border-l-2 border-[#c97940]/60 pl-3.5 text-[0.84rem] leading-6 text-[#cbbcab]" key={action}>{action}</li>
             ))}
           </ul>
         </motion.div>
-      </SheetFrame>
+      </motion.div>
     );
   }
 
-  const markerX = 60 + cost.bandFraction * 280;
+  const { total, lineItems, currency, locale, confidence, selection, quantities, included, excluded, sources } = costEstimate;
+  const range = total.highMinor - total.lowMinor;
+  const expectedFraction = range === 0 ? 0.5 : (total.expectedMinor - total.lowMinor) / range;
+  const markerX = 60 + expectedFraction * 280;
+  const gfaM2 = quantities.grossFloorAreaMm2 / 1_000_000;
+  const perM2 = gfaM2 > 0 ? Math.round(total.expectedMinor / gfaM2) : 0;
+  const maxLine = Math.max(...lineItems.map((lineItem) => lineItem.amounts.expectedMinor), 1);
 
   return (
-    <SheetFrame
-      payload={payload}
-      sheetNumber={slide.sheetNumber}
-      sheetTotal={slide.sheetTotal}
-      subtitle={`${cost.packName} · ${cost.packVersion} · effective ${cost.effectiveDate}${cost.stale ? " · stale — refresh before budgeting" : ""}`}
-      title="Build cost estimate"
-    >
-      <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[19rem_1fr]">
-        <motion.div className="flex min-h-0 flex-col justify-center gap-5 border-r border-[#8e5a31]/25 p-8 md:p-10" variants={item}>
-          <span className="inline-flex w-fit items-center gap-2 border border-[#c97940]/50 px-2.5 py-1.5 font-[family-name:var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.09em] text-[#c97940]">
-            Confidence {cost.confidence} · {cost.match}
+    <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
+      <SlideHeader
+        eyebrow={`${sheetLabel} — Build Cost Estimate`}
+        title="Quantity take-off priced on a regional rate pack"
+        aside={
+          <span className="inline-flex items-center gap-2 border border-[#c97940]/50 px-2.5 py-1.5 font-[family-name:var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[#c97940]">
+            Confidence {confidence} · {selection.match.replace("_", " ")}
           </span>
+        }
+      />
+
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[19.5rem_1fr]">
+        <motion.div className="flex flex-col justify-center gap-7 px-10 md:px-10" variants={item}>
           <div>
-            <div className="font-[family-name:var(--font-display)] text-[2.1rem] leading-tight text-[#fff6ea] [font-variant-numeric:tabular-nums]">{cost.expected}</div>
-            <div className="mt-1 font-[family-name:var(--font-body)] text-[0.58rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Expected total construction cost</div>
-            <div className="mt-0.5 text-[0.72rem] text-[#786d62]">{cost.ratePerM2} of gross floor area</div>
+            <div className="font-[family-name:var(--font-display)] text-[2.6rem] leading-none tracking-[-0.02em] text-[#fff6ea]">{formatCurrencyMinor(total.expectedMinor, currency, locale)}</div>
+            <div className="mt-2 font-[family-name:var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.12em] text-[#8f8275]">Expected total construction cost</div>
+            <div className="mt-3 flex items-baseline gap-2 text-[0.78rem] text-[#b5a697]">
+              <span className="font-[family-name:var(--font-display)] text-lg text-[#c97940] [font-variant-numeric:tabular-nums]">{formatCurrencyMinor(perM2, currency, locale)}</span>
+              per m² · {gfaM2.toFixed(0)} m² gross floor area
+            </div>
           </div>
           <div>
             <svg className="w-full" viewBox="0 0 400 60">
@@ -54,55 +67,52 @@ export function CostSlide({ payload, slide }: { payload: DeckPayload; slide: Dec
               <line stroke="#ff4e00" strokeWidth="1.4" x1={markerX} x2={markerX} y1="14" y2="46" />
               <rect fill="#ff4e00" height="9" transform={`rotate(45 ${markerX} 30)`} width="9" x={markerX - 4.5} y="25.5" />
             </svg>
-            <div className="mt-1 flex justify-between gap-2">
-              <div className="flex flex-col gap-0.5"><span className="font-[family-name:var(--font-body)] text-[0.54rem] font-bold uppercase tracking-[0.08em] text-[#b5a697]">Low</span><span className="text-[0.78rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{cost.low}</span></div>
-              <div className="flex flex-col gap-0.5"><span className="font-[family-name:var(--font-body)] text-[0.54rem] font-bold uppercase tracking-[0.08em] text-[#b5a697]">Expected</span><span className="text-[0.78rem] text-[#ff4e00] [font-variant-numeric:tabular-nums]">{cost.expected}</span></div>
-              <div className="flex flex-col gap-0.5"><span className="font-[family-name:var(--font-body)] text-[0.54rem] font-bold uppercase tracking-[0.08em] text-[#b5a697]">High</span><span className="text-[0.78rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{cost.high}</span></div>
+            <div className="mt-1 flex justify-between">
+              <div className="flex flex-col gap-0.5"><span className="font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.08em] text-[#8f8275]">Low</span><span className="text-[0.82rem] text-[#e9dccb] [font-variant-numeric:tabular-nums]">{formatCurrencyMinor(total.lowMinor, currency, locale)}</span></div>
+              <div className="flex flex-col gap-0.5 text-center"><span className="font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.08em] text-[#8f8275]">Expected</span><span className="text-[0.82rem] text-[#ff4e00] [font-variant-numeric:tabular-nums]">{formatCurrencyMinor(total.expectedMinor, currency, locale)}</span></div>
+              <div className="flex flex-col gap-0.5 text-right"><span className="font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.08em] text-[#8f8275]">High</span><span className="text-[0.82rem] text-[#e9dccb] [font-variant-numeric:tabular-nums]">{formatCurrencyMinor(total.highMinor, currency, locale)}</span></div>
             </div>
           </div>
-          {cost.improveActions.length > 0 ? (
-            <div className="border-t border-[#8e5a31]/25 pt-3">
-              <p className="font-[family-name:var(--font-body)] text-[0.54rem] font-bold uppercase tracking-[0.12em] text-[#c97940]">Sharpen this estimate</p>
-              {cost.improveActions.slice(0, 3).map((action) => (
-                <p className="mt-1.5 text-[0.72rem] leading-5 text-[#b5a697]" key={action}>{action}</p>
-              ))}
-            </div>
-          ) : null}
+          <p className="text-[0.68rem] leading-5 text-[#786d62]">{selection.ratePackName} · effective {selection.effectiveDate}{selection.stale ? " · stale, refresh advised" : ""}</p>
         </motion.div>
 
-        <motion.div className="flex min-h-0 flex-col overflow-y-auto" variants={item}>
-          <div className="my-auto flex flex-col gap-4 p-8 md:p-10">
-          <div className="flex flex-col">
-            {cost.lines.map((line) => (
-              <div className="flex items-baseline gap-3 border-b border-[#8e5a31]/15 py-2" key={line.label}>
-                <span className="shrink-0 text-[0.86rem] text-[#fff6ea]">{line.label}</span>
-                <span className="mb-1 min-w-0 flex-1 truncate border-b border-dotted border-[#b5a697]/30 pb-0 text-[0.66rem] text-[#786d62]">{line.basis}</span>
-                <span className="shrink-0 text-[0.88rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{line.amount}</span>
-              </div>
-            ))}
-            <div className="flex items-baseline justify-between gap-3 border-t border-[#c97940] pt-3">
-              <span className="font-[family-name:var(--font-body)] text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Estimated total</span>
-              <span className="font-[family-name:var(--font-display)] text-[1.3rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{cost.expected}</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-            {([
-              ["Included", cost.included],
-              ["Not included", cost.excluded],
-              ["Assumed", cost.assumptions],
-            ] as const).map(([heading, entries]) => (
-              <div key={heading}>
-                <p className="border-b border-[#8e5a31]/30 pb-1.5 font-[family-name:var(--font-body)] text-[0.54rem] font-bold uppercase tracking-[0.12em] text-[#c97940]">{heading}</p>
-                {entries.slice(0, 4).map((entry) => (
-                  <p className="mt-1.5 text-[0.7rem] leading-4.5 text-[#b5a697]" key={entry}>{entry}</p>
-                ))}
-              </div>
+        <div className="flex min-h-0 flex-col gap-4 overflow-auto border-l border-[#8e5a31]/30 px-10 py-5 md:px-12">
+          <div className="flex flex-col gap-1">
+            {lineItems.map((lineItem) => (
+              <motion.div className="border-b border-[#8e5a31]/12 py-2.5" key={lineItem.id} variants={item}>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-[0.88rem] text-[#fff6ea]">{lineItem.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[0.68rem] text-[#786d62]">{lineItem.basis}</span>
+                  <span className="shrink-0 text-[0.9rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{formatCurrencyMinor(lineItem.amounts.expectedMinor, currency, locale)}</span>
+                </div>
+                <div className="mt-1.5 h-[3px] w-full bg-[#8e5a31]/15">
+                  <div className="h-full bg-[#c97940]" style={{ width: `${Math.max(2, (lineItem.amounts.expectedMinor / maxLine) * 100)}%` }} />
+                </div>
+              </motion.div>
             ))}
           </div>
-          <p className="text-[0.68rem] italic leading-5 text-[#786d62]">{cost.disclaimer}</p>
+          <div className="grid grid-cols-2 gap-6">
+            <motion.div variants={item}>
+              <p className="font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.14em] text-[#7bc79e]">Included</p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {included.slice(0, 4).map((line) => <li className="text-[0.72rem] leading-5 text-[#a99a8d]" key={line}>· {line}</li>)}
+              </ul>
+            </motion.div>
+            <motion.div variants={item}>
+              <p className="font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.14em] text-[#d9a856]">Excluded</p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {excluded.slice(0, 4).map((line) => <li className="text-[0.72rem] leading-5 text-[#a99a8d]" key={line}>· {line}</li>)}
+              </ul>
+            </motion.div>
           </div>
-        </motion.div>
+        </div>
       </div>
-    </SheetFrame>
+
+      <SlideFooter>
+        <FooterFact label="Basis" value={`${quantities.spaceCount} spaces · ${quantities.doorCount} doors · ${quantities.windowCount} windows measured`} />
+        <FooterFact label="Sources" value={sources.slice(0, 2).map((source) => source.publisher).join(" · ") || "Regional rate pack"} />
+        <FooterFact label="Scope" value="Feasibility band, not a contractor quotation" />
+      </SlideFooter>
+    </motion.div>
   );
 }

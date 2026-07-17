@@ -27,6 +27,12 @@ export const auth = betterAuth({
     enabled: true,
     disableSignUp: true,
   },
+  session: {
+    // Keep users signed in for a full week of active use (well beyond the 8-hour
+    // minimum); the cookie is persistent and refreshed after 4 hours of activity.
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 4,
+  },
   plugins: [nextCookies()],
 });
 

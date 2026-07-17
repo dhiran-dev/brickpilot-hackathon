@@ -30,6 +30,7 @@ import {
 
 import { MassingViewer, type MassingCapture, type MassingViewerHandle, type MassingView } from "@/components/massing";
 import { PreviousSchemeRenderGallery, type PreviousSchemeRenderAsset } from "@/components/massing/PreviousSchemeRenderGallery";
+import { WorkspaceStepper, type WorkspaceStepperItem } from "@/components/workspace-stepper";
 import type { BuildingRequirements } from "@/lib/building/requirements";
 import type { Building } from "@/lib/building/schema";
 import { massingMetrics } from "@/lib/render/massing";
@@ -255,16 +256,23 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         <div className="flex min-w-0 items-center gap-5"><Link className="font-[family-name:var(--font-display)] text-3xl tracking-[-0.035em] text-[#d6a06d]" href="/workspace">BrickPilot</Link><span className="hidden h-7 w-px bg-[#8e5a31]/45 sm:block" /><p className="hidden truncate text-[0.63rem] font-bold uppercase tracking-[0.13em] text-[#84786e] sm:block">{study.title} · immutable v{study.version}</p></div>
         <p className="hidden text-xs text-[#74695f] md:block">Signed in as {userName}</p>
       </div>
-      <nav aria-label="Design workflow" className="mx-auto grid w-full max-w-[112rem] grid-cols-4 border-t border-[#8e5a31]/25 px-5 lg:px-8">
-        {["Brief", "2D analysis", "3D massing", "Visualization"].map((label, index) => <div className={`flex items-center gap-2 border-r border-[#8e5a31]/25 py-3 text-[0.61rem] font-bold uppercase tracking-[0.13em] last:border-r-0 ${index === 2 ? "text-[#ff8d49]" : index < 2 ? "text-[#9f9183]" : renderState.status === "completed" ? "text-[#7bc79e]" : "text-[#574f48]"}`} key={label}><span className={`grid h-5 w-5 place-items-center border ${index === 2 ? "border-[#ff4e00]" : "border-[#8e5a31]/50"}`}>{index < 2 || (index === 3 && renderState.status === "completed") ? <Check className="h-3 w-3" /> : index + 1}</span>{label}</div>)}
-      </nav>
+      <div className="mx-auto w-full max-w-[112rem] px-5 lg:px-8">
+        <WorkspaceStepper ariaLabel="Design workflow" className="border-t border-[#8e5a31]/30 bg-[#0a0908]" current="massing" items={([
+          { id: "directions", complete: true, href: `/workspace?design=${layoutVersionId}&step=directions` },
+          { id: "plan", complete: true, href: `/workspace?design=${layoutVersionId}&step=plan` },
+          { id: "massing" },
+          renderState.status === "idle"
+            ? { id: "render", disabled: true }
+            : { id: "render", complete: renderState.status === "completed", href: "#render-gallery" },
+        ] satisfies WorkspaceStepperItem[])} />
+      </div>
     </header>
 
     <div className="mx-auto w-full max-w-[112rem] px-3 py-3 lg:px-5">
       <section className="overflow-hidden border border-[#8e5a31]/55 bg-[#0c0b09] shadow-[9px_10px_0_rgba(3,3,2,0.72)]">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/45 bg-[#0b0a09] px-5 py-4">
-          <div><p className="text-[0.59rem] font-extrabold uppercase tracking-[0.15em] text-[#ff8d49]">Massing model · deterministic</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em]">{study.title}</h1></div>
-          <div className="flex items-center gap-2"><span className="inline-flex items-center gap-2 border border-[#38765a]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#7bc79e]"><BadgeCheck className="h-3.5 w-3.5" /> Geometry verified</span>{renderState.status === "completed" ? <Link className="inline-flex items-center gap-2 border border-[#ff4e00]/70 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#ff9d6b] hover:bg-[#171512]" href={`/workspace/designs/${layoutVersionId}/deck`}><Presentation className="h-3.5 w-3.5" /> View Deck</Link> : null}<Link className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#cdbdab] hover:bg-[#171512]" href="/workspace"><ArrowLeft className="h-3.5 w-3.5" /> Back to 2D</Link></div>
+          <div><p className="text-[0.59rem] font-extrabold uppercase tracking-[0.15em] text-[#ff8d49]">Step 3 · 3D massing · deterministic</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em]">{study.title}</h1></div>
+          <div className="flex items-center gap-2"><span className="inline-flex items-center gap-2 border border-[#38765a]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#7bc79e]"><BadgeCheck className="h-3.5 w-3.5" /> Geometry verified</span>{renderState.status === "completed" ? <Link className="inline-flex items-center gap-2 border border-[#ff4e00]/70 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#ff9d6b] hover:bg-[#171512]" href={`/workspace/designs/${layoutVersionId}/deck`}><Presentation className="h-3.5 w-3.5" /> View Deck</Link> : null}<Link className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.61rem] font-bold uppercase tracking-[0.1em] text-[#cdbdab] hover:bg-[#171512]" href={`/workspace?design=${layoutVersionId}&step=plan`}><ArrowLeft className="h-3.5 w-3.5" /> Back to 2D plan</Link></div>
         </div>
 
         <div className="grid min-h-[44rem] min-[72rem]:grid-cols-[15.5rem_minmax(0,1fr)_20rem]">
@@ -293,7 +301,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
 
           <aside className="border-t border-[#8e5a31]/45 bg-[#0d0c0a] p-5 min-[72rem]:border-l min-[72rem]:border-t-0">
             <p className="text-[0.62rem] font-extrabold uppercase tracking-[0.16em] text-[#c97940]">Model evidence</p>
-            <div className="mt-4 flex items-center gap-2 border border-[#49755d]/65 px-3 py-3 text-[0.63rem] font-bold uppercase tracking-[0.12em] text-[#8ad0a7]"><BadgeCheck className="h-4 w-4" /> Geometry verified</div>
+            <p className="mt-4 flex items-center gap-2 border-b border-[#8e5a31]/35 pb-3 text-[0.63rem] font-bold uppercase tracking-[0.12em] text-[#8ad0a7]"><BadgeCheck className="h-4 w-4" /> Geometry verified</p>
             {metrics ? <dl className="mt-4 border-t border-[#8e5a31]/35">{[
               [Layers3, String(metrics.storeys), "storeys"],
               [Ruler, formatMetric(metrics.heightM, "m"), "height"],
@@ -317,7 +325,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         </div>
       </section>
 
-      {renderState.status !== "idle" ? <section className="mt-8 border border-[#8e5a31]/55 bg-[#0c0b09] p-5" id="render-gallery"><div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/40 pb-4"><div><p className="text-[0.61rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Visualization set</p><h2 className="mt-1 font-[family-name:var(--font-display)] text-3xl">Concept renders grounded in your plan</h2></div><p className="max-w-xl text-xs leading-5 text-[#786d62]">Materials, furnishing and lighting are generative assumptions. Floor count, footprint and openings are constrained by the canonical references.</p></div>
+      {renderState.status !== "idle" ? <section className="mt-8 border border-[#8e5a31]/55 bg-[#0c0b09] p-5" id="render-gallery"><div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/40 pb-4"><div><p className="text-[0.61rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Step 4 · Render</p><h2 className="mt-1 font-[family-name:var(--font-display)] text-3xl">Concept renders grounded in your plan</h2></div><p className="max-w-xl text-xs leading-5 text-[#786d62]">Materials, furnishing and lighting are generative assumptions. Floor count, footprint and openings are constrained by the canonical references.</p></div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">{([
           ["exterior_front", "Front / road perspective"],
           ["exterior_collage", "Four-view collage"],

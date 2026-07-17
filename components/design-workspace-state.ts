@@ -90,6 +90,27 @@ export type SchemeEvidenceState = {
   review: "Updating…" | "Updates on select" | "Reviewed" | "Unavailable";
 };
 
+// The two steps that live inside the workspace result view. Massing and render
+// are separate routes, so they never appear in the ?step= param here.
+export type WorkspaceStep = "directions" | "plan";
+
+export function parseWorkspaceStep(value: string | null | undefined): WorkspaceStep | null {
+  return value === "directions" || value === "plan" ? value : null;
+}
+
+// A study reopened from a deep link or the recent-study list lands on the 2D plan,
+// because its direction was already chosen — except when the comparison rack is
+// enabled and no scheme has been confirmed, which the directions step must resolve.
+export function restoredWorkspaceStep(input: {
+  requestedStep?: string | null;
+  rackVisible: boolean;
+  schemeSelected: boolean;
+}): WorkspaceStep {
+  const requested = parseWorkspaceStep(input.requestedStep);
+  if (requested) return requested;
+  return input.rackVisible && !input.schemeSelected ? "directions" : "plan";
+}
+
 export function schemeEvidenceLabels(input: {
   previewIsCanonical: boolean;
   selecting: boolean;

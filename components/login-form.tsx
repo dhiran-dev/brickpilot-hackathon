@@ -16,13 +16,13 @@ export function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const requestedPath = searchParams.get("next");
-  const nextPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/workspace";
+  const nextPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/dashboard";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
-    const { error: signInError } = await authClient.signIn.email({ email, password, callbackURL: nextPath });
+    const { error: signInError } = await authClient.signIn.email({ email, password, callbackURL: nextPath, rememberMe: true });
     setIsSubmitting(false);
 
     if (signInError) {

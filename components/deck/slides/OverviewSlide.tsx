@@ -3,46 +3,72 @@
 import { motion } from "framer-motion";
 
 import { useDeckMotionVariants } from "@/components/deck/motion";
-import { SheetFrame } from "@/components/deck/SheetFrame";
-import { deckOverviewView } from "@/lib/design/deck-content";
-import type { DeckPayload, DeckSlideWithSheet } from "@/lib/design/deck";
+import { FooterFact, SlideFooter, SlideHeader, StatCell } from "@/components/deck/slides/chrome";
+import { formatCurrencyMinor } from "@/lib/cost/format";
+import { deriveQuantityTakeoff } from "@/lib/cost/quantity";
+import type { DeckPayload } from "@/lib/design/deck";
 
-export function OverviewSlide({ payload, slide }: { payload: DeckPayload; slide: DeckSlideWithSheet }) {
-  const { item } = useDeckMotionVariants();
-  const overview = deckOverviewView(payload);
+export function OverviewSlide({ payload, sheetLabel }: { payload: DeckPayload; sheetLabel: string }) {
+  const { container, item } = useDeckMotionVariants();
+  const takeoff = deriveQuantityTakeoff(payload.building);
+  const builtUpM2 = takeoff.grossFloorAreaMm2 / 1_000_000;
+  const bedrooms = payload.requirements.rooms.filter((room) => room.type === "bedroom").length;
+  const bathrooms = payload.requirements.rooms.filter((room) => room.type === "bathroom").length;
+  const hero = payload.renders.assets.find((asset) => asset.role === "exterior_top")?.url
+    ?? payload.renders.assets.find((asset) => asset.role === "exterior_front")?.url;
+  const cost = payload.costEstimate.status === "available"
+    ? formatCurrencyMinor(payload.costEstimate.total.expectedMinor, payload.costEstimate.currency, payload.costEstimate.locale)
+    : "—";
 
   return (
-    <SheetFrame payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} subtitle={`${payload.scheme.name} — the selected parti, and why it won`} title="Project overview">
-      <div className="grid h-full grid-cols-1 md:grid-cols-[7fr_5fr]">
-        <motion.div className="flex min-h-0 flex-col justify-center gap-7 border-r border-[#8e5a31]/25 p-8 md:p-11" variants={item}>
-          <p className="max-w-[58ch] font-[family-name:var(--font-display)] text-[1.35rem] leading-[1.5] text-[#fff6ea] [text-wrap:pretty]">{payload.scheme.rationale}</p>
-          <div className="flex flex-col">
-            {overview.evidence.map((line, index) => (
-              <div className="flex gap-4 border-t border-[#8e5a31]/15 py-3 last:border-b" key={line}>
-                <span className="shrink-0 font-[family-name:var(--font-display)] text-[0.95rem] text-[#c97940] [font-variant-numeric:tabular-nums]">{String(index + 1).padStart(2, "0")}</span>
-                <p className="text-[0.84rem] leading-6 text-[#b5a697]">{line}</p>
-              </div>
-            ))}
+    <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
+      <SlideHeader
+        eyebrow={`${sheetLabel} — Project Overview`}
+        title={payload.scheme.name}
+        aside={
+          <p className="max-w-[16rem] text-[0.72rem] leading-5 text-[#8f8275]">
+            {payload.scheme.partiId.replaceAll("_", " ")} parti · relaxation rung {payload.scheme.ladderRung}
+          </p>
+        }
+      />
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 md:grid-cols-[1.05fr_0.95fr]">
+        <motion.div className="flex min-h-0 flex-col justify-between gap-6 px-10 py-7 md:px-12" variants={item}>
+          <p className="max-w-[58ch] text-[1.02rem] leading-[1.75] text-[#e9dccb]">{payload.scheme.rationale}</p>
+          <div className="grid grid-cols-3 gap-x-6 gap-y-6">
+            <StatCell label="Built-up area" unit="m²" value={builtUpM2.toFixed(0)} />
+            <StatCell label="Plot" value={`${(payload.requirements.site.widthMm / 1000).toFixed(0)}×${(payload.requirements.site.depthMm / 1000).toFixed(0)}`} unit="m" />
+            <StatCell label="Floors" value={takeoff.floorCount} />
+            <StatCell label="Bed / bath" value={`${bedrooms} / ${bathrooms}`} />
+            <StatCell label="Validation" tone={payload.validation.score >= 90 ? "accent" : "default"} value={`${payload.validation.score}`} unit="/ 100" />
+            <StatCell label="Expected cost" value={cost} />
           </div>
         </motion.div>
 
-        <motion.div className="flex min-h-0 flex-col justify-center gap-6 p-8 md:p-11" variants={item}>
-          <div>
-            <p className="font-[family-name:var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[#786d62]">Total scheduled area</p>
-            <p className="mt-1 font-[family-name:var(--font-display)] text-[3.2rem] leading-none text-[#fff6ea] [font-variant-numeric:tabular-nums]">
-              {overview.builtUpM2}<span className="ml-2 text-[1.4rem] text-[#b5a697]">m²</span>
-            </p>
-          </div>
-          <dl className="flex flex-col border-t border-[#8e5a31]/25">
-            {overview.stats.map((stat) => (
-              <div className="flex items-baseline justify-between gap-4 border-b border-[#8e5a31]/15 py-2" key={stat.label}>
-                <dt className="font-[family-name:var(--font-body)] text-[0.6rem] font-bold uppercase tracking-[0.12em] text-[#786d62]">{stat.label}</dt>
-                <dd className="text-right text-[0.88rem] text-[#fff6ea] [font-variant-numeric:tabular-nums]">{stat.value}</dd>
-              </div>
+        <motion.div className="flex min-h-0 flex-col gap-5 border-l border-[#8e5a31]/30 py-7 pl-8 pr-10 md:pr-12" variants={item}>
+          {hero ? (
+            <figure className="relative shrink-0 overflow-hidden border border-[#8e5a31]/45 shadow-[8px_9px_0_rgba(20,18,16,0.82)]">
+              <img alt="Concept exterior" className="aspect-[16/10] w-full object-cover" src={hero} />
+              <figcaption className="absolute bottom-0 left-0 bg-[#090908]/85 px-3 py-1.5 font-[family-name:var(--font-body)] text-[0.56rem] font-bold uppercase tracking-[0.12em] text-[#d8c9bc]">
+                Concept visualization · materials indicative
+              </figcaption>
+            </figure>
+          ) : null}
+          <div className="flex min-h-0 flex-col gap-3 overflow-auto">
+            <p className="font-[family-name:var(--font-body)] text-[0.58rem] font-bold uppercase tracking-[0.16em] text-[#c97940]">Why this scheme holds up</p>
+            {payload.scheme.evidence.slice(0, 4).map((line) => (
+              <p className="border-l-2 border-[#c97940]/60 pl-3.5 text-[0.82rem] leading-6 text-[#cbbcab]" key={line}>{line}</p>
             ))}
-          </dl>
+          </div>
         </motion.div>
       </div>
-    </SheetFrame>
+
+      <SlideFooter>
+        <FooterFact label="Architecture" value={`${payload.requirements.architecture.style.replaceAll("_", " ")} · ${payload.requirements.architecture.formStrategy.replaceAll("_", " ")}`} />
+        <FooterFact label="Site" value={`${payload.requirements.site.facing} facing · ${payload.requirements.site.roadEdges.join(" + ")} road`} />
+        <FooterFact label="Rooms planned" value={`${payload.requirements.rooms.length} spaces`} />
+        <FooterFact label="Finish tier" value={payload.requirements.budget.qualityTier} />
+      </SlideFooter>
+    </motion.div>
   );
 }

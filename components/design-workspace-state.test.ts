@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { explainGenerationFailure, relaxationNotice, schemeEvidenceLabels } from "@/components/design-workspace-state";
+import { explainGenerationFailure, parseWorkspaceStep, relaxationNotice, restoredWorkspaceStep, schemeEvidenceLabels } from "@/components/design-workspace-state";
 
 describe("workspace design state matrix", () => {
   test("names compact fallback without hiding earlier ladder rungs", () => {
@@ -61,5 +61,27 @@ describe("workspace design state matrix", () => {
       "Move rooms to another floor.",
       "Use a larger buildable envelope.",
     ]);
+  });
+});
+
+describe("workspace step derivation", () => {
+  test("parses only the two in-page steps from the URL", () => {
+    expect(parseWorkspaceStep("directions")).toBe("directions");
+    expect(parseWorkspaceStep("plan")).toBe("plan");
+    expect(parseWorkspaceStep("massing")).toBeNull();
+    expect(parseWorkspaceStep("")).toBeNull();
+    expect(parseWorkspaceStep(null)).toBeNull();
+    expect(parseWorkspaceStep(undefined)).toBeNull();
+  });
+
+  test("deep-linked steps win over the returning-user default", () => {
+    expect(restoredWorkspaceStep({ requestedStep: "directions", rackVisible: true, schemeSelected: true })).toBe("directions");
+    expect(restoredWorkspaceStep({ requestedStep: "plan", rackVisible: true, schemeSelected: false })).toBe("plan");
+  });
+
+  test("a returning user lands on the plan unless the rack still needs a selection", () => {
+    expect(restoredWorkspaceStep({ requestedStep: null, rackVisible: false, schemeSelected: true })).toBe("plan");
+    expect(restoredWorkspaceStep({ requestedStep: null, rackVisible: true, schemeSelected: true })).toBe("plan");
+    expect(restoredWorkspaceStep({ requestedStep: undefined, rackVisible: true, schemeSelected: false })).toBe("directions");
   });
 });

@@ -60,18 +60,19 @@ export function DeckViewer({ layoutVersionId }: { layoutVersionId: string }) {
 
   const slides = deriveDeckSlides(payload);
   const active = slides[activeIndex];
+  const sheetLabel = String(active.sheetNumber).padStart(2, "0");
 
   function renderSlide() {
     switch (active.kind) {
-      case "cover": return <CoverSlide payload={payload!} />;
+      case "cover": return <CoverSlide payload={payload!} sheetTotal={slides.length} />;
       case "brief": return <BriefSlide payload={payload!} slide={active} />;
-      case "overview": return <OverviewSlide payload={payload!} slide={active} />;
-      case "floor_plan": return <FloorPlanSlide floorId={active.floorId} payload={payload!} slide={active} />;
-      case "render": return <RenderSlide label={active.label} payload={payload!} role={active.role} slide={active} />;
-      case "room_schedule": return <RoomScheduleSlide payload={payload!} slide={active} />;
-      case "validation": return <ValidationSlide payload={payload!} slide={active} />;
-      case "cost": return <CostSlide payload={payload!} slide={active} />;
-      case "rationale": return <RationaleSlide payload={payload!} slide={active} />;
+      case "overview": return <OverviewSlide payload={payload!} sheetLabel={sheetLabel} />;
+      case "floor_plan": return <FloorPlanSlide floorId={active.floorId} payload={payload!} sheetLabel={sheetLabel} />;
+      case "render": return <RenderSlide label={active.label} payload={payload!} role={active.role} sheetLabel={sheetLabel} />;
+      case "room_schedule": return <RoomScheduleSlide payload={payload!} sheetLabel={sheetLabel} />;
+      case "validation": return <ValidationSlide payload={payload!} sheetLabel={sheetLabel} />;
+      case "cost": return <CostSlide payload={payload!} sheetLabel={sheetLabel} />;
+      case "rationale": return <RationaleSlide payload={payload!} sheetLabel={sheetLabel} />;
       case "back_cover": return <BackCoverSlide payload={payload!} />;
     }
   }
