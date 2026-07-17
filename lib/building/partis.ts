@@ -1,5 +1,6 @@
 import type { BuildingRequirements, FormStrategy, RoomRequirement } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
+import { entranceRoadSide } from "@/lib/building/topology";
 
 export type ClimateClass =
   | "hot_humid"
@@ -211,11 +212,7 @@ export function partiStairAnchor(
   const quarterTurned = shouldQuarterTurnParti(envelope);
   const orientedWidth = quarterTurned ? depth : width;
   const orientedDepth = quarterTurned ? width : depth;
-  const entranceSide = requirements.site
-    ? requirements.site.roadEdges.includes(requirements.site.facing)
-      ? requirements.site.facing
-      : requirements.site.roadEdges[0]
-    : "east";
+  const entranceSide = requirements.site ? entranceRoadSide(requirements.site) : "east";
   if (orientedWidth + landingClearance >= envelope.width || orientedDepth + landingClearance >= envelope.depth) {
     throw new Error(`STAIR_CORE_EXCEEDS_ENVELOPE:${partiId}`);
   }

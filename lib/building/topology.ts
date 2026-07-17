@@ -1,9 +1,15 @@
 import type { FloorCandidate } from "@/lib/building/candidates/types";
-import { rectanglePolygon, type Floor, type Rectangle, type Space, type WallSegment } from "@/lib/building/schema";
+import { rectanglePolygon, type Building, type Floor, type Rectangle, type Space, type WallSegment } from "@/lib/building/schema";
 import { isPerimeterOpenVerandah, isVerandahSpace } from "@/lib/building/space-semantics";
 
 const EXTERIOR = "EXTERIOR";
 const OPEN_TO_SKY_TYPES = new Set<Space["type"]>(["courtyard", "terrace"]);
+
+/** The road side the entrance actually faces: `facing` when it borders a road, else the first road edge. */
+export function entranceRoadSide(site: Pick<Building["site"], "facing" | "roadEdges">) {
+  const { facing, roadEdges } = site;
+  return roadEdges.includes(facing) ? facing : (roadEdges[0] ?? facing);
+}
 
 export function isOpenToSkySpace(space: Pick<Space, "type"> | undefined) {
   return Boolean(space && !isVerandahSpace(space) && OPEN_TO_SKY_TYPES.has(space.type));

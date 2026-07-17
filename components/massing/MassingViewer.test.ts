@@ -15,6 +15,7 @@ import {
   massingViewVector,
   retargetMassingCamera,
 } from "@/components/massing/MassingViewer";
+import { entranceRoadSide } from "@/lib/building/topology";
 
 const roadVectors = {
   north: new THREE.Vector3(0, 0, -1),
@@ -131,5 +132,12 @@ describe("fixed render source cameras", () => {
       expect(new THREE.Vector3(top.x, 0, top.z).normalize().dot(roadVectors[facing])).toBeGreaterThan(0.75);
       expect(top.y).toBeGreaterThan(front.y);
     }
+  });
+
+  test("front camera follows entrance road side when facing has no road", () => {
+    const side = entranceRoadSide({ facing: "north", roadEdges: ["south"] });
+    expect(side).toBe("south");
+    const front = massingViewVector("front", side);
+    expect(new THREE.Vector3(front.x, 0, front.z).normalize().dot(roadVectors.south)).toBeGreaterThan(0.85);
   });
 });

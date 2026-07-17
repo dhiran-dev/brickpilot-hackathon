@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { Building } from "@/lib/building/schema";
+import { entranceRoadSide } from "@/lib/building/topology";
 import { buildMassingModel, MASSING_GRID_Y_M, type MassingPrimitiveKind } from "@/lib/render/massing";
 
 export type MassingView = "front" | "rear" | "left" | "right" | "iso" | "top";
@@ -238,7 +239,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
 }, forwardedRef) {
   const containerRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<Runtime | null>(null);
-  const facingRef = useRef(building.site.facing);
+  const facingRef = useRef(entranceRoadSide(building.site));
 
   function setView(view: MassingView, animate = true) {
     const runtime = runtimeRef.current;
@@ -421,7 +422,11 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
   }, []);
 
   useEffect(() => {
-    facingRef.current = building.site.facing;
+    const entranceSide = entranceRoadSide(building.site);
+    if (entranceSide !== building.site.facing) {
+      console.info(`[massing] Front camera follows entrance road side "${entranceSide}"; site facing "${building.site.facing}" has no road edge.`);
+    }
+    facingRef.current = entranceSide;
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);

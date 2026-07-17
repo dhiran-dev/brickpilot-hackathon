@@ -10,7 +10,7 @@ import { climateOrientationEvidence, softCandidateScore } from "@/lib/building/s
 import { defaultPartiName, PARTI_DEFINITIONS, partiStairAnchor, selectEligiblePartis, type PartiId } from "@/lib/building/partis";
 import { resolveRegionalPack } from "@/lib/design/regional-packs";
 import { buildRelaxationLadder, type RelaxationAttempt, type RelaxationRungId } from "@/lib/building/relaxation";
-import { normalizeFloorTopology } from "@/lib/building/topology";
+import { entranceRoadSide, normalizeFloorTopology } from "@/lib/building/topology";
 import { buildVerticalConnectors, floorElevations, stairCandidateRoom } from "@/lib/building/vertical";
 import { validateBuilding, type ValidationFinding, type ValidationReport } from "@/lib/validation";
 import { RULE_PACK_VERSION } from "@/lib/validation/rules";
@@ -205,7 +205,7 @@ function generateCandidate(
       .filter((relationship) => relationship.type === "must_connect")
       .filter((relationship) => rooms.some((room) => room.id === relationship.fromRoomId) && rooms.some((room) => room.id === relationship.toRoomId))
       .map((relationship) => [relationship.fromRoomId, relationship.toRoomId] as [string, string]);
-    const entranceSide = requirements.site.roadEdges.includes(requirements.site.facing) ? requirements.site.facing : requirements.site.roadEdges[0];
+    const entranceSide = entranceRoadSide(requirements.site);
     const generatorOptions = {
       envelope,
       rooms,
