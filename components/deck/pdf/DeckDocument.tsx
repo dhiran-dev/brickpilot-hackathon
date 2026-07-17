@@ -23,6 +23,13 @@ const styles = StyleSheet.create({
   col: { flexDirection: "column" },
 });
 
+const RENDER_TILES: Array<{ role: string; label: string }> = [
+  { role: "exterior_front", label: "Front / road perspective" },
+  { role: "exterior_collage", label: "Four-view collage" },
+  { role: "exterior_top", label: "High front-right perspective" },
+  { role: "interior", label: "Furnished interior concept" },
+];
+
 function TitleBlock({ payload, sheetNumber, sheetTotal, label }: { payload: DeckPayload; sheetNumber: number; sheetTotal: number; label: string }) {
   return (
     <View style={styles.titleBlock}>
@@ -69,18 +76,28 @@ export function DeckDocument({ payload, renderImages }: { payload: DeckPayload; 
         if (slide.kind === "floor_plan") {
           const artifact = drawing.floors.find((floor) => floor.floorId === slide.floorId) ?? drawing.floors[0];
           const primitives = floorPlanToPdfPrimitives(artifact);
-          const scale = 480 / primitives.viewBox.width;
+          const planWidth = 660;
+          const scale = planWidth / primitives.viewBox.width;
+          const planHeight = primitives.viewBox.depth * scale;
           return (
             <Page key={`floor-${slide.floorId}`} orientation="landscape" size="A4" style={styles.page}>
               <Text style={styles.eyebrow}>Sheet {slide.sheetNumber} — Vector Floor Plan</Text>
               <Text style={styles.headline}>{artifact.floorLabel}</Text>
-              <Svg style={{ width: 480, height: primitives.viewBox.depth * scale }} viewBox={`0 0 ${primitives.viewBox.width} ${primitives.viewBox.depth}`}>
+              <Svg style={{ width: planWidth, height: planHeight }} viewBox={`0 0 ${primitives.viewBox.width} ${primitives.viewBox.depth}`}>
                 {primitives.walls.map((wall, index) => (
-                  <Line key={index} stroke={wall.stroke} strokeWidth={wall.thicknessMm} x1={wall.x1 - primitives.viewBox.x} x2={wall.x2 - primitives.viewBox.x} y1={wall.y1 - primitives.viewBox.y} y2={wall.y2 - primitives.viewBox.y} />
+                  <Line key={index} stroke={wall.stroke} strokeWidth={Math.max(wall.thicknessMm, 60)} x1={wall.x1 - primitives.viewBox.x} x2={wall.x2 - primitives.viewBox.x} y1={wall.y1 - primitives.viewBox.y} y2={wall.y2 - primitives.viewBox.y} />
                 ))}
                 {primitives.roomLabels.map((room, index) => {
-                  const labelProps = { fill: IVORY, fontSize: 200, textAnchor: "middle" as const, x: room.x - primitives.viewBox.x, y: room.y - primitives.viewBox.y } as ComponentProps<typeof Text>;
+                  const labelProps = { fill: IVORY, fontSize: room.fontSize, textAnchor: "middle" as const, x: room.x - primitives.viewBox.x, y: room.y - primitives.viewBox.y } as ComponentProps<typeof Text>;
                   return <Text {...labelProps} key={index}>{room.name}</Text>;
+                })}
+                {primitives.areaLabels.map((area, index) => {
+                  const areaProps = { fill: MUTED, fontSize: Math.max(area.fontSize * 0.7, 120), textAnchor: "middle" as const, x: area.x - primitives.viewBox.x, y: area.y - primitives.viewBox.y } as ComponentProps<typeof Text>;
+                  return <Text {...areaProps} key={`area-${index}`}>{area.label}</Text>;
+                })}
+                {primitives.dimensions.map((dim, index) => {
+                  const dimProps = { fill: COPPER, fontSize: 200, textAnchor: "middle" as const, x: dim.x - primitives.viewBox.x, y: dim.y - primitives.viewBox.y } as ComponentProps<typeof Text>;
+                  return <Text {...dimProps} key={`dim-${index}`}>{dim.label}</Text>;
                 })}
               </Svg>
               <TitleBlock label={`${artifact.floorLabel} · Vector Plan`} payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} />
@@ -88,29 +105,20 @@ export function DeckDocument({ payload, renderImages }: { payload: DeckPayload; 
           );
         }
 
-        if (slide.kind === "render_gallery") {
-          const tiles: Array<{ role: string; label: string }> = [
-            { role: "exterior_front", label: "Front / road perspective" },
-            { role: "exterior_collage", label: "Four-view collage" },
-            { role: "exterior_top", label: "High front-right perspective" },
-            { role: "interior", label: "Furnished interior concept" },
-          ];
+        if (slide.kind === "render") {
+          const src = renderImages.get(slide.role);
           return (
-            <Page key="renders" orientation="landscape" size="A4" style={styles.page}>
-              <Text style={styles.eyebrow}>Sheet {slide.sheetNumber} — Concept Renders</Text>
-              <Text style={styles.headline}>Camera-locked exterior &amp; interior studies</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {tiles.map((tile) => {
-                  const src = renderImages.get(tile.role);
-                  return (
-                    <View key={tile.role} style={{ width: 240, height: 160, backgroundColor: SURFACE }}>
-                      {src ? <Image src={src} style={{ width: 240, height: 160 }} /> : null}
-                      <Text style={{ fontSize: 7, color: IVORY, position: "absolute", bottom: 4, left: 4 }}>{tile.label}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <TitleBlock label="Concept Renders" payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} />
+            <Page key={`render-${slide.role}`} orientation="landscape" size="A4" style={styles.page}>
+              <Text style={styles.eyebrow}>Sheet {slide.sheetNumber} — Concept Render</Text>
+              <Text style={styles.headline}>{slide.label}</Text>
+              {src ? (
+                <Image src={src} style={{ width: 660, height: 400, marginTop: 10 }} />
+              ) : (
+                <View style={{ width: 660, height: 400, backgroundColor: SURFACE, marginTop: 10, justifyContent: "center", alignItems: "center" }}>
+                  <Text style={{ fontSize: 9, color: MUTED }}>{slide.label} · unavailable</Text>
+                </View>
+              )}
+              <TitleBlock label={slide.label} payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} />
             </Page>
           );
         }
@@ -142,8 +150,10 @@ export function DeckDocument({ payload, renderImages }: { payload: DeckPayload; 
               <Text style={styles.eyebrow}>Sheet {slide.sheetNumber} — Validation Report</Text>
               <Text style={styles.headline}>Score {validation.score} / 100</Text>
               <Text style={{ fontSize: 9, color: MUTED, marginBottom: 10 }}>{validation.counts.error} errors · {validation.counts.warning} warnings · {validation.counts.info} info</Text>
-              {validation.findings.map((finding, index) => (
-                <Text key={index} style={{ fontSize: 9, marginBottom: 4, color: finding.severity === "warning" ? "#d9a856" : MUTED }}>{finding.severity.toUpperCase()} · {finding.message}</Text>
+              {validation.findings.length === 0 ? (
+                <Text style={{ fontSize: 10, color: IVORY }}>No findings — this plan passed every rule with no warnings.</Text>
+              ) : validation.findings.map((finding, index) => (
+                <Text key={index} style={{ fontSize: 9, marginBottom: 4, color: finding.severity === "warning" ? "#d9a856" : finding.severity === "error" ? "#e2665a" : MUTED }}>{finding.severity.toUpperCase()} · {finding.category} · {finding.message}</Text>
               ))}
               <TitleBlock label="Validation Report" payload={payload} sheetNumber={slide.sheetNumber} sheetTotal={slide.sheetTotal} />
             </Page>

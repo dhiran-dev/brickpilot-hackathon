@@ -17,7 +17,7 @@ export function ValidationSlide({ payload, sheetLabel }: { payload: DeckPayload;
   const ordered = [...warnings, ...infos];
 
   return (
-    <motion.div animate="show" className="flex flex-1 flex-col" initial="hidden" variants={container}>
+    <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
       <motion.div className="p-8 pb-0 md:p-10 md:pb-0" variants={item}>
         <p className="font-[family-name:var(--font-body)] text-[0.66rem] font-bold uppercase tracking-[0.16em] text-[#c97940]">{sheetLabel} — Validation Report</p>
         <h2 className="mt-1 font-[family-name:var(--font-display)] text-2xl text-[#fff6ea]">Deterministic checks against the plan geometry</h2>

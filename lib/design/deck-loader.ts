@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
 import { classifyPersistedStudy } from "@/lib/design/persisted-study";
+import { validateBuilding } from "@/lib/validation";
 import { renderState } from "@/app/api/designs/[layoutVersionId]/renders/route";
 import type { DeckPayload, DeckRenders } from "@/lib/design/deck";
 
@@ -64,7 +65,7 @@ export async function loadDeckPayload(layoutVersionId: string, userId: string): 
     generatedAt: new Date().toISOString(),
     requirements: study.requirements,
     building: study.building,
-    validation: study.validation,
+    validation: validateBuilding(study.building, study.requirements),
     costEstimate: study.costEstimate,
     aiReview: study.aiReview ?? null,
     scheme,

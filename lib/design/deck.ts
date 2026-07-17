@@ -37,7 +37,7 @@ export type DeckSlideKind =
   | "cover"
   | "overview"
   | "floor_plan"
-  | "render_gallery"
+  | "render"
   | "room_schedule"
   | "validation"
   | "cost"
@@ -48,7 +48,7 @@ export type DeckSlide =
   | { kind: "cover" }
   | { kind: "overview" }
   | { kind: "floor_plan"; floorId: string; floorLabel: string; floorIndex: number }
-  | { kind: "render_gallery" }
+  | { kind: "render"; role: string; label: string }
   | { kind: "room_schedule" }
   | { kind: "validation" }
   | { kind: "cost" }
@@ -61,13 +61,20 @@ const SLIDE_TITLES: Record<DeckSlideKind, string> = {
   cover: "Cover",
   overview: "Project Overview",
   floor_plan: "Floor Plan",
-  render_gallery: "Concept Renders",
+  render: "Concept Render",
   room_schedule: "Room Schedule",
   validation: "Validation Report",
   cost: "Cost Estimate",
   rationale: "Design Rationale",
   back_cover: "Back Cover",
 };
+
+const RENDER_TILES: Array<{ role: string; label: string }> = [
+  { role: "exterior_front", label: "Front / road perspective" },
+  { role: "exterior_collage", label: "Four-view collage" },
+  { role: "exterior_top", label: "High front-right perspective" },
+  { role: "interior", label: "Furnished interior concept" },
+];
 
 export function deriveDeckSlides(payload: DeckPayload): DeckSlideWithSheet[] {
   const floorSlides: DeckSlide[] = payload.building.floors.map((floor, index) => ({
@@ -76,11 +83,16 @@ export function deriveDeckSlides(payload: DeckPayload): DeckSlideWithSheet[] {
     floorLabel: floor.label,
     floorIndex: index,
   }));
+  const renderSlides: DeckSlide[] = RENDER_TILES.map((tile) => ({
+    kind: "render",
+    role: tile.role,
+    label: tile.label,
+  }));
   const slides: DeckSlide[] = [
     { kind: "cover" },
     { kind: "overview" },
     ...floorSlides,
-    { kind: "render_gallery" },
+    ...renderSlides,
     { kind: "room_schedule" },
     { kind: "validation" },
     { kind: "cost" },
@@ -89,7 +101,7 @@ export function deriveDeckSlides(payload: DeckPayload): DeckSlideWithSheet[] {
   ];
   return slides.map((slide, index) => ({
     ...slide,
-    title: slide.kind === "floor_plan" ? `${slide.floorLabel} Plan` : SLIDE_TITLES[slide.kind],
+    title: slide.kind === "floor_plan" ? `${slide.floorLabel} Plan` : slide.kind === "render" ? slide.label : SLIDE_TITLES[slide.kind],
     sheetNumber: index + 1,
     sheetTotal: slides.length,
   }));

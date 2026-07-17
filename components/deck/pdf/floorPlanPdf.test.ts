@@ -30,7 +30,7 @@ function requirements(): BuildingRequirements {
 }
 
 describe("floorPlanToPdfPrimitives", () => {
-  test("emits one wall primitive per drawing wall and one label per room", () => {
+  test("emits walls, room labels, area labels, and dimensions from the drawing artifact", () => {
     const req = requirements();
     const generated = generateBuilding(req);
     const drawing = buildDrawing(generated.building);
@@ -38,6 +38,8 @@ describe("floorPlanToPdfPrimitives", () => {
     const primitives = floorPlanToPdfPrimitives(artifact);
     expect(primitives.walls).toHaveLength(artifact.walls.length);
     expect(primitives.roomLabels).toHaveLength(artifact.rooms.length);
+    expect(primitives.areaLabels).toHaveLength(artifact.rooms.length);
     expect(primitives.roomLabels.every((label) => label.name === label.name.toUpperCase())).toBe(true);
+    expect(primitives.areaLabels.every((label) => label.label.endsWith(" SQM"))).toBe(true);
   });
 });

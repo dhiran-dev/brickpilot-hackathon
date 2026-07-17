@@ -10,7 +10,7 @@ import { CoverSlide } from "@/components/deck/slides/CoverSlide";
 import { FloorPlanSlide } from "@/components/deck/slides/FloorPlanSlide";
 import { OverviewSlide } from "@/components/deck/slides/OverviewSlide";
 import { RationaleSlide } from "@/components/deck/slides/RationaleSlide";
-import { RenderGallerySlide } from "@/components/deck/slides/RenderGallerySlide";
+import { RenderSlide } from "@/components/deck/slides/RenderSlide";
 import { RoomScheduleSlide } from "@/components/deck/slides/RoomScheduleSlide";
 import { ValidationSlide } from "@/components/deck/slides/ValidationSlide";
 import { deriveDeckSlides, type DeckPayload } from "@/lib/design/deck";
@@ -58,7 +58,7 @@ export function DeckViewer({ layoutVersionId }: { layoutVersionId: string }) {
       case "cover": return <CoverSlide payload={payload!} />;
       case "overview": return <OverviewSlide payload={payload!} sheetLabel={sheetLabel} />;
       case "floor_plan": return <FloorPlanSlide floorId={active.floorId} payload={payload!} sheetLabel={sheetLabel} />;
-      case "render_gallery": return <RenderGallerySlide payload={payload!} sheetLabel={sheetLabel} />;
+      case "render": return <RenderSlide payload={payload!} role={active.role} label={active.label} sheetLabel={sheetLabel} />;
       case "room_schedule": return <RoomScheduleSlide payload={payload!} sheetLabel={sheetLabel} />;
       case "validation": return <ValidationSlide payload={payload!} sheetLabel={sheetLabel} />;
       case "cost": return <CostSlide payload={payload!} sheetLabel={sheetLabel} />;

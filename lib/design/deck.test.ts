@@ -78,13 +78,13 @@ function fixturePayload(floorCount: 1 | 2): DeckPayload {
 }
 
 describe("deriveDeckSlides", () => {
-  test("orders exactly one floor-plan slide between overview and renders for a single-floor building", () => {
+  test("orders slides with one floor plan and four render slides for a single-floor building", () => {
     const slides = deriveDeckSlides(fixturePayload(1));
     expect(slides.map((slide) => slide.kind)).toEqual([
-      "cover", "overview", "floor_plan", "render_gallery", "room_schedule", "validation", "cost", "rationale", "back_cover",
+      "cover", "overview", "floor_plan", "render", "render", "render", "render", "room_schedule", "validation", "cost", "rationale", "back_cover",
     ]);
-    expect(slides).toHaveLength(9);
-    expect(slides[0].sheetTotal).toBe(9);
+    expect(slides).toHaveLength(12);
+    expect(slides[0].sheetTotal).toBe(12);
   });
 
   test("adds one floor-plan slide per additional floor, in floor order", () => {
@@ -92,17 +92,29 @@ describe("deriveDeckSlides", () => {
     const floorPlanSlides = slides.filter((slide): slide is Extract<typeof slides[number], { kind: "floor_plan" }> => slide.kind === "floor_plan");
     expect(floorPlanSlides).toHaveLength(2);
     expect(floorPlanSlides.map((slide) => slide.floorLabel)).toEqual(["Ground", "Floor 1"]);
-    expect(slides).toHaveLength(10);
+    expect(slides).toHaveLength(13);
   });
 
   test("numbers every sheet sequentially starting at 1", () => {
     const slides = deriveDeckSlides(fixturePayload(1));
-    expect(slides.map((slide) => slide.sheetNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(slides.map((slide) => slide.sheetNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 
   test("titles a floor-plan slide after its floor label", () => {
     const slides = deriveDeckSlides(fixturePayload(1));
     const floorPlan = slides.find((slide) => slide.kind === "floor_plan");
     expect(floorPlan?.title).toBe("Ground Plan");
+  });
+
+  test("titles each render slide after its tile label", () => {
+    const slides = deriveDeckSlides(fixturePayload(1));
+    const renderSlides = slides.filter((slide): slide is Extract<typeof slides[number], { kind: "render" }> => slide.kind === "render");
+    expect(renderSlides).toHaveLength(4);
+    expect(renderSlides.map((slide) => slide.label)).toEqual([
+      "Front / road perspective",
+      "Four-view collage",
+      "High front-right perspective",
+      "Furnished interior concept",
+    ]);
   });
 });

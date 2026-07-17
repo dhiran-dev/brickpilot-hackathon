@@ -31,7 +31,7 @@ export function RoomScheduleSlide({ payload, sheetLabel }: { payload: DeckPayloa
   const rows = drawing.floors.flatMap((floor) => floor.rooms.map((room) => ({ ...room, floorLabel: floor.floorLabel })));
 
   return (
-    <motion.div animate="show" className="flex flex-1 flex-col" initial="hidden" variants={container}>
+    <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
       <motion.div className="p-8 pb-4 md:p-10 md:pb-5" variants={item}>
         <p className="font-[family-name:var(--font-body)] text-[0.66rem] font-bold uppercase tracking-[0.16em] text-[#c97940]">{sheetLabel} — Consolidated Room Schedule</p>
         <h2 className="mt-1 font-[family-name:var(--font-display)] text-2xl text-[#fff6ea]">Every space, both floors, one table</h2>

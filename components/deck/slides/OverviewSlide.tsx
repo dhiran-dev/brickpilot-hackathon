@@ -12,7 +12,7 @@ export function OverviewSlide({ payload, sheetLabel }: { payload: DeckPayload; s
   const builtUpM2 = (takeoff.grossFloorAreaMm2 / 1_000_000).toFixed(1);
 
   return (
-    <motion.div animate="show" className="flex flex-1 flex-col" initial="hidden" variants={container}>
+    <motion.div animate="show" className="flex min-h-0 flex-1 flex-col" initial="hidden" variants={container}>
       <motion.div className="p-8 pb-0 md:p-12 md:pb-0" variants={item}>
         <p className="font-[family-name:var(--font-body)] text-[0.66rem] font-bold uppercase tracking-[0.16em] text-[#c97940]">{sheetLabel} — Project Overview</p>
         <h2 className="mt-2 max-w-2xl font-[family-name:var(--font-display)] text-3xl leading-tight tracking-[-0.02em] text-[#fff6ea] [text-wrap:balance] md:text-4xl">
