@@ -5,6 +5,7 @@ import {
   cancelMassingViewAnimation,
   configureMassingCanvas,
   MASSING_CAPTURE_LABELS,
+  MASSING_CAPTURE_LAYER_STATE,
   MASSING_CAPTURE_SIZE,
   MASSING_EDGE_DEPTH_STYLE,
   MASSING_VIEWER_CLASS_NAME,
@@ -152,5 +153,14 @@ describe("fixed render source cameras", () => {
     expect(leaf.transparent).toBe(false);
     expect(leaf.opacity).toBe(1);
     expect(leaf.depthWrite).toBe(true);
+  });
+
+  test("capture layer contract suppresses scale references in GPT sources", () => {
+    expect(MASSING_CAPTURE_LAYER_STATE.showScaleReferences).toBe(false); // prompts.ts forbids people/cars
+    expect(MASSING_CAPTURE_LAYER_STATE.showInteriorWalls).toBe(false);
+    expect(MASSING_CAPTURE_LAYER_STATE.showColumns).toBe(true);
+    expect(MASSING_CAPTURE_LAYER_STATE.showSlabs).toBe(true);
+    expect(MASSING_CAPTURE_LAYER_STATE.showRoof).toBe(true);
+    expect(MASSING_CAPTURE_LAYER_STATE.showSite).toBe(true);
   });
 });
