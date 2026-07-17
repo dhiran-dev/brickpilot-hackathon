@@ -35,6 +35,7 @@ export type DeckPayload = {
 
 export type DeckSlideKind =
   | "cover"
+  | "brief"
   | "overview"
   | "floor_plan"
   | "render"
@@ -46,6 +47,7 @@ export type DeckSlideKind =
 
 export type DeckSlide =
   | { kind: "cover" }
+  | { kind: "brief" }
   | { kind: "overview" }
   | { kind: "floor_plan"; floorId: string; floorLabel: string; floorIndex: number }
   | { kind: "render"; role: string; label: string }
@@ -59,6 +61,7 @@ export type DeckSlideWithSheet = DeckSlide & { title: string; sheetNumber: numbe
 
 const SLIDE_TITLES: Record<DeckSlideKind, string> = {
   cover: "Cover",
+  brief: "The Brief",
   overview: "Project Overview",
   floor_plan: "Floor Plan",
   render: "Concept Render",
@@ -90,6 +93,7 @@ export function deriveDeckSlides(payload: DeckPayload): DeckSlideWithSheet[] {
   }));
   const slides: DeckSlide[] = [
     { kind: "cover" },
+    { kind: "brief" },
     { kind: "overview" },
     ...floorSlides,
     ...renderSlides,

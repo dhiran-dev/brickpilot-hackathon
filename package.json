@@ -32,6 +32,7 @@
     "postgres": "^3.4.9",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "sharp": "0.34.5",
     "tailwind-merge": "^3.5.0",
     "three": "^0.178.0",
     "zod": "^4.4.3"

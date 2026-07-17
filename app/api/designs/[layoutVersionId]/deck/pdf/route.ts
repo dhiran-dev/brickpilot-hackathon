@@ -1,5 +1,6 @@
 import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 
 import { DeckDocument } from "@/components/deck/pdf/DeckDocument";
 import { requireUser } from "@/lib/auth";
@@ -10,10 +11,14 @@ function storageKeyFromAssetUrl(url: string) {
   return decodeURIComponent(url.replace(/^\/api\/assets\//, ""));
 }
 
-async function assetToPngDataUri(bytes: Uint8Array, contentType: string): Promise<string> {
-  if (contentType === "image/png") return `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
-  const converted = await new Bun.Image(bytes).png().toBuffer();
-  return `data:image/png;base64,${Buffer.from(converted).toString("base64")}`;
+/**
+ * Renders arrive as WebP from the model; @react-pdf/renderer only embeds
+ * PNG/JPEG. Convert with sharp (runs under Node, unlike Bun.Image) and emit
+ * JPEG so four full-page renders stay a reasonable download size.
+ */
+async function assetToJpegDataUri(bytes: Uint8Array): Promise<string> {
+  const converted = await sharp(Buffer.from(bytes)).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+  return `data:image/jpeg;base64,${converted.toString("base64")}`;
 }
 
 export async function GET(request: Request, context: { params: Promise<{ layoutVersionId: string }> }) {
@@ -32,10 +37,10 @@ export async function GET(request: Request, context: { params: Promise<{ layoutV
   await Promise.all(payload.renders.assets.map(async (asset) => {
     try {
       const stored = await readStoredAsset(storageKeyFromAssetUrl(asset.url));
-      const dataUri = await assetToPngDataUri(stored.bytes, stored.contentType);
-      renderImages.set(asset.role, dataUri);
-    } catch {
+      renderImages.set(asset.role, await assetToJpegDataUri(stored.bytes));
+    } catch (error) {
       // Missing/unavailable render asset: the PDF renders that tile without an image rather than failing the whole export.
+      console.warn(`[deck/pdf] could not embed render "${asset.role}" for ${layoutVersionId}:`, error instanceof Error ? error.message : error);
     }
   }));
 
