@@ -225,6 +225,37 @@ function parapetPrimitive(building: Building, floor: Floor, wall: WallSegment, b
   };
 }
 
+const CARPORT_COLUMN_SIZE_MM = 250;
+
+/** Two square columns flanking a vehicle opening, spanning the full floor height. */
+function carportColumnPrimitives(building: Building, floor: Floor, opening: Opening, baseYM: number): MassingPrimitive[] {
+  const wall = floor.walls.find((candidate) => candidate.id === opening.wallId);
+  if (!wall) {
+    console.warn(`[massing] Vehicle opening ${opening.id} references missing wall ${opening.wallId}; skipping carport columns.`);
+    return [];
+  }
+  const dx = wall.end.x - wall.start.x;
+  const dz = wall.end.y - wall.start.y;
+  const lengthMm = Math.hypot(dx, dz);
+  const clamped = clampOpening(opening, lengthMm, floor.floorHeightMm);
+  if (clamped.toMm <= clamped.fromMm) return [];
+  const ux = dx / lengthMm;
+  const uz = dz / lengthMm;
+  const heightM = floor.floorHeightMm * MM_TO_M;
+  const sizeM = CARPORT_COLUMN_SIZE_MM * MM_TO_M;
+  return [clamped.fromMm, clamped.toMm].map((alongMm, index) => {
+    const [x, z] = planToScene(building, wall.start.x + ux * alongMm, wall.start.y + uz * alongMm);
+    return {
+      id: `${opening.id}-carport-column-${index}`,
+      kind: "column" as const,
+      floorId: floor.id,
+      sourceId: opening.id,
+      center: [x, baseYM + heightM / 2, z] as [number, number, number],
+      size: [sizeM, heightM, sizeM] as [number, number, number],
+    };
+  });
+}
+
 function stairPrimitives(building: Building, floor: Floor, explodeYM: number): MassingPrimitive[] {
   const connector = building.verticalConnectors.find((candidate) => candidate.servedFloorIds.includes(floor.id));
   const bounds = connector?.boundsByFloor[floor.id];
@@ -299,7 +330,10 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
       wallPanels(wall, openingsByWall.get(wall.id) ?? [], floor.floorHeightMm)
         .forEach((panel, index) => primitives.push(wallPrimitive(building, floor, wall, panel, baseYM, index, kindOverride)));
       for (const opening of openingsByWall.get(wall.id) ?? []) {
-        if (opening.usage === "vehicle") continue; // carport columns handle vehicle entries (Task 6)
+        if (opening.usage === "vehicle") {
+          if (includeColumns) primitives.push(...carportColumnPrimitives(building, floor, opening, baseYM));
+          continue;
+        }
         if (opening.kind === "open_connection") continue; // intentional pass-throughs stay open
         const fill = openingFillPrimitive(building, floor, wall, opening, baseYM, opening.kind === "window" ? "window_glass" : "door_leaf");
         if (fill) primitives.push(fill);

@@ -312,6 +312,41 @@ describe("deterministic massing model", () => {
     )).toBe(false);
   });
 
+  test("flanks vehicle openings with carport columns on the column layer", () => {
+    const withVehicle = structuredClone(building);
+    withVehicle.floors[0].openings.push({
+      id: "vehicle-0", floorId: "F0", wallId: "south-0", kind: "open_connection", usage: "vehicle",
+      offsetMm: 7000, widthMm: 2400, heightMm: 2400, sillHeightMm: 0,
+      connects: ["EXTERIOR", "living-0"], hinge: "none", swing: "none",
+    });
+
+    const columns = buildMassingModel(withVehicle).primitives.filter((primitive) => primitive.kind === "column" && primitive.sourceId === "vehicle-0");
+    expect(columns).toHaveLength(2);
+    // wall south-0 runs x 1000→11000 at y 9000: flanks at offsets 7000 and 9400 → scene x 2.0 and 4.4
+    expect(columns.map((column) => column.center[0]).sort((left, right) => left - right).map((x) => Number(x.toFixed(6)))).toEqual([2, 4.4]);
+    for (const column of columns) {
+      expect(column.center[1]).toBeCloseTo(3.1 / 2, 8);      // full floor height, base at baseY
+      expect(column.center[2]).toBeCloseTo(0, 8);
+      expect(column.size[0]).toBeCloseTo(0.25, 8);
+      expect(column.size[1]).toBeCloseTo(3.1, 8);
+      expect(column.size[2]).toBeCloseTo(0.25, 8);
+    }
+
+    const columnsOff = buildMassingModel(withVehicle, { includeColumns: false });
+    expect(columnsOff.primitives.some((primitive) => primitive.sourceId === "vehicle-0")).toBe(false);
+  });
+
+  test("skips carport columns when a vehicle opening references a missing wall", () => {
+    const dangling = structuredClone(building);
+    dangling.floors[0].openings.push({
+      id: "vehicle-dangling", floorId: "F0", wallId: "no-such-wall", kind: "open_connection", usage: "vehicle",
+      offsetMm: 0, widthMm: 2400, heightMm: 2400, sillHeightMm: 0,
+      connects: ["EXTERIOR", "living-0"], hinge: "none", swing: "none",
+    });
+    expect(() => buildMassingModel(dangling)).not.toThrow();
+    expect(buildMassingModel(dangling).primitives.some((primitive) => primitive.sourceId === "vehicle-dangling")).toBe(false);
+  });
+
   test("leaves non-vehicle open connections unfilled", () => {
     const withPassThrough = structuredClone(building);
     withPassThrough.floors[0].openings.push({
