@@ -19,3 +19,24 @@ Deferred work with full context. Source of truth for "later" — if it isn't her
 - **Context:** Only `india-delhi-feasibility-2026-07.ts` exists; `lib/cost/selection.ts` already degrades gracefully to `unsupported_region`. UI shows an honest empty state today.
 - **Effort:** M (human ~2 days incl. research / CC ~1 h once numbers chosen). **Priority:** P2. **Depends on:** nothing.
 - **Decision trail:** Deferred in /plan-ceo-review TODO ceremony (2026-07-16).
+
+## P3 — Room labels in massing view (E4)
+- **What:** Space-name labels anchored to room centroids in the 3D massing viewer, with occlusion/legibility handling.
+- **Why:** External 3D review asked for legibility; labels are the next step after fills/parapets/scale refs.
+- **Context:** Deferred from the massing quick-wins plan — label layout/occlusion/anchoring is outside the quick-win blast radius.
+- **Effort:** M (human ~1 day / CC ~1 h). **Priority:** P3.
+- **Decision trail:** Deferred in /autoplan CEO review E4 (2026-07-17).
+
+## P3 — Demo-rehearsal hardening (E7)
+- **What:** Cached known-good renders, a frozen demo project, and a render-failure fallback path for live demos.
+- **Why:** A live GPT render failure mid-demo has no recovery path today.
+- **Context:** Out of massing blast radius; flagged as a CEO concern at the quick-wins gate.
+- **Effort:** M. **Priority:** P3.
+- **Decision trail:** Deferred in /autoplan CEO review E7 (2026-07-17).
+
+## P3 — Balcony railing mechanism
+- **What:** Balconies (`balcony` room type) get full solid walls today — no railing/parapet mechanism exists for them.
+- **Why:** `balcony` is not in `OPEN_TO_SKY_TYPES` (lib/building/topology.ts), so the parapet branch never fires; fixing it means changing balcony wall generation (deeper, riskier).
+- **Context:** Documented known gap from massing quick-wins item 3; not silently worked around.
+- **Effort:** M. **Priority:** P3.
+- **Decision trail:** Scoped out in massing quick-wins plan item 3 / decision D14 (2026-07-17).
