@@ -1,0 +1,274 @@
+- generic [active] [ref=f2e1]:
+  - main [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - generic [ref=f2e4]:
+        - generic [ref=f2e5]:
+          - generic [ref=f2e6]:
+            - paragraph [ref=f2e7]: BrickPilot
+            - paragraph [ref=f2e8]: Residential concept engineering
+          - generic [ref=f2e9]: Topology · validation · cost · drawing
+        - generic [ref=f2e10]:
+          - generic [ref=f2e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f2e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f2e18]
+      - generic [ref=f2e40]:
+        - status "Project access status" [ref=f2e42]:
+          - generic [ref=f2e48]:
+            - paragraph [ref=f2e49]: Legacy result · Saved results only
+            - paragraph [ref=f2e50]: This project is view-only. Its saved results remain available, but AI changes, scheme selection, new reference captures, and render generation or retry are disabled.
+        - generic [ref=f2e51]:
+          - generic [ref=f2e52]:
+            - generic [ref=f2e53]:
+              - paragraph [ref=f2e54]: Study a3c15af1 · immutable v1
+              - heading "My family home 3" [level=1] [ref=f2e55]
+            - generic [ref=f2e56]:
+              - button "Delete project" [ref=f2e57]
+              - button "New study" [ref=f2e58]
+          - navigation "Study steps" [ref=f2e60]:
+            - list [ref=f2e61]:
+              - listitem [ref=f2e62]:
+                - button "Directions" [ref=f2e63]
+              - listitem [ref=f2e68]:
+                - button "02 2D plan" [ref=f2e69]:
+                  - generic [ref=f2e70]: "02"
+                  - generic [ref=f2e71]: 2D plan
+              - listitem [ref=f2e73]:
+                - link "03 3D massing" [ref=f2e74] [cursor=pointer]:
+                  - /url: /workspace/designs/a3c15af1-f251-4bbd-8526-4299cff5765c/massing
+                  - generic [ref=f2e75]: "03"
+                  - generic [ref=f2e76]: 3D massing
+              - listitem [ref=f2e77]:
+                - link "04 Render" [ref=f2e78] [cursor=pointer]:
+                  - /url: /workspace/designs/a3c15af1-f251-4bbd-8526-4299cff5765c/massing#render-gallery
+                  - generic [ref=f2e79]: "04"
+                  - generic [ref=f2e80]: Render
+          - generic [ref=f2e81]:
+            - generic [ref=f2e82]:
+              - paragraph [ref=f2e83]: Step 2 of 4 · 2D plan
+              - heading "Review the verified plan" [level=2] [ref=f2e84]
+              - paragraph [ref=f2e85]: The selected scheme drawn to millimetre geometry. Validation, cost, record and review evidence stay collapsed below the plan.
+            - generic [ref=f2e86]:
+              - generic [ref=f2e87]:
+                - generic [ref=f2e88]: Validation
+                - generic [ref=f2e89]: 100 / 100
+              - generic [ref=f2e90]: Hard checks pass
+              - generic [ref=f2e94]:
+                - generic [ref=f2e95]: Cost
+                - generic [ref=f2e96]: ₹2,37,24,640–₹3,34,93,609
+              - generic [ref=f2e97]:
+                - generic [ref=f2e98]: Built area
+                - generic [ref=f2e99]: 486.5 m²
+            - generic [ref=f2e100]:
+              - generic [ref=f2e101]:
+                - generic [ref=f2e102]:
+                  - paragraph [ref=f2e103]: Canonical building · topology-hybrid-v2.0.0
+                  - heading "My family home 3" [level=2] [ref=f2e104]
+                - generic [ref=f2e105]:
+                  - generic [ref=f2e106]: Topology passed
+                  - button "SVG" [ref=f2e110]
+                  - button "Print / PDF" [ref=f2e114]
+              - tablist "Building floors" [ref=f2e119]:
+                - tab "Ground floor Level 0" [selected] [ref=f2e120]:
+                  - generic [ref=f2e121]: Ground floor
+                  - generic [ref=f2e122]: Level 0
+                - tab "Floor 1 Level 1" [ref=f2e123]:
+                  - generic [ref=f2e124]: Floor 1
+                  - generic [ref=f2e125]: Level 1
+                - tab "Floor 2 Level 2" [ref=f2e126]:
+                  - generic [ref=f2e127]: Floor 2
+                  - generic [ref=f2e128]: Level 2
+                - generic [ref=f2e129]: Theme + layers apply to every floor
+              - generic [ref=f2e130]:
+                - tabpanel "Ground floor Level 0" [ref=f2e131]:
+                  - group "Drawing zoom controls" [ref=f2e132]:
+                    - button "Zoom out" [disabled] [ref=f2e133]
+                    - generic [ref=f2e135]: 100%
+                    - button "Zoom in" [ref=f2e136]
+                    - button "Fit drawing to view" [ref=f2e138]: Fit
+                  - img "Pinned plan · Courtyard Villa · Scheme A · Ground floor" [ref=f2e145]:
+                    - generic [ref=f2e148]:
+                      - generic [ref=f2e149]: ROAD ACCESS · SOUTH
+                      - generic [ref=f2e152]: ROAD ACCESS · EAST
+                      - generic [ref=f2e157]: SITE BOUNDARY
+                    - generic [ref=f2e186]: MAIN ENTRY
+                    - generic [ref=f2e225]: UP
+                    - generic [ref=f2e279]:
+                      - generic [ref=f2e281]:
+                        - text: STAIR CORE
+                        - generic [ref=f2e282]: 7.1 m² · UP
+                      - generic [ref=f2e283]: R02
+                      - generic [ref=f2e287]: R03
+                      - generic [ref=f2e291]: R04
+                      - generic [ref=f2e296]:
+                        - text: OPEN-SIDED PRIVATE WING GALLERY
+                        - generic [ref=f2e297]: 19.7 m² · VER
+                      - generic [ref=f2e299]:
+                        - text: OPEN-SIDED COVERED GALLERY
+                        - generic [ref=f2e300]: 18.1 m² · VER
+                      - generic [ref=f2e302]:
+                        - text: COURTYARD
+                        - generic [ref=f2e303]: 14.0 m² · CYD
+                      - generic [ref=f2e305]:
+                        - text: ATTACHED BATHROOM 1
+                        - generic [ref=f2e306]: 5.3 m² · WC
+                      - generic [ref=f2e308]:
+                        - text: BEDROOM 1
+                        - generic [ref=f2e309]: 12.0 m² · BED
+                      - generic [ref=f2e311]:
+                        - text: KITCHEN
+                        - generic [ref=f2e312]: 9.7 m² · KIT
+                      - generic [ref=f2e314]:
+                        - text: UTILITY
+                        - generic [ref=f2e315]: 5.4 m² · UTL
+                      - generic [ref=f2e317]:
+                        - text: POOJA
+                        - generic [ref=f2e318]: 5.2 m² · PUJ
+                      - generic [ref=f2e320]:
+                        - text: ENTRY FOYER
+                        - generic [ref=f2e321]: 17.2 m² · ENT
+                      - generic [ref=f2e323]:
+                        - text: LIVING / DINING HALL
+                        - generic [ref=f2e324]: 44.4 m² · LIV
+                      - generic [ref=f2e326]:
+                        - text: COVERED PARKING
+                        - generic [ref=f2e327]: 75.6 m² · CAR
+                    - generic [ref=f2e328]:
+                      - generic [ref=f2e329]: 20.0 m
+                      - generic [ref=f2e332]: 18.0 m
+                      - generic [ref=f2e335]: 17.60 m
+                      - generic [ref=f2e338]: 14.0 m
+                    - generic [ref=f2e341]:
+                      - generic [ref=f2e342]:
+                        - generic [ref=f2e346]: "N"
+                        - generic [ref=f2e347]: S
+                        - generic [ref=f2e348]: E
+                        - generic [ref=f2e349]: W
+                      - generic [ref=f2e350]:
+                        - generic [ref=f2e353]: "0"
+                        - generic [ref=f2e354]: 5 m
+                      - generic [ref=f2e355]:
+                        - generic [ref=f2e356]: Social
+                        - generic [ref=f2e359]: Private
+                        - generic [ref=f2e362]: Kitchen
+                        - generic [ref=f2e365]: Wet service
+                        - generic [ref=f2e368]: Circulation
+                        - generic [ref=f2e371]: Outdoor
+                        - generic [ref=f2e374]: Utility
+                        - generic [ref=f2e377]: Work
+                        - generic [ref=f2e380]: Sacred
+                      - generic [ref=f2e383]:
+                        - generic [ref=f2e385]: BrickPilot
+                        - generic [ref=f2e386]: MY FAMILY HOME 3
+                        - generic [ref=f2e387]: CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION
+                        - generic [ref=f2e388]: COURTYARD VILLA · SCHEME A · COURTYARD · COURTYARD VERNACULAR
+                        - generic [ref=f2e389]: GROUND FLOOR
+                        - generic [ref=f2e390]: SEED 3037759561 · topology-hybrid-v2.0.0
+                        - generic [ref=f2e391]: RULES residential-baseline-2026.5
+                        - generic [ref=f2e392]: RENDERER cad-svg-v2
+                        - generic [ref=f2e393]: CANDIDATE COURTYARD / 0
+                      - generic [ref=f2e394]:
+                        - generic [ref=f2e395]: AREA SCHEDULE · ACHIEVED / TARGET
+                        - generic [ref=f2e396]: R01 · ENTRY VERANDAH RECESS · 5.0 m² / —
+                        - generic [ref=f2e397]: R02 · OPEN-SIDED PRIVATE WING GALLERY · 19.7 m² / —
+                        - generic [ref=f2e398]: R03 · OPEN-SIDED COVERED GALLERY · 18.1 m² / —
+                        - generic [ref=f2e399]: R04 · COURTYARD · 14.0 m² / 14.0 m²
+                        - generic [ref=f2e400]: R05 · ATTACHED BATHROOM 1 · 5.3 m² / 4.5 m²
+                        - generic [ref=f2e401]: R06 · BEDROOM 1 · 12.0 m² / 14.0 m²
+                        - generic [ref=f2e402]: R07 · KITCHEN · 9.7 m² / 12.0 m² · UNDER >15%
+                        - generic [ref=f2e403]: R08 · UTILITY · 5.4 m² / 5.0 m²
+                        - generic [ref=f2e404]: R09 · POOJA · 5.2 m² / 4.0 m²
+                        - generic [ref=f2e405]: R10 · ENTRY FOYER · 17.2 m² / 5.0 m²
+                        - generic [ref=f2e406]: R11 · LIVING / DINING HALL · 44.4 m² / 35.0 m²
+                        - generic [ref=f2e407]: R12 · COVERED PARKING · 75.6 m² / 18.0 m²
+                - region "Drawing controls" [ref=f2e409]:
+                  - generic [ref=f2e410]:
+                    - heading "Drawing layers" [level=2] [ref=f2e416]
+                    - generic [ref=f2e417]: All 3 floors
+                  - group "Drawing appearance" [ref=f2e418]:
+                    - button "CAD Dark" [pressed] [ref=f2e419]
+                    - button "Paper Light" [ref=f2e422]
+                  - generic [ref=f2e429]:
+                    - paragraph [ref=f2e430]: Presets
+                    - generic [ref=f2e431]:
+                      - button "Presentation" [ref=f2e432]
+                      - button "Architectural" [pressed] [ref=f2e433]
+                      - button "Validation" [ref=f2e434]
+                      - button "Print" [ref=f2e435]
+                  - generic [ref=f2e436]:
+                    - button "Site + setbacks, applies to all floors, 2 items on current floor" [pressed] [ref=f2e437]:
+                      - generic [ref=f2e438]:
+                        - generic [ref=f2e439]: Site + setbacks
+                        - generic [ref=f2e440]: 2 on this floor
+                    - button "Room zoning, applies to all floors, 15 items on current floor" [ref=f2e445]:
+                      - generic [ref=f2e446]:
+                        - generic [ref=f2e447]: Room zoning
+                        - generic [ref=f2e448]: 15 on this floor
+                    - button "Circulation + access, applies to all floors, 5 items on current floor" [ref=f2e455]:
+                      - generic [ref=f2e456]:
+                        - generic [ref=f2e457]: Circulation + access
+                        - generic [ref=f2e458]: 5 on this floor
+                    - button "Walls + columns, applies to all floors, 42 items on current floor" [pressed] [ref=f2e465]:
+                      - generic [ref=f2e466]:
+                        - generic [ref=f2e467]: Walls + columns
+                        - generic [ref=f2e468]: 42 on this floor
+                    - button "Doors + windows, applies to all floors, 22 items on current floor" [pressed] [ref=f2e473]:
+                      - generic [ref=f2e474]:
+                        - generic [ref=f2e475]: Doors + windows
+                        - generic [ref=f2e476]: 22 on this floor
+                    - button "Roof planes + ridges, applies to all floors, 0 items on current floor" [pressed] [ref=f2e481]:
+                      - generic [ref=f2e482]:
+                        - generic [ref=f2e483]: Roof planes + ridges
+                        - generic [ref=f2e484]: None on this floor
+                    - button "Supports + edge protection, applies to all floors, 0 items on current floor" [pressed] [ref=f2e489]:
+                      - generic [ref=f2e490]:
+                        - generic [ref=f2e491]: Supports + edge protection
+                        - generic [ref=f2e492]: None on this floor
+                    - button "Furniture + fixtures, applies to all floors, 15 items on current floor" [pressed] [ref=f2e497]:
+                      - generic [ref=f2e498]:
+                        - generic [ref=f2e499]: Furniture + fixtures
+                        - generic [ref=f2e500]: 15 on this floor
+                    - button "Room labels + areas, applies to all floors, 15 items on current floor" [pressed] [ref=f2e505]:
+                      - generic [ref=f2e506]:
+                        - generic [ref=f2e507]: Room labels + areas
+                        - generic [ref=f2e508]: 15 on this floor
+                    - button "Overall dimensions, applies to all floors, 4 items on current floor" [pressed] [ref=f2e513]:
+                      - generic [ref=f2e514]:
+                        - generic [ref=f2e515]: Overall dimensions
+                        - generic [ref=f2e516]: 4 on this floor
+                    - button "Internal dimensions, applies to all floors, 30 items on current floor" [ref=f2e521]:
+                      - generic [ref=f2e522]:
+                        - generic [ref=f2e523]: Internal dimensions
+                        - generic [ref=f2e524]: 30 on this floor
+                    - button "Validation findings, applies to all floors, 0 items on current floor" [ref=f2e531]:
+                      - generic [ref=f2e532]:
+                        - generic [ref=f2e533]: Validation findings
+                        - generic [ref=f2e534]: None on this floor
+                    - button "North, scale + title block, applies to all floors, 1 items on current floor" [pressed] [ref=f2e541]:
+                      - generic [ref=f2e542]:
+                        - generic [ref=f2e543]: North, scale + title block
+                        - generic [ref=f2e544]: 1 on this floor
+              - generic [ref=f2e549]:
+                - generic [ref=f2e550]: 1 SVG unit = 1 canonical mm · geometry unchanged by appearance
+                - generic [ref=f2e551]: Concept feasibility output · professional verification required
+            - generic [ref=f2e552]:
+              - group [ref=f2e553]:
+                - generic "Validation findings · 0" [ref=f2e554] [cursor=pointer]
+              - group [ref=f2e558]:
+                - generic "Regional feasibility cost" [ref=f2e559] [cursor=pointer]
+              - group [ref=f2e563]:
+                - generic "AI architectural concurrence" [ref=f2e564] [cursor=pointer]
+              - group [ref=f2e568]:
+                - generic "Study record" [ref=f2e569] [cursor=pointer]
+              - group [ref=f2e573]:
+                - generic "Generation report Bounded deterministic search evidence persisted with this study. 3 unique evaluated" [ref=f2e574] [cursor=pointer]:
+                  - generic [ref=f2e575]:
+                    - generic [ref=f2e576]: Generation report
+                    - generic [ref=f2e577]: Bounded deterministic search evidence persisted with this study.
+                  - generic [ref=f2e578]: 3 unique evaluated
+            - generic [ref=f2e582]:
+              - button "Directions" [ref=f2e583]
+              - link "3D & Renders" [ref=f2e586] [cursor=pointer]:
+                - /url: /workspace/designs/a3c15af1-f251-4bbd-8526-4299cff5765c/massing
+  - button "Open Next.js Dev Tools" [ref=f2e34] [cursor=pointer]
+  - alert [ref=f2e38]

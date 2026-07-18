@@ -520,10 +520,15 @@ function pergolaSupports(roof: OpenPergolaSystem, floor: V3CirculatedFloor) {
   };
 }
 
-function roofKind(requirements: CurrentBuildingRequirements, floorIndex: number, fragmentIndex: number): EnclosureRoofSystem["kind"] {
-  if (requirements.roof.value === "flat_parapet") return "flat_slab";
-  if (requirements.roof.value === "mixed" && floorIndex % 2 === 0) return fragmentIndex % 2 === 0 ? "shed" : "flat_slab";
-  return fragmentIndex % 3 === 2 ? "hip" : "gable";
+/**
+ * Temporary product policy: enclosure roofs are flat-only.
+ *
+ * The requirements contract continues to accept historical roof intent so saved
+ * projects remain readable, but the active physical engine must not synthesize
+ * pitched geometry until that system is ready to ship.
+ */
+function enclosureRoofKind(): EnclosureRoofSystem["kind"] {
+  return "flat_slab";
 }
 
 function hostSpaceForShade(requirements: CurrentBuildingRequirements, scheme: V3CirculatedScheme, location: CurrentBuildingRequirements["shadeStructures"][number]["location"]) {
@@ -549,7 +554,7 @@ export function deriveV3RoofSystems(
     return host ? [[requirement.id, host] as const] : [];
   }));
   const explicitlyShadedHostIds = new Set([...shadeHosts.values()].map((host) => host.space.id));
-  for (const [floorIndex, floor] of orderedFloors.entries()) {
+  for (const floor of orderedFloors) {
     const upperBounds = orderedFloors
       .filter((upper) => upper.level > floor.level)
       .flatMap((upper) => upper.regions.filter((region) => region.kind === "interior" || region.kind === "covered_outdoor").map((region) => orthogonalPolygonBounds(region.polygon)));
@@ -567,7 +572,7 @@ export function deriveV3RoofSystems(
         : exposedFragments;
       for (const exposed of roofFragments) {
         const id = `${floor.floorId}-roof-${space.id}-${fragmentIndex + 1}`;
-        const kind = region.kind === "covered_outdoor" ? "solid_canopy" : roofKind(requirements, floorIndex, fragmentIndex);
+        const kind = region.kind === "covered_outdoor" ? "solid_canopy" : enclosureRoofKind();
         const roof: EnclosureRoofSystem = {
           id,
           servesSpaceIds: [space.id],

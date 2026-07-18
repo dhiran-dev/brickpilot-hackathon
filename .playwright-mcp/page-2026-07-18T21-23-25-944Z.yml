@@ -1,0 +1,95 @@
+- generic [ref=f9e1]:
+  - main [ref=f9e2]:
+    - generic [ref=f9e3]:
+      - generic [ref=f9e4]:
+        - generic [ref=f9e5]:
+          - generic [ref=f9e6]:
+            - paragraph [ref=f9e7]: BrickPilot
+            - paragraph [ref=f9e8]: Residential concept engineering
+          - generic [ref=f9e9]: Topology · validation · cost · drawing
+        - generic [ref=f9e10]:
+          - generic [ref=f9e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f9e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f9e18]
+      - generic [ref=f9e24]:
+        - generic [ref=f9e26]:
+          - generic [ref=f9e27]:
+            - paragraph [ref=f9e28]: Guided residential brief
+            - heading "Questions before coordinates." [level=1] [ref=f9e29]
+            - paragraph [ref=f9e30]: Every answer becomes a measurable planning constraint.
+          - button "Reset" [ref=f9e31]
+        - generic [ref=f9e35]:
+          - generic [ref=f9e37]:
+            - button "Back" [disabled] [ref=f9e38]
+            - navigation "Brief steps" [ref=f9e41]:
+              - list [ref=f9e42]:
+                - listitem [ref=f9e43]:
+                  - button "01 Project" [ref=f9e44]:
+                    - generic [ref=f9e45]: "01"
+                    - generic [ref=f9e46]: Project
+                - listitem [ref=f9e48]:
+                  - button "02 Region" [ref=f9e49]:
+                    - generic [ref=f9e50]: "02"
+                    - generic [ref=f9e51]: Region
+                - listitem [ref=f9e52]:
+                  - button "03 Site" [ref=f9e53]:
+                    - generic [ref=f9e54]: "03"
+                    - generic [ref=f9e55]: Site
+                - listitem [ref=f9e56]:
+                  - button "04 Levels" [ref=f9e57]:
+                    - generic [ref=f9e58]: "04"
+                    - generic [ref=f9e59]: Levels
+                - listitem [ref=f9e60]:
+                  - button "05 Rooms" [ref=f9e61]:
+                    - generic [ref=f9e62]: "05"
+                    - generic [ref=f9e63]: Rooms
+                - listitem [ref=f9e64]:
+                  - button "06 Style" [ref=f9e65]:
+                    - generic [ref=f9e66]: "06"
+                    - generic [ref=f9e67]: Style
+                - listitem [ref=f9e68]:
+                  - button "07 Budget" [ref=f9e69]:
+                    - generic [ref=f9e70]: "07"
+                    - generic [ref=f9e71]: Budget
+                - listitem [ref=f9e72]:
+                  - button "08 Review" [ref=f9e73]:
+                    - generic [ref=f9e74]: "08"
+                    - generic [ref=f9e75]: Review
+            - button "Confirm & continue" [ref=f9e76]
+          - generic [ref=f9e79]:
+            - generic [ref=f9e80]:
+              - paragraph [ref=f9e81]: Step 1 of 8
+              - heading "What are we planning?" [level=2] [ref=f9e82]
+            - generic [ref=f9e83]:
+              - generic [ref=f9e84]:
+                - text: Project name
+                - textbox "Project name" [active] [ref=f9e85]:
+                  - /placeholder: The Nair family home
+                  - text: My family home
+              - generic [ref=f9e86]:
+                - paragraph [ref=f9e87]: Building type
+                - generic [ref=f9e88]:
+                  - button "Selected Villa / bungalow A single-family bungalow or multi-level villa, from ground-only through G+3." [pressed] [ref=f9e89]:
+                    - generic [ref=f9e90]: Selected
+                    - generic [ref=f9e99]:
+                      - paragraph [ref=f9e100]: Villa / bungalow
+                      - paragraph [ref=f9e101]: A single-family bungalow or multi-level villa, from ground-only through G+3.
+                  - button "Coming soon Apartments Multi-unit residential planning is not enabled yet." [disabled] [ref=f9e102]:
+                    - generic [ref=f9e103]: Coming soon
+                    - generic [ref=f9e110]:
+                      - paragraph [ref=f9e111]: Apartments
+                      - paragraph [ref=f9e112]: Multi-unit residential planning is not enabled yet.
+                  - button "Coming soon Corporate / commercial Office, retail and institutional rule packs are coming later." [disabled] [ref=f9e113]:
+                    - generic [ref=f9e114]: Coming soon
+                    - generic [ref=f9e120]:
+                      - paragraph [ref=f9e121]: Corporate / commercial
+                      - paragraph [ref=f9e122]: Office, retail and institutional rule packs are coming later.
+              - generic [ref=f9e123]:
+                - strong [ref=f9e124]: "Scope:"
+                - text: BrickPilot produces a residential concept and feasibility package. A licensed architect and engineers must verify it before permits or construction.
+            - generic [ref=f9e125]:
+              - button "Back" [disabled] [ref=f9e126]
+              - button "Confirm & continue" [ref=f9e129]
+  - button "Open Next.js Dev Tools" [ref=f9e137] [cursor=pointer]
+  - alert [ref=f9e141]

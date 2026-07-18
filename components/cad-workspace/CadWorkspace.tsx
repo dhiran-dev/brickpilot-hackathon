@@ -208,10 +208,10 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
         <ul className="mt-2 grid gap-1 text-xs text-[#d8c8b7] lg:grid-cols-2">{topologyFindings.slice(0, 4).map((finding) => <li className="border-l border-current/35 pl-2" key={`${finding.ruleId}-${finding.objectIds.join("-")}`}><span className="mr-2 font-mono text-[0.62rem] text-[#8f8275]">{finding.ruleId}</span>{finding.message}</li>)}</ul>
       </div> : null}
 
-      <div className="grid xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid xl:h-[clamp(26rem,calc(100dvh-17rem),58rem)] xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div
           ref={panelRef}
-          className={`relative h-[clamp(26rem,calc(100dvh-17rem),58rem)] min-w-0 touch-none overscroll-contain overflow-hidden p-3 sm:p-5 ${viewport.zoom > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${appearance === "cad-dark" ? "bg-[#080807]" : "bg-[#d5d0c7]"}`}
+          className={`relative h-[clamp(26rem,calc(100dvh-17rem),58rem)] min-w-0 touch-none overscroll-contain overflow-hidden p-3 sm:p-5 xl:h-full ${viewport.zoom > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${appearance === "cad-dark" ? "bg-[#080807]" : "bg-[#d5d0c7]"}`}
           id={`cad-floor-${artifact.floorId}`}
           role="tabpanel"
           aria-labelledby={`cad-tab-${artifact.floorId}`}
@@ -244,7 +244,7 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
           </div>
           <div className="h-full w-full select-none"><CadPlan appearance={appearance} artifact={artifact} className="block h-full w-full drop-shadow-[0_20px_50px_rgba(0,0,0,0.32)]" displayViewBox={displayViewBox} highlightedObjectIds={highlightedObjectIds} layers={layers} projectName={projectName} ref={svgRef} /></div>
         </div>
-        <div className={`${controlsOpen ? "block" : "hidden"} border-l border-[#8e5a31]/45 bg-[#0d0c0a] xl:block`}><LayerPanel activePreset={preset} appearance={appearance} floorCount={drawing.floors.length} layerCounts={layerCounts} layers={layers} onAppearanceChange={(next) => { setAppearance(next); setPreset(undefined); }} onLayerChange={changeLayer} onPresetChange={applyPreset} /></div>
+        <div className={`${controlsOpen ? "block" : "hidden"} border-l border-[#8e5a31]/45 bg-[#0d0c0a] xl:block xl:h-full xl:overflow-y-auto`}><LayerPanel activePreset={preset} appearance={appearance} floorCount={drawing.floors.length} layerCounts={layerCounts} layers={layers} onAppearanceChange={(next) => { setAppearance(next); setPreset(undefined); }} onLayerChange={changeLayer} onPresetChange={applyPreset} /></div>
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[#8e5a31]/45 bg-[#0b0a09] px-4 py-2.5 text-[0.8125rem] uppercase tracking-[0.1em] text-[#9f9183]"><span>1 SVG unit = 1 canonical mm · geometry unchanged by appearance</span><span>Concept feasibility output · professional verification required</span></footer>
     </section>

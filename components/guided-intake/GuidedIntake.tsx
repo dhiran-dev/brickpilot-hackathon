@@ -29,7 +29,7 @@ const BUILDING_TYPE_ICONS: Record<(typeof BUILDING_TYPE_OPTIONS)[number]["value"
 
 const CONTROL = "mt-2 min-h-11 w-full border border-[#8e5a31]/60 bg-[#12100e] px-3 py-2.5 text-sm text-[#fff6ea] outline-none transition-colors placeholder:text-[#655d55] focus:border-[#fff6ea] focus:ring-1 focus:ring-[#fff6ea]";
 const LABEL = "text-[0.65rem] font-extrabold uppercase tracking-[0.12em] text-[#c97940]";
-const ACTION_PRIMARY = "inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none";
+const ACTION_PRIMARY = "inline-flex min-h-10 items-center gap-2 bg-[#ff4e00] px-4 py-2.5 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none";
 const DIRECTIONS = ["north", "east", "south", "west"] as const;
 const FLOOR_HEIGHT_OPTIONS = [
   [2.7, "2.70 m · compact"],
@@ -161,20 +161,7 @@ export function ArchitectureReferencePicker<Value extends string>({
   );
 }
 
-function ActionBar({
-  meta,
-  backDisabled,
-  ready,
-  isLast,
-  isSubmitting,
-  blocking,
-  submitDisabled,
-  submitLabel,
-  onBack,
-  onContinue,
-  onSubmit,
-}: {
-  meta?: ReactNode;
+type ActionBarProps = {
   backDisabled: boolean;
   ready: boolean;
   isLast: boolean;
@@ -185,12 +172,16 @@ function ActionBar({
   onBack: () => void;
   onContinue: () => void;
   onSubmit: () => void;
-}) {
-  return <>
-    {meta ? <div className="mr-auto flex min-w-0 items-center">{meta}</div> : null}
-    <button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={backDisabled} onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>
-    {!isLast ? <button className={ACTION_PRIMARY} disabled={!ready} onClick={onContinue} type="button">Confirm & continue <ArrowRight className="h-4 w-4" /></button> : <button className={ACTION_PRIMARY} disabled={submitDisabled} onClick={onSubmit} type="button">{isSubmitting ? "Solving the brief" : blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>}
-  </>;
+};
+
+function BackAction({ backDisabled, onBack }: ActionBarProps) {
+  return <button className="inline-flex min-h-10 shrink-0 items-center gap-2 border border-[#8e5a31]/55 px-3 py-2.5 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={backDisabled} onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>;
+}
+
+function PrimaryAction({ ready, isLast, isSubmitting, blocking, submitDisabled, submitLabel, onContinue, onSubmit }: ActionBarProps) {
+  return !isLast
+    ? <button className={`${ACTION_PRIMARY} shrink-0`} disabled={!ready} onClick={onContinue} type="button">Confirm &amp; continue <ArrowRight className="h-4 w-4" /></button>
+    : <button className={`${ACTION_PRIMARY} shrink-0`} disabled={submitDisabled} onClick={onSubmit} type="button">{isSubmitting ? "Solving the brief" : blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>;
 }
 
 function Toggle({ checked, label, detail, onChange }: { checked: boolean; label: string; detail?: string; onChange: (checked: boolean) => void }) {
@@ -389,20 +380,18 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
 
   return (
     <section className={`guided-intake border border-[#8e5a31]/45 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`}>
-      <header className="px-5 py-5 sm:px-6 sm:pt-6">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#ff6a1f]">Guided residential brief</p><h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl font-normal tracking-[-0.035em]">Questions before coordinates<span className="text-[#ff4e00]">.</span></h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#9f9183]">Every answer becomes a measurable planning constraint. No room geometry or cost is invented from a sentence.</p></div><button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/45 px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#a8998b] hover:border-[#c97940] hover:text-[#fff6ea]" onClick={reset} type="button"><RotateCcw className="h-3.5 w-3.5" /> Reset</button></div>
-      </header>
-
       <div>
-        <nav aria-label="Brief steps" className="border-y border-[#8e5a31]/30 bg-[#0a0908]">
-          <ol className="intake-stepper flex divide-x divide-[#8e5a31]/15 overflow-x-auto" ref={stepperRef}>
-            {STEPS.map((item, index) => { const active = index === stepIndex; const complete = index < stepIndex && stepReady(item.id, draft); return <li className="shrink-0 lg:flex-1" key={item.id}><button aria-current={active ? "step" : undefined} className={`relative flex w-full items-center justify-center gap-2.5 px-4 py-3.5 transition-colors lg:px-2 ${active ? "bg-[#17110c] text-[#fff6ea]" : complete ? "text-[#c5b5a5] hover:text-[#fff6ea]" : "text-[#776a5d] hover:text-[#c5b5a5]"}`} onClick={() => setStepIndex(index)} type="button"><span className={`grid h-6 w-6 shrink-0 place-items-center border text-[0.6rem] font-bold ${complete ? "border-[#4a8d68]/70 text-[#77c497]" : active ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]/70"}`}>{complete ? <Check className="h-3 w-3" /> : String(index + 1).padStart(2, "0")}</span><span className="whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.12em]">{item.label}</span>{active ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#ff4e00]" /> : null}</button></li>; })}
-          </ol>
-        </nav>
-
-        <div className="sticky top-0 z-20 border-b border-[#8e5a31]/25 bg-[#0d0c0a]">
-          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-7">
-            <ActionBar {...sharedActionBarProps} meta={<p className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#8f8275]">Step {stepIndex + 1} of {STEPS.length} · {step.label}</p>} />
+        <div className="sticky top-0 z-20 border-b border-[#8e5a31]/30 bg-[#0a0908]">
+          <div className="flex items-center gap-2 p-2">
+            <p className="hidden shrink-0 whitespace-nowrap px-2 text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#ff6a1f] md:block">Guided residential brief</p>
+            <BackAction {...sharedActionBarProps} />
+            <nav aria-label="Brief steps" className="min-w-0 flex-1">
+              <ol className="intake-stepper flex divide-x divide-[#8e5a31]/15 overflow-x-auto" ref={stepperRef}>
+                {STEPS.map((item, index) => { const active = index === stepIndex; const complete = index < stepIndex && stepReady(item.id, draft); return <li className="shrink-0" key={item.id}><button aria-current={active ? "step" : undefined} aria-label={item.label} className={`relative flex items-center justify-center gap-2.5 px-3 py-2.5 transition-colors ${active ? "bg-[#17110c] text-[#fff6ea]" : complete ? "text-[#c5b5a5] hover:text-[#fff6ea]" : "text-[#776a5d] hover:text-[#c5b5a5]"}`} onClick={() => setStepIndex(index)} title={item.label} type="button"><span className={`grid h-6 w-6 shrink-0 place-items-center border text-[0.6rem] font-bold ${complete ? "border-[#4a8d68]/70 text-[#77c497]" : active ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]/70"}`}>{complete ? <Check className="h-3 w-3" /> : String(index + 1).padStart(2, "0")}</span>{active ? <span className="whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.12em]">{item.label}</span> : null}{active ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#ff4e00]" /> : null}</button></li>; })}
+              </ol>
+            </nav>
+            <button aria-label="Reset brief" className="inline-flex min-h-10 shrink-0 items-center gap-2 border border-[#8e5a31]/45 px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#a8998b] transition hover:border-[#c97940] hover:text-[#fff6ea]" onClick={reset} type="button"><RotateCcw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Reset</span></button>
+            <PrimaryAction {...sharedActionBarProps} />
           </div>
         </div>
 
@@ -466,7 +455,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           {step.id === "review" ? <Review capacity={capacity} draft={draft} requirements={requirements} /> : null}
 
           {error ? <p className="mt-6 border border-[#ff5b45]/70 bg-[#1a0c09] p-3 text-sm text-[#ff9e91]" role="alert">{error}</p> : null}
-          <footer className="intake-actions mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5"><ActionBar {...sharedActionBarProps} /></footer>
+          <footer className="intake-actions mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5"><BackAction {...sharedActionBarProps} /><PrimaryAction {...sharedActionBarProps} /></footer>
         </div>
       </div>
     </section>

@@ -1,0 +1,20 @@
+- generic [active] [ref=f2e1]:
+  - main [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - generic [ref=f2e4]:
+        - generic [ref=f2e5]:
+          - generic [ref=f2e6]:
+            - paragraph [ref=f2e7]: BrickPilot
+            - paragraph [ref=f2e8]: Residential concept engineering
+          - generic [ref=f2e9]: Topology · validation · cost · drawing
+        - generic [ref=f2e10]:
+          - generic [ref=f2e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f2e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f2e18]
+      - status [ref=f2e23]:
+        - generic [ref=f2e24]:
+          - paragraph [ref=f2e27]: Reopening your saved study
+          - paragraph [ref=f2e28]: Restoring the plan, its evidence and render state from the server.
+  - button "Open Next.js Dev Tools" [ref=f2e34] [cursor=pointer]
+  - alert [ref=f2e38]

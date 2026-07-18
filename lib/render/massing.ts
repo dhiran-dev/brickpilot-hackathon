@@ -567,6 +567,26 @@ function roofFloor(building: CurrentBuilding, roof: RoofSystem) {
   return building.floors.find((floor) => floor.spaces.some((space) => roof.servesSpaceIds.includes(space.id)));
 }
 
+function flatCompatibilityRoofPrimitive(
+  building: CurrentBuilding,
+  roof: Exclude<RoofSystem, { kind: "open_pergola" }>,
+  floorId: string,
+  explodeYM: number,
+) {
+  const vertices = roof.footprint.points.map((point) =>
+    scenePoint(building, { ...point, z: roof.eaveHeightMm }, explodeYM));
+  return meshPrimitive({
+    id: `${roof.id}-flat-policy`,
+    kind: "roof",
+    semanticKind: "roof",
+    floorId,
+    sourceId: roof.id,
+    materialToken: "roof.flat-mineral",
+    vertices,
+    triangleIndices: triangulateMassingPolygon(roof.footprint.points),
+  });
+}
+
 function buildCurrentMassingModel(building: CurrentBuilding, options: MassingOptions = {}): MassingModel {
   const visible = new Set(options.visibleFloorIds ?? building.floors.map((floor) => floor.id));
   const explodeM = Math.max(0, options.explodeM ?? 0);
@@ -605,6 +625,11 @@ function buildCurrentMassingModel(building: CurrentBuilding, options: MassingOpt
         id: member.id, kind: "pergola", semanticKind: "pergola", floorId: floor.id, sourceId: roof.id,
         materialToken: "pergola.warm-timber", start: scenePoint(building, member.start, explodeYM), end: scenePoint(building, member.end, explodeYM), sectionMm: member.sectionMm,
       }));
+    } else if (roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed") {
+      // Saved v3 studies may contain the retired pitched-roof geometry. Keep the
+      // canonical record readable, but never expose those slopes in massing or
+      // captured render references.
+      primitives.push(flatCompatibilityRoofPrimitive(building, roof, floor.id, explodeYM));
     } else for (const plane of roof.planes) {
       const vertices = plane.vertices.map((point) => scenePoint(building, point, explodeYM));
       primitives.push(meshPrimitive({
@@ -682,7 +707,7 @@ export function massingMetrics(building: ReadableBuilding) {
     const floors = [...building.floors].sort((left, right) => left.level - right.level);
     const physicalTopMm = Math.max(
       floors.length ? floors.at(-1)!.elevationMm + floors.at(-1)!.floorHeightMm : 0,
-      ...building.roofSystems.flatMap((roof) => roof.kind === "open_pergola" ? [roof.topElevationMm] : roof.planes.flatMap((plane) => plane.vertices.map((point) => point.z))),
+      ...building.roofSystems.map((roof) => roof.kind === "open_pergola" ? roof.topElevationMm : roof.eaveHeightMm),
     );
     return {
       storeys: floors.length,

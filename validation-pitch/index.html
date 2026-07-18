@@ -61,6 +61,32 @@
         background: #090908;
       }
 
+      /* The editable pitch also prints as one landscape PDF page per scene. */
+      @media print {
+        /* 1920×1080 CSS pixels become 1440×810 PDF points at Chrome's 96dpi. */
+        @page { size: 1440pt 810pt; margin: 0; }
+        html, body, #root {
+          width: 1920px !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        .scene {
+          position: relative !important;
+          display: block !important;
+          width: 1920px !important;
+          height: 1080px !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          page-break-after: always;
+          break-after: page;
+        }
+        .scene, .scene * {
+          opacity: 1 !important;
+          visibility: visible !important;
+        }
+        .scene:last-child { page-break-after: auto; break-after: auto; }
+      }
+
       #scene1 { z-index: 10; }
       #scene2 { z-index: 20; opacity: 0; visibility: hidden; }
       #scene3 { z-index: 30; opacity: 0; visibility: hidden; }
@@ -73,6 +99,8 @@
       #scene10 { z-index: 100; opacity: 0; visibility: hidden; }
       #scene11 { z-index: 110; opacity: 0; visibility: hidden; }
       #scene12 { z-index: 120; opacity: 0; visibility: hidden; }
+      #scene13 { z-index: 130; opacity: 0; visibility: hidden; }
+      #scene14 { z-index: 140; opacity: 0; visibility: hidden; }
 
       .scene-bg {
         position: absolute;
@@ -449,7 +477,7 @@
     </style>
   </head>
   <body>
-    <div data-hf-id="hf-ne8k" id="root" data-composition-id="main" data-start="0" data-duration="108" data-width="1920" data-height="1080" style="position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #090908;">
+    <div data-hf-id="hf-ne8k" id="root" data-composition-id="main" data-start="0" data-duration="126" data-width="1920" data-height="1080" style="position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #090908;">
       
       <!-- Slide 1: Title & Hook (0s - 9s) -->
       <div data-hf-id="hf-zet7" id="scene1" class="scene">
@@ -465,8 +493,8 @@
             <div data-hf-id="hf-lzlx" class="phase">STAGE 01 // OVERVIEW</div>
           </div>
           <div data-hf-id="hf-ibv8" class="scene-footer">
-            <div data-hf-id="hf-a15m" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-a2dh" class="page-num">01 / 12</div>
+            <div data-hf-id="hf-a15m" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-a2dh" class="page-num">01 / 14</div>
           </div>
         </div>
 
@@ -494,12 +522,12 @@
 
         <div data-hf-id="hf-2yi0" style="position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;">
           <div data-hf-id="hf-xjgl" style="width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
-            <div data-hf-id="hf-692h" class="slide-label" id="scene1-label">PRE-DEVELOPMENT AI STUDIO</div>
+            <div data-hf-id="hf-692h" class="slide-label" id="scene1-label">AI RESIDENTIAL FEASIBILITY STUDIO</div>
             <h1 data-hf-id="hf-gfyv" class="slide-title" id="scene1-title" style="font-size: 110px; line-height: 0.95; margin-bottom: 32px; max-width: 1200px;">
               BrickPilot<span data-hf-id="hf-iynl" class="accent-dot">.</span>
             </h1>
             <p data-hf-id="hf-4vzt" class="slide-body" id="scene1-subtitle" style="font-size: 30px; line-height: 1.5; color: #b5a697; max-width: 900px;">
-              Compliance-verified, deterministic early-stage conceptual layouts for low-rise residential developments.
+              From a homeowner brief to distinct, validated residential schemes - with plans, massing, renders, cost range and a shareable feasibility deck.
             </p>
           </div>
         </div>
@@ -519,8 +547,8 @@
             <div data-hf-id="hf-4qvq" class="phase">STAGE 02 // PROBLEM</div>
           </div>
           <div data-hf-id="hf-ig8c" class="scene-footer">
-            <div data-hf-id="hf-6wla" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-79j2" class="page-num">02 / 12</div>
+            <div data-hf-id="hf-6wla" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-79j2" class="page-num">02 / 14</div>
           </div>
         </div>
 
@@ -529,8 +557,8 @@
             <div data-hf-id="hf-affj" class="slide-label">01 // THE FEASIBILITY GAP</div>
             <h2 data-hf-id="hf-thk1" class="slide-title" id="scene2-title">The Pre-Dev Trap</h2>
             <div data-hf-id="hf-rn2p" class="slide-body" id="scene2-body">
-              <p data-hf-id="hf-ulei" style="margin-bottom: 20px;">Residential design workflows jump between sketches, spreadsheets, online cost calculators, and manual feasibility checks.</p>
-              <p data-hf-id="hf-1if9">This disconnected cycle creates false confidence, leading to late redesigns, regulatory violations, and costly budget revisions.</p>
+              <p data-hf-id="hf-ulei" style="margin-bottom: 20px;">Early residential decisions are often made from disconnected sketches, inspiration images and rough cost guesses.</p>
+              <p data-hf-id="hf-1if9">The hard question arrives later: can the chosen idea actually fit the site, program, circulation and vertical constraints together?</p>
             </div>
           </div>
           <div data-hf-id="hf-mahz" class="col-right">
@@ -539,19 +567,19 @@
               <div data-hf-id="hf-hqwk" class="comp-card">
                 <div data-hf-id="hf-e8mr" class="comp-header red-title">Traditional Workflow</div>
                 <ul data-hf-id="hf-i1uf" class="comp-list bad">
-                  <li data-hf-id="hf-diyr">Loose conceptual freehand sketches</li>
-                  <li data-hf-id="hf-p42b">Manual zoning verification loops</li>
-                  <li data-hf-id="hf-alq9">Disconnected budgeting spreadsheets</li>
-                  <li data-hf-id="hf-2z8c">Late redesigns and cost surprises</li>
+                  <li data-hf-id="hf-diyr">One-off sketches with no canonical geometry</li>
+                  <li data-hf-id="hf-p42b">Inspiration images detached from the plan</li>
+                  <li data-hf-id="hf-alq9">Feasibility checked after a direction is chosen</li>
+                  <li data-hf-id="hf-2z8c">Hard constraints discovered late</li>
                 </ul>
               </div>
               <div data-hf-id="hf-okuc" class="comp-card highlight">
                 <div data-hf-id="hf-1jlt" class="comp-header green-title">BrickPilot Workflow</div>
                 <ul data-hf-id="hf-fb3l" class="comp-list good">
-                  <li data-hf-id="hf-qvmr">Topology-valid, sized layout models</li>
-                  <li data-hf-id="hf-y08e">Automated zoning setback constraints</li>
-                  <li data-hf-id="hf-j5bl">CPWD-derived native cost estimates</li>
-                  <li data-hf-id="hf-4l6x">Code-validated feasibility package</li>
+                  <li data-hf-id="hf-qvmr">Versioned brief and canonical geometry</li>
+                  <li data-hf-id="hf-y08e">Distinct, constraint-aware scheme directions</li>
+                  <li data-hf-id="hf-j5bl">Plan, massing and render evidence stay linked</li>
+                  <li data-hf-id="hf-4l6x">Decision-ready feasibility package</li>
                 </ul>
               </div>
             </div>
@@ -573,8 +601,8 @@
             <div data-hf-id="hf-s52z" class="phase">STAGE 03 // SOLUTION</div>
           </div>
           <div data-hf-id="hf-h9b9" class="scene-footer">
-            <div data-hf-id="hf-7awb" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-ufmf" class="page-num">03 / 12</div>
+            <div data-hf-id="hf-7awb" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-ufmf" class="page-num">03 / 14</div>
           </div>
         </div>
 
@@ -583,28 +611,28 @@
             <div data-hf-id="hf-pdyo" class="slide-label">02 // THE SOLUTION</div>
             <h2 data-hf-id="hf-h5l7" class="slide-title" id="scene3-title">The Feasibility Package</h2>
             <div data-hf-id="hf-xlke" class="slide-body" id="scene3-body">
-              <p data-hf-id="hf-pe5x" style="margin-bottom: 20px;">BrickPilot merges requirements, spatial configuration, zoning guidelines, and budget checks onto a single canvas.</p>
-              <p data-hf-id="hf-lwz3">It translates building constraints into verified architectural conceptual designs, protecting developers and homeowners from costly surprises.</p>
+              <p data-hf-id="hf-pe5x" style="margin-bottom: 20px;">BrickPilot turns a residential brief into schemes that share one source of truth: requirements, room regions, openings, roofs and evidence.</p>
+              <p data-hf-id="hf-lwz3">The result is a faster concept-stage decision, with every visible output traced back to the same selected scheme.</p>
             </div>
           </div>
           <div data-hf-id="hf-st3b" class="col-right">
             <!-- Infographic: Feasibility Package Elements -->
             <div data-hf-id="hf-7dnn" id="scene3-metrics" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
               <div data-hf-id="hf-syol" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-twpk" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Topology Layout</h4>
-                <p data-hf-id="hf-ofis" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Valid connection and room placement connections across single or multi-storey structures.</p>
+                <h4 data-hf-id="hf-twpk" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Scheme Directions</h4>
+                <p data-hf-id="hf-ofis" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Multiple materially distinct planning directions, not superficial variations of one plan.</p>
               </div>
               <div data-hf-id="hf-5e4p" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-np2w" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">CAD Drawings</h4>
-                <p data-hf-id="hf-07su" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Professional architectural graphics featuring customizable layout display layers.</p>
+                <h4 data-hf-id="hf-np2w" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Canonical Plan</h4>
+                <p data-hf-id="hf-07su" style="color: #b5a697; font-size: 14px; line-height: 1.4;">One model drives the floor plan, 3D massing, quantities, validation and PDF sheets.</p>
               </div>
               <div data-hf-id="hf-6l1s" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-y0s0" style="color: #ff4e00; font-size: 18px; margin-bottom: 8px;">Compliance Rules</h4>
-                <p data-hf-id="hf-nn7n" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Validation checks for geometry, room reachability, natural light, and stair code constraints.</p>
+                <h4 data-hf-id="hf-y0s0" style="color: #ff4e00; font-size: 18px; margin-bottom: 8px;">Hard Validation</h4>
+                <p data-hf-id="hf-nn7n" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Geometry, circulation, intent realization and physical evidence must pass before downstream outputs.</p>
               </div>
               <div data-hf-id="hf-66qr" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-2d9h" style="color: #ff4e00; font-size: 18px; margin-bottom: 8px;">Cost Bands</h4>
-                <p data-hf-id="hf-1ku8" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Native economic cost rate estimates derived from actual CPWD reference indexes.</p>
+                <h4 data-hf-id="hf-2d9h" style="color: #ff4e00; font-size: 18px; margin-bottom: 8px;">Evidence Package</h4>
+                <p data-hf-id="hf-1ku8" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Massing, grounded render review, a disclosed cost range and an exportable feasibility deck.</p>
               </div>
             </div>
           </div>
@@ -625,8 +653,8 @@
             <div data-hf-id="hf-a7rv" class="phase">STAGE 04 // AUDIENCE</div>
           </div>
           <div data-hf-id="hf-hnma" class="scene-footer">
-            <div data-hf-id="hf-7p7c" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-q8fc" class="page-num">04 / 12</div>
+            <div data-hf-id="hf-7p7c" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-q8fc" class="page-num">04 / 14</div>
           </div>
         </div>
 
@@ -635,8 +663,8 @@
             <div data-hf-id="hf-rqyl" class="slide-label">03 // MARKET AUDIENCE</div>
             <h2 data-hf-id="hf-a542" class="slide-title" id="scene4-title">Who Uses BrickPilot?</h2>
             <div data-hf-id="hf-8hvf" class="slide-body" id="scene4-body">
-              <p data-hf-id="hf-74b9" style="margin-bottom: 20px;">Our platform targets professionals and planning households who require rapid, reliable pre-development configurations.</p>
-              <p data-hf-id="hf-t3r3">Whether checking a building footprint envelope or planning a multi-storey partition, BrickPilot ensures design inputs yield viable architectural outputs.</p>
+              <p data-hf-id="hf-74b9" style="margin-bottom: 20px;">BrickPilot is for the moment when a residential idea has to become a credible direction.</p>
+              <p data-hf-id="hf-t3r3">It gives both a homeowner and a residential designer the same artifact: a chosen scheme with visible assumptions, validation evidence and next-step boundaries.</p>
             </div>
           </div>
           <div data-hf-id="hf-sesa" class="col-right">
@@ -645,15 +673,15 @@
               <div data-hf-id="hf-exew" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 24px; display: flex; align-items: center; gap: 20px;">
                 <div data-hf-id="hf-7szv" style="font-size: 36px; color: #ff4e00; font-family: monospace;">A</div>
                 <div data-hf-id="hf-yeow">
-                  <h4 data-hf-id="hf-hg2k" style="color: #fff6ea; font-size: 20px; font-weight: 700; margin-bottom: 4px;">Residential Designers</h4>
-                  <p data-hf-id="hf-35ld" style="color: #b5a697; font-size: 15px;">Exploring spatial parameters, zoning restrictions, and exportable vector layers for custom home concepts.</p>
+                  <h4 data-hf-id="hf-hg2k" style="color: #fff6ea; font-size: 20px; font-weight: 700; margin-bottom: 4px;">Homeowners</h4>
+                  <p data-hf-id="hf-35ld" style="color: #b5a697; font-size: 15px;">Translate plot, family and style preferences into alternatives they can compare before commissioning detailed design.</p>
                 </div>
               </div>
               <div data-hf-id="hf-4kgw" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 24px; display: flex; align-items: center; gap: 20px;">
                 <div data-hf-id="hf-7eou" style="font-size: 36px; color: #ff4e00; font-family: monospace;">B</div>
                 <div data-hf-id="hf-y7yw">
-                  <h4 data-hf-id="hf-s0ln" style="color: #fff6ea; font-size: 20px; font-weight: 700; margin-bottom: 4px;">Homeowners &amp; Builders</h4>
-                  <p data-hf-id="hf-sqmu" style="color: #b5a697; font-size: 15px;">Capturing lot properties, room programs, and estimating CPWD-based costs before starting detailed design sets.</p>
+                  <h4 data-hf-id="hf-s0ln" style="color: #fff6ea; font-size: 20px; font-weight: 700; margin-bottom: 4px;">Residential Designers</h4>
+                  <p data-hf-id="hf-sqmu" style="color: #b5a697; font-size: 15px;">Explore viable options, inspect the plan and massing, then hand a transparent concept package into professional design.</p>
                 </div>
               </div>
             </div>
@@ -675,8 +703,8 @@
             <div data-hf-id="hf-efaz" class="phase">STAGE 05 // WORKFLOW</div>
           </div>
           <div data-hf-id="hf-jn5f" class="scene-footer">
-            <div data-hf-id="hf-4x25" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-7jk1" class="page-num">05 / 12</div>
+            <div data-hf-id="hf-4x25" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-7jk1" class="page-num">05 / 14</div>
           </div>
         </div>
 
@@ -685,8 +713,8 @@
             <div data-hf-id="hf-4pkx" class="slide-label">04 // PROCESS PIPELINE</div>
             <h2 data-hf-id="hf-sokx" class="slide-title" id="scene5-title">The Primary User Journey</h2>
             <div data-hf-id="hf-7ar4" class="slide-body" id="scene5-body">
-              <p data-hf-id="hf-6wqj" style="margin-bottom: 20px;">From intake parameters to a code-compliant drafting canvas, the feasibility journey is structured and verified in real time.</p>
-              <p data-hf-id="hf-hxk0">We eliminate disjointed sketching loops by funneling your requirements directly into our layout generation solver.</p>
+              <p data-hf-id="hf-6wqj" style="margin-bottom: 20px;">The workflow keeps design intent, geometry and presentation outputs connected from first brief to final conversation.</p>
+              <p data-hf-id="hf-hxk0">Hard constraints are preserved; when a preference must relax, BrickPilot makes that trade-off explicit instead of silently changing the design.</p>
             </div>
           </div>
           <div data-hf-id="hf-s0h9" class="col-right">
@@ -695,22 +723,22 @@
               <div data-hf-id="hf-a43z" class="flow-step">
                 <span data-hf-id="hf-hqo3" class="step-num">01</span>
                 <div data-hf-id="hf-lrik" class="step-detail">
-                  <h4 data-hf-id="hf-lhu0">Guided Intake Interview</h4>
-                  <p data-hf-id="hf-cg3b">Input plot details, zoning preferences, floor requirements, and budget targets.</p>
+                  <h4 data-hf-id="hf-lhu0">Capture the Brief</h4>
+                  <p data-hf-id="hf-cg3b">Use natural language or a guided intake for the site, household, floors, rooms, preferences and budget basis.</p>
                 </div>
               </div>
               <div data-hf-id="hf-rwnv" class="flow-step active">
                 <span data-hf-id="hf-hcd2" class="step-num">02</span>
                 <div data-hf-id="hf-br8k" class="step-detail">
-                  <h4 data-hf-id="hf-9xyi">Deterministic Generation &amp; Gate</h4>
-                  <p data-hf-id="hf-uati">Our spatial algorithms compute topology, staircase reachability, and code validation.</p>
+                  <h4 data-hf-id="hf-9xyi">Generate, Compare, Validate</h4>
+                  <p data-hf-id="hf-uati">Create distinct schemes, build their physical evidence and reject options that fail hard rules.</p>
                 </div>
               </div>
               <div data-hf-id="hf-llyn" class="flow-step">
                 <span data-hf-id="hf-gy21" class="step-num">03</span>
                 <div data-hf-id="hf-akbh" class="step-detail">
-                  <h4 data-hf-id="hf-i4ej">Professional Workspace &amp; PDF Export</h4>
-                  <p data-hf-id="hf-ho2z">Review layouts on a CAD/Paper canvas, inspect layers, and download vector SVG / PDF packages.</p>
+                  <h4 data-hf-id="hf-i4ej">Inspect &amp; Share</h4>
+                  <p data-hf-id="hf-ho2z">Select a direction, inspect CAD and 3D views, review renders, then export a feasibility deck with the assumptions intact.</p>
                 </div>
               </div>
             </div>
@@ -732,48 +760,48 @@
             <div data-hf-id="hf-ud4x" class="phase">STAGE 06 // CAPABILITIES</div>
           </div>
           <div data-hf-id="hf-k1gg" class="scene-footer">
-            <div data-hf-id="hf-5bd6" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-5mey" class="page-num">06 / 12</div>
+            <div data-hf-id="hf-5bd6" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-5mey" class="page-num">06 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-m0vb" class="scene-content">
           <div data-hf-id="hf-5r7z" class="col-left">
             <div data-hf-id="hf-dcld" class="slide-label">05 // CAPABILITIES</div>
-            <h2 data-hf-id="hf-ytxo" class="slide-title" id="scene6-title">Professional Workspace</h2>
+            <h2 data-hf-id="hf-ytxo" class="slide-title" id="scene6-title">A Reviewable Workspace</h2>
             <div data-hf-id="hf-eynh" class="slide-body" id="scene6-body">
-              <p data-hf-id="hf-g98e" style="margin-bottom: 20px;">The BrickPilot interface features tools tailored to structural inspection and client review.</p>
+              <p data-hf-id="hf-g98e" style="margin-bottom: 20px;">The interface is built for a confident concept review, not a black-box generation moment.</p>
               <ul data-hf-id="hf-4cop" class="bullet-list">
-                <li data-hf-id="hf-a58z"><strong data-hf-id="hf-b48w">CAD/Paper Mode:</strong> Toggle high-contrast dark graphite canvas or printable light paper sheet layouts.</li>
-                <li data-hf-id="hf-pkmg"><strong data-hf-id="hf-2bph">Multi-Layer Panel:</strong> Inspect walls, coordinate dimensions, structural grids, and zoning overlays independently.</li>
-                <li data-hf-id="hf-xpvk"><strong data-hf-id="hf-rbtl">PDF Feasibility Package:</strong> Generate professional booklets compiling SVG drawings, CPWD budgets, and validation logs using React PDF.</li>
+                <li data-hf-id="hf-a58z"><strong data-hf-id="hf-b48w">Scheme comparison:</strong> Select among distinct directions with the evidence for each decision.</li>
+                <li data-hf-id="hf-pkmg"><strong data-hf-id="hf-2bph">Plan and massing inspection:</strong> Move from a detailed drawing to an explorable 3D form without changing the geometry.</li>
+                <li data-hf-id="hf-xpvk"><strong data-hf-id="hf-rbtl">Feasibility PDF:</strong> Download the plan, validation, cost, render and rationale sheets as a single shareable artifact.</li>
               </ul>
             </div>
           </div>
           <div data-hf-id="hf-usmg" class="col-right">
             <!-- Infographic: Validation Gate Checklist Mockup -->
             <div data-hf-id="hf-hinr" id="scene6-tech1" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.3); padding: 30px; width: 100%; box-shadow: 8px 8px 0 rgba(0,0,0,0.5);">
-              <h3 data-hf-id="hf-hxbr" style="font-family: monospace; font-size: 14px; color: #ff4e00; margin-bottom: 20px; border-bottom: 1px solid rgba(201, 121, 64, 0.2); padding-bottom: 8px;">// PLATFORM VALIDATION GATE</h3>
+              <h3 data-hf-id="hf-hxbr" style="font-family: monospace; font-size: 14px; color: #ff4e00; margin-bottom: 20px; border-bottom: 1px solid rgba(201, 121, 64, 0.2); padding-bottom: 8px;">// SELECTED SCHEME EVIDENCE</h3>
               <div data-hf-id="hf-32bw" style="display: flex; flex-direction: column; gap: 16px; font-family: monospace; font-size: 14px;">
                 <div data-hf-id="hf-1xnj" style="display: flex; justify-content: space-between;">
-                  <span data-hf-id="hf-ylyr">GEOMETRY ENVELOPE:</span>
-                  <span data-hf-id="hf-6lwk" style="color: #ff4e00;">✓ SECURED</span>
+                  <span data-hf-id="hf-ylyr">CANONICAL PLAN:</span>
+                  <span data-hf-id="hf-6lwk" style="color: #ff4e00;">✓ TRACEABLE</span>
                 </div>
                 <div data-hf-id="hf-xrtr" style="display: flex; justify-content: space-between;">
-                  <span data-hf-id="hf-37dp">ROOM REACHABILITY:</span>
-                  <span data-hf-id="hf-msw5" style="color: #ff4e00;">✓ VALIDATED</span>
+                  <span data-hf-id="hf-37dp">HARD RULE PACK:</span>
+                  <span data-hf-id="hf-msw5" style="color: #ff4e00;">✓ PASSED</span>
                 </div>
                 <div data-hf-id="hf-xdiq" style="display: flex; justify-content: space-between;">
-                  <span data-hf-id="hf-btbm">STAIRWELL CLEARANCE:</span>
-                  <span data-hf-id="hf-su8p" style="color: #ff4e00;">✓ VALIDATED</span>
+                  <span data-hf-id="hf-btbm">3D MASSING:</span>
+                  <span data-hf-id="hf-su8p" style="color: #ff4e00;">✓ LINKED</span>
                 </div>
                 <div data-hf-id="hf-wz7p" style="display: flex; justify-content: space-between;">
-                  <span data-hf-id="hf-beb6">DAYLIGHT VENTILATION:</span>
-                  <span data-hf-id="hf-2knw" style="color: #ff4e00;">✓ SECURED</span>
+                  <span data-hf-id="hf-beb6">RENDER CHECK:</span>
+                  <span data-hf-id="hf-2knw" style="color: #ff4e00;">✓ REVIEWABLE</span>
                 </div>
                 <div data-hf-id="hf-zrcw" style="display: flex; justify-content: space-between;">
-                  <span data-hf-id="hf-wwng">CPWD COST CHECK:</span>
-                  <span data-hf-id="hf-d9wd" style="color: #ff4e00;">✓ COMPUTE COMPLETE</span>
+                  <span data-hf-id="hf-wwng">COST RANGE:</span>
+                  <span data-hf-id="hf-d9wd" style="color: #ff4e00;">✓ DISCLOSED</span>
                 </div>
               </div>
             </div>
@@ -792,21 +820,21 @@
           <div data-hf-id="hf-kisc" class="corner-mark bottom-right"></div>
           <div data-hf-id="hf-no3j" class="scene-header">
             <div data-hf-id="hf-j1sz" class="brand">BRICKPILOT <span data-hf-id="hf-qk20" style="color:#ff4e00">.</span></div>
-            <div data-hf-id="hf-v9n3" class="phase">STAGE 07 // DETAILED_DESIGN</div>
+            <div data-hf-id="hf-v9n3" class="phase">STAGE 07 // CANONICAL_MODEL</div>
           </div>
           <div data-hf-id="hf-iujd" class="scene-footer">
-            <div data-hf-id="hf-5po7" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-vbeb" class="page-num">07 / 12</div>
+            <div data-hf-id="hf-5po7" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-vbeb" class="page-num">07 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-mf6c" class="scene-content">
           <div data-hf-id="hf-65j0" class="col-left">
-            <div data-hf-id="hf-vvv6" class="slide-label">06 // INDEPENDENT LAYERS</div>
-            <h2 data-hf-id="hf-ckav" class="slide-title" id="scene7-title">Controlled Drawing Layers</h2>
+            <div data-hf-id="hf-vvv6" class="slide-label">06 // SHARED SOURCE OF TRUTH</div>
+            <h2 data-hf-id="hf-ckav" class="slide-title" id="scene7-title">One Model, Many Views</h2>
             <div data-hf-id="hf-fmei" class="slide-body" id="scene7-body">
-              <p data-hf-id="hf-f6hd" style="margin-bottom: 20px;">BrickPilot builds drawings as a stacked geometry model, rather than single flat vectors.</p>
-              <p data-hf-id="hf-r7k3">Designers inspect individual layout features: structural grids, walls, zoning overlays, furniture, and dimensions. Export SVG files matching this structure.</p>
+              <p data-hf-id="hf-f6hd" style="margin-bottom: 20px;">BrickPilot does not decorate an image around a plan. It first creates authoritative design data, then derives the views from it.</p>
+              <p data-hf-id="hf-r7k3">That shared model lets the floor plan, physical massing, render prompt, validation report and PDF agree on the same selected scheme.</p>
             </div>
           </div>
           <div data-hf-id="hf-uebf" class="col-right">
@@ -814,12 +842,12 @@
             <div data-hf-id="hf-cjqp" id="scene7-market" class="isometric-container">
               <!-- Grid layer (Bottom) -->
               <div data-hf-id="hf-3bei" class="isometric-layer" style="top: 140px; left: 40px; z-index: 1; border-color: rgba(201, 121, 64, 0.2);">
-                <div data-hf-id="hf-9ozx" class="layer-title">LAYER 01 // STRUCTURAL GRID</div>
+                <div data-hf-id="hf-9ozx" class="layer-title">LAYER 01 // BRIEF &amp; SITE</div>
                 <div data-hf-id="hf-aotj" class="layer-grid" style="background-image: radial-gradient(rgba(201, 121, 64, 0.4) 1px, transparent 1px); background-size: 20px 20px;"></div>
               </div>
               <!-- Wall layer (Middle) -->
               <div data-hf-id="hf-shj3" class="isometric-layer" style="top: 80px; left: 80px; z-index: 2; border-color: rgba(201, 121, 64, 0.5);">
-                <div data-hf-id="hf-tkwa" class="layer-title">LAYER 02 // WALL TOPOLOGY</div>
+                <div data-hf-id="hf-tkwa" class="layer-title">LAYER 02 // CANONICAL GEOMETRY</div>
                 <div data-hf-id="hf-2zmc" class="layer-grid" style="border: 2px solid #fff6ea; background: rgba(255,246,234,0.02);">
                   <div data-hf-id="hf-ehux" style="position: absolute; left: 40%; top: 0; bottom: 0; width: 2px; background: rgba(255,246,234,0.4);"></div>
                   <div data-hf-id="hf-zu0p" style="position: absolute; left: 40%; top: 50%; right: 0; height: 2px; background: rgba(255,246,234,0.4);"></div>
@@ -827,9 +855,9 @@
               </div>
               <!-- Annotation layer (Top) -->
               <div data-hf-id="hf-73d4" class="isometric-layer" style="top: 20px; left: 120px; z-index: 3; border-color: #ff4e00;">
-                <div data-hf-id="hf-djat" class="layer-title" style="color: #ff4e00;">LAYER 03 // ANNOTATION &amp; SETBACKS</div>
+                <div data-hf-id="hf-djat" class="layer-title" style="color: #ff4e00;">LAYER 03 // PHYSICAL EVIDENCE</div>
                 <div data-hf-id="hf-kqr1" class="layer-grid" style="border: 1px dashed #ff4e00;">
-                  <div data-hf-id="hf-bajh" style="position: absolute; top: 10px; left: 10px; font-family: monospace; font-size: 9px; color: #ff4e00;">SETBACK LINE: 6.0m</div>
+                  <div data-hf-id="hf-bajh" style="position: absolute; top: 10px; left: 10px; font-family: monospace; font-size: 9px; color: #ff4e00;">MASSING + RENDER + PDF</div>
                 </div>
               </div>
             </div>
@@ -851,8 +879,8 @@
             <div data-hf-id="hf-val12" class="phase">STAGE 08 // VALIDATION</div>
           </div>
           <div data-hf-id="hf-val13" class="scene-footer">
-            <div data-hf-id="hf-val14" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-val15" class="page-num">08 / 12</div>
+            <div data-hf-id="hf-val14" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-val15" class="page-num">08 / 14</div>
           </div>
         </div>
 
@@ -861,27 +889,27 @@
             <div data-hf-id="hf-val18" class="slide-label">07 // VALIDATION ENGINE</div>
             <h2 data-hf-id="hf-val19" class="slide-title" id="scene8-title">Automated Verification</h2>
             <div data-hf-id="hf-val20" class="slide-body" id="scene8-body">
-              <p data-hf-id="hf-val21" style="margin-bottom: 20px;">BrickPilot executes 33 strict deterministic validation rules across 2D/3D dimensions before compiling layouts.</p>
-              <p data-hf-id="hf-val22">Any code-blocking error invalidates the plan (reducing the score by 25 points). Warnings flag spans or layouts that need professional review.</p>
+              <p data-hf-id="hf-val21" style="margin-bottom: 20px;">BrickPilot promotes only a scheme that passes its deterministic geometry, circulation, architectural-intent and physical-evidence checks.</p>
+              <p data-hf-id="hf-val22">The gate is versioned and explainable: findings name the failed rule, the objects involved and the next useful action. It is feasibility evidence, not permit or structural approval.</p>
             </div>
           </div>
           <div data-hf-id="hf-val23" class="col-right">
             <div data-hf-id="hf-val24" id="scene8-cards" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
               <div data-hf-id="hf-val25" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-val26" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Geometry &amp; Topology</h4>
-                <p data-hf-id="hf-val27" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Zero overlaps, gaps, or envelope leaks. Canonical wall adjacencies.</p>
+                <h4 data-hf-id="hf-val26" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Geometry &amp; Access</h4>
+                <p data-hf-id="hf-val27" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Canonical regions, openings, envelope containment, reachability and protected circulation.</p>
               </div>
               <div data-hf-id="hf-val28" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-val29" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Stair &amp; Structural Grid</h4>
-                <p data-hf-id="hf-val30" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Stair riser/run limits and vertical alignment. Column path continuity.</p>
+                <h4 data-hf-id="hf-val29" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Intent &amp; Physical Form</h4>
+                <p data-hf-id="hf-val30" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Main entry, roof geometry, supports, guards and facade intent are checked against the built form.</p>
               </div>
               <div data-hf-id="hf-val31" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 20px;">
-                <h4 data-hf-id="hf-val32" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Usability &amp; Shape Rules</h4>
-                <p data-hf-id="hf-val33" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Circulation ratios under 15–22%. Habitable room proportions and daylight checks.</p>
+                <h4 data-hf-id="hf-val32" style="color: #fff6ea; font-size: 18px; margin-bottom: 8px;">Scheme Set &amp; Trade-offs</h4>
+                <p data-hf-id="hf-val33" style="color: #b5a697; font-size: 14px; line-height: 1.4;">Near-duplicate schemes are rejected; bounded preference relaxations are surfaced instead of hidden.</p>
               </div>
               <div data-hf-id="hf-val34" style="background: #171512; border: 1px solid #ff4e00; padding: 20px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
-                <h3 data-hf-id="hf-val35" style="color: #fff6ea; font-size: 32px; font-family: 'Iowan Old Style', serif; font-weight: normal; line-height: 1;">33 <span style="color: #ff4e00;">Rules</span></h3>
-                <p data-hf-id="hf-val36" style="color: #b5a697; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 5px;">Deterministic Checks</p>
+                <h3 data-hf-id="hf-val35" style="color: #fff6ea; font-size: 32px; font-family: 'Iowan Old Style', serif; font-weight: normal; line-height: 1;">Hard <span style="color: #ff4e00;">Gates</span></h3>
+                <p data-hf-id="hf-val36" style="color: #b5a697; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 5px;">Versioned &amp; explainable</p>
               </div>
             </div>
           </div>
@@ -899,21 +927,21 @@
           <div data-hf-id="hf-roi8" class="corner-mark bottom-right"></div>
           <div data-hf-id="hf-roi9" class="scene-header">
             <div data-hf-id="hf-roi10" class="brand">BRICKPILOT <span data-hf-id="hf-roi11" style="color:#ff4e00">.</span></div>
-            <div data-hf-id="hf-roi12" class="phase">STAGE 09 // ROI_ANALYSIS</div>
+            <div data-hf-id="hf-roi12" class="phase">STAGE 09 // COST_EVIDENCE</div>
           </div>
           <div data-hf-id="hf-roi13" class="scene-footer">
-            <div data-hf-id="hf-roi14" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-roi15" class="page-num">09 / 12</div>
+            <div data-hf-id="hf-roi14" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-roi15" class="page-num">09 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-roi16" class="scene-content">
           <div data-hf-id="hf-roi17" class="col-left">
-            <div data-hf-id="hf-roi18" class="slide-label">08 // FINANCIAL DIRECTIVE</div>
-            <h2 data-hf-id="hf-roi19" class="slide-title" id="scene9-title">The Cost of Design Failure</h2>
+            <div data-hf-id="hf-roi18" class="slide-label">08 // FEASIBILITY COSTING</div>
+            <h2 data-hf-id="hf-roi19" class="slide-title" id="scene9-title">A Cost Range With Its Assumptions</h2>
             <div data-hf-id="hf-roi20" class="slide-body" id="scene9-body">
-              <p data-hf-id="hf-roi21" style="margin-bottom: 20px;">Remediating layout, structural, or code compliance errors on an active construction site is up to 50x more expensive than catching them during initial design.</p>
-              <p data-hf-id="hf-roi22">BrickPilot automated validation checks save typical residential projects <strong>$40,000 to $120,000</strong> in design re-engineering and demolition rework fees.</p>
+              <p data-hf-id="hf-roi21" style="margin-bottom: 20px;">Cost is shown as a concept-stage range tied to the selected scheme’s gross floor area, quality tier, storey count and disclosed regional rate pack.</p>
+              <p data-hf-id="hf-roi22">For the current Delhi reference pack, BrickPilot makes inclusions, exclusions and uncertainty explicit - then hands the next estimate to a quantity surveyor or contractor.</p>
             </div>
           </div>
           <div data-hf-id="hf-roi23" class="col-right">
@@ -921,22 +949,22 @@
               <div data-hf-id="hf-roi25" class="flow-step" style="padding: 16px; gap: 20px;">
                 <span data-hf-id="hf-roi26" class="step-num" style="font-size: 24px; width: auto; color: #ff4e00;">01</span>
                 <div data-hf-id="hf-roi27" class="step-detail">
-                  <h4 data-hf-id="hf-roi28" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">AI Concept Validation <span style="color: #ff4e00; font-family: monospace; font-size: 14px;">$0</span></h4>
-                  <p data-hf-id="hf-roi29" style="font-size: 13px;">Immediate spatial solver updates in the studio viewport.</p>
+                  <h4 data-hf-id="hf-roi28" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">Scheme Basis <span style="color: #ff4e00; font-family: monospace; font-size: 14px;">GFA</span></h4>
+                  <p data-hf-id="hf-roi29" style="font-size: 13px;">Uses the selected canonical floor regions as the declared gross-floor-area basis.</p>
                 </div>
               </div>
               <div data-hf-id="hf-roi30" class="flow-step" style="padding: 16px; gap: 20px;">
                 <span data-hf-id="hf-roi31" class="step-num" style="font-size: 24px; width: auto; color: #b5a697;">02</span>
                 <div data-hf-id="hf-roi32" class="step-detail">
-                  <h4 data-hf-id="hf-roi33" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">Engineering &amp; Permitting <span style="color: #fff6ea; font-family: monospace; font-size: 14px;">$1,500 - $5,000</span></h4>
-                  <p data-hf-id="hf-roi34" style="font-size: 13px;">Late CAD drafting fees, engineering changes, and permit delays.</p>
+                  <h4 data-hf-id="hf-roi33" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">Regional Rate Pack <span style="color: #fff6ea; font-family: monospace; font-size: 14px;">INR</span></h4>
+                  <p data-hf-id="hf-roi34" style="font-size: 13px;">Current product reference: Delhi residential feasibility, calibrated with disclosed CPWD source families.</p>
                 </div>
               </div>
               <div data-hf-id="hf-roi35" class="flow-step active" style="padding: 16px; gap: 20px;">
                 <span data-hf-id="hf-roi36" class="step-num" style="font-size: 24px; width: auto; color: #ff4e00;">03</span>
                 <div data-hf-id="hf-roi37" class="step-detail">
-                  <h4 data-hf-id="hf-roi38" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">Construction Rework <span style="color: #ff4e00; font-family: monospace; font-size: 14px;">$10,000 - $50,000+</span></h4>
-                  <p data-hf-id="hf-roi39" style="font-size: 13px;">On-site column repositioning, stair demolition, and structural transfer beams.</p>
+                  <h4 data-hf-id="hf-roi38" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center;">Professional Handoff <span style="color: #ff4e00; font-family: monospace; font-size: 14px;">NEXT</span></h4>
+                  <p data-hf-id="hf-roi39" style="font-size: 13px;">Not a BOQ, permit estimate or contractor quote - the deck is the transparent starting point for those services.</p>
                 </div>
               </div>
             </div>
@@ -958,15 +986,15 @@
             <div data-hf-id="hf-01b4" class="phase">STAGE 10 // TECHNICAL_MATRIX</div>
           </div>
           <div data-hf-id="hf-j8ue" class="scene-footer">
-            <div data-hf-id="hf-63z8" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-bzec" class="page-num">10 / 12</div>
+            <div data-hf-id="hf-63z8" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-bzec" class="page-num">10 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-rcv3" class="scene-content" style="flex-direction: column; gap: 15px; top: 140px; bottom: 140px;">
           <div data-hf-id="hf-x11t">
-            <div data-hf-id="hf-cf6l" class="slide-label">ENGINE // CAPABILITIES MATRIX</div>
-            <h2 data-hf-id="hf-rluy" class="slide-title" style="font-size: 38px; margin-bottom: 5px;">Platform Deliverables Matrix</h2>
+            <div data-hf-id="hf-cf6l" class="slide-label">PRODUCT // IMPLEMENTED CAPABILITIES</div>
+            <h2 data-hf-id="hf-rluy" class="slide-title" style="font-size: 38px; margin-bottom: 5px;">What the Current Build Delivers</h2>
           </div>
           
           <div data-hf-id="hf-h64t" style="display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 12px; width: 100%; height: 600px;">
@@ -979,8 +1007,8 @@
                 <path data-hf-id="hf-jduu" d="M28,30 l6,6 l10,-10" stroke="#ff4e00" stroke-width="2" />
               </svg>
               <div data-hf-id="hf-aymi" class="step-detail">
-                <h4 data-hf-id="hf-7m69" style="font-size: 17px; margin-bottom: 2px;">Custom Brief Builder</h4>
-                <p data-hf-id="hf-mymx" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Guides plot parameter capturing via a simple user interview.</p>
+                <h4 data-hf-id="hf-7m69" style="font-size: 17px; margin-bottom: 2px;">Guided Intake</h4>
+                <p data-hf-id="hf-mymx" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Capture site, household, rooms, floors, style and budget preferences.</p>
               </div>
             </div>
             <!-- Card 2 -->
@@ -991,8 +1019,8 @@
                 <line data-hf-id="hf-j4t0" x1="20" y1="24" x2="42" y2="24" stroke="#c97940" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-cy5n" class="step-detail">
-                <h4 data-hf-id="hf-gay9" style="font-size: 17px; margin-bottom: 2px;">Space-Slicing Engine</h4>
-                <p data-hf-id="hf-udl3" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Tiling boundaries recursively with zero design footprint dead space.</p>
+                <h4 data-hf-id="hf-gay9" style="font-size: 17px; margin-bottom: 2px;">Natural-Language Brief</h4>
+                <p data-hf-id="hf-udl3" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Parse a conversational home brief into structured requirements.</p>
               </div>
             </div>
             <!-- Card 3 -->
@@ -1001,8 +1029,8 @@
                 <path data-hf-id="hf-l7wa" d="M6,36 L14,36 L14,28 L22,28 L22,20 L30,20 L30,12 L38,12 L38,6" stroke="#ff4e00" stroke-width="2" />
               </svg>
               <div data-hf-id="hf-dcgo" class="step-detail">
-                <h4 data-hf-id="hf-vcvc" style="font-size: 17px; margin-bottom: 2px;">Multi-Storey Stair Cores</h4>
-                <p data-hf-id="hf-l1rf" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Maintains continuous aligned vertical staircase cores across G+3 floors.</p>
+                <h4 data-hf-id="hf-vcvc" style="font-size: 17px; margin-bottom: 2px;">Distinct Scheme Directions</h4>
+                <p data-hf-id="hf-l1rf" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Compare materially different planning directions before selecting one.</p>
               </div>
             </div>
             <!-- Card 4 -->
@@ -1012,8 +1040,8 @@
                 <line data-hf-id="hf-xs1u" x1="34" y1="6" x2="34" y2="42" stroke="#ff4e00" stroke-width="2" stroke-dasharray="3,3" />
               </svg>
               <div data-hf-id="hf-c5jl" class="step-detail">
-                <h4 data-hf-id="hf-8giy" style="font-size: 17px; margin-bottom: 2px;">Vertical Shaft Alignment</h4>
-                <p data-hf-id="hf-iher" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Stacks wall lines and wet utility lines perfectly to avoid core structural errors.</p>
+                <h4 data-hf-id="hf-8giy" style="font-size: 17px; margin-bottom: 2px;">Preference Relaxation</h4>
+                <p data-hf-id="hf-iher" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Show when a soft preference is relaxed to preserve hard feasibility rules.</p>
               </div>
             </div>
             <!-- Card 5 -->
@@ -1023,8 +1051,8 @@
                 <rect data-hf-id="hf-385o" x="12" y="12" width="24" height="24" stroke="#ff4e00" stroke-width="1.5" stroke-dasharray="3,3" />
               </svg>
               <div data-hf-id="hf-cjum" class="step-detail">
-                <h4 data-hf-id="hf-ki89" style="font-size: 17px; margin-bottom: 2px;">Setback Boundary Gate</h4>
-                <p data-hf-id="hf-7nii" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Calculates property setbacks automatically matching municipal bylaws.</p>
+                <h4 data-hf-id="hf-ki89" style="font-size: 17px; margin-bottom: 2px;">Canonical Geometry</h4>
+                <p data-hf-id="hf-7nii" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Authoritative regions, openings, roofs, supports and guard evidence.</p>
               </div>
             </div>
             <!-- Card 6 -->
@@ -1034,8 +1062,8 @@
                 <circle data-hf-id="hf-11ap" cx="34" cy="12" r="6" stroke="#ff4e00" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-ejdr" class="step-detail">
-                <h4 data-hf-id="hf-0vbq" style="font-size: 17px; margin-bottom: 2px;">Room Circulation Rules</h4>
-                <p data-hf-id="hf-qo67" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Guarantees privacy by rejecting corridor paths cutting through bedrooms.</p>
+                <h4 data-hf-id="hf-0vbq" style="font-size: 17px; margin-bottom: 2px;">Hard Validation</h4>
+                <p data-hf-id="hf-qo67" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Reject geometry, access, intent and physical-evidence failures.</p>
               </div>
             </div>
             <!-- Card 7 -->
@@ -1044,8 +1072,8 @@
                 <circle data-hf-id="hf-e4ii" cx="16" cy="16" r="6" fill="#ff4e00" /><line data-hf-id="hf-ykd1" x1="26" y1="16" x2="36" y2="16" stroke="#fff6ea" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-exos" class="step-detail">
-                <h4 data-hf-id="hf-pt6i" style="font-size: 17px; margin-bottom: 2px;">Daylight Ratio Monitor</h4>
-                <p data-hf-id="hf-xmrr" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Audits window sizes and positions against room areas for code limits.</p>
+                <h4 data-hf-id="hf-pt6i" style="font-size: 17px; margin-bottom: 2px;">Project Capability Gates</h4>
+                <p data-hf-id="hf-xmrr" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Keep actions available only when the study has supporting evidence.</p>
               </div>
             </div>
             <!-- Card 8 -->
@@ -1054,8 +1082,8 @@
                 <path data-hf-id="hf-tg47" d="M8,32 L24,32 A 16 16 0 0 0 8,16 Z" stroke="#c97940" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-5zwc" class="step-detail">
-                <h4 data-hf-id="hf-zr8g" style="font-size: 17px; margin-bottom: 2px;">En-Suite Bathrooms</h4>
-                <p data-hf-id="hf-q1dt" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Coordinates attached toilet layouts terminating through master bedroom doors.</p>
+                <h4 data-hf-id="hf-zr8g" style="font-size: 17px; margin-bottom: 2px;">CAD Plan Workspace</h4>
+                <p data-hf-id="hf-q1dt" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Inspect the selected plan, layers, rooms, dimensions and evidence.</p>
               </div>
             </div>
             <!-- Card 9 -->
@@ -1064,8 +1092,8 @@
                 <path data-hf-id="hf-azew" d="M24,8 C14,24 14,28 24,38 C34,28 34,24 24,8 Z" stroke="#ff4e00" stroke-width="1.5" fill="rgba(255,78,0,0.1)" />
               </svg>
               <div data-hf-id="hf-5llb" class="step-detail">
-                <h4 data-hf-id="hf-abvl" style="font-size: 17px; margin-bottom: 2px;">Wet Area Grouping</h4>
-                <p data-hf-id="hf-br4v" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Consolidates kitchen and toilet stacks to reduce local plumbing runs.</p>
+                <h4 data-hf-id="hf-abvl" style="font-size: 17px; margin-bottom: 2px;">3D Massing Viewer</h4>
+                <p data-hf-id="hf-br4v" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Rotate, inspect and explode the scheme’s actual physical massing.</p>
               </div>
             </div>
             <!-- Card 10 -->
@@ -1074,8 +1102,8 @@
                 <circle data-hf-id="hf-762z" cx="24" cy="24" r="16" stroke="#fff6ea" stroke-width="1.5" /><path data-hf-id="hf-8nsj" d="M12,24 L36,24 M24,12 L24,36" stroke="#ff4e00" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-57aa" class="step-detail">
-                <h4 data-hf-id="hf-w79b" style="font-size: 17px; margin-bottom: 2px;">Interactive Viewport</h4>
-                <p data-hf-id="hf-iggu" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Pan, fit, and zoom designs up to 300% on a clean map-free workspace.</p>
+                <h4 data-hf-id="hf-w79b" style="font-size: 17px; margin-bottom: 2px;">Grounded Renders</h4>
+                <p data-hf-id="hf-iggu" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Send camera-bound massing references to the image-generation pipeline.</p>
               </div>
             </div>
             <!-- Card 11 -->
@@ -1084,8 +1112,8 @@
                 <rect data-hf-id="hf-n12f" x="4" y="4" width="40" height="40" stroke="rgba(201,121,64,0.3)" stroke-width="1" /><line data-hf-id="hf-mkln" x1="4" y1="24" x2="44" y2="24" stroke="#ff4e00" />
               </svg>
               <div data-hf-id="hf-4sz9" class="step-detail">
-                <h4 data-hf-id="hf-2mbl" style="font-size: 17px; margin-bottom: 2px;">CAD Dark &amp; Paper Light</h4>
-                <p data-hf-id="hf-o5x4" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Toggle high-contrast graphite grids or clean light print sheet styles.</p>
+                <h4 data-hf-id="hf-2mbl" style="font-size: 17px; margin-bottom: 2px;">Render Release Evaluation</h4>
+                <p data-hf-id="hf-o5x4" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Review structural match and aesthetics before calling a render release-ready.</p>
               </div>
             </div>
             <!-- Card 12 -->
@@ -1094,8 +1122,8 @@
                 <polygon data-hf-id="hf-x04i" points="6,14 24,6 42,14 24,22" stroke="#c97940" stroke-width="1.5" /><polygon data-hf-id="hf-eyqz" points="6,26 24,18 42,26 24,34" stroke="#ff4e00" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-7l4g" class="step-detail">
-                <h4 data-hf-id="hf-hf8b" style="font-size: 17px; margin-bottom: 2px;">Multi-Layer Inspector</h4>
-                <p data-hf-id="hf-vhgi" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Control walls, coordinate axes, structural grids, and overlays independently.</p>
+                <h4 data-hf-id="hf-hf8b" style="font-size: 17px; margin-bottom: 2px;">Concept Cost Range</h4>
+                <p data-hf-id="hf-vhgi" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Expose rate-pack basis, range, inclusions, exclusions and limits.</p>
               </div>
             </div>
             <!-- Card 13 -->
@@ -1104,8 +1132,8 @@
                 <text data-hf-id="hf-szwp" x="24" y="32" fill="#ff4e00" font-family="monospace" font-size="28" text-anchor="middle">₹</text>
               </svg>
               <div data-hf-id="hf-76tf" class="step-detail">
-                <h4 data-hf-id="hf-bh9s" style="font-size: 17px; margin-bottom: 2px;">CPWD Cost Estimator</h4>
-                <p data-hf-id="hf-fnyz" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Provides regional cost bands backed by indexed municipal building rates.</p>
+                <h4 data-hf-id="hf-bh9s" style="font-size: 17px; margin-bottom: 2px;">Regional Rate Packs</h4>
+                <p data-hf-id="hf-fnyz" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Current Delhi feasibility reference calibrated with disclosed CPWD source families.</p>
               </div>
             </div>
             <!-- Card 14 -->
@@ -1114,8 +1142,8 @@
                 <polygon data-hf-id="hf-joh4" points="24,6 40,14 40,32 24,40 8,32 8,14" stroke="#fff6ea" stroke-width="1.5" /><line data-hf-id="hf-rci5" x1="24" y1="22" x2="24" y2="40" stroke="#ff4e00" />
               </svg>
               <div data-hf-id="hf-6sie" class="step-detail">
-                <h4 data-hf-id="hf-ktuh" style="font-size: 17px; margin-bottom: 2px;">WebGL 3D Massing</h4>
-                <p data-hf-id="hf-zmae" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Extrudes layouts vertically to check vertical clearances and stair cores.</p>
+                <h4 data-hf-id="hf-ktuh" style="font-size: 17px; margin-bottom: 2px;">AI Design Review</h4>
+                <p data-hf-id="hf-zmae" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Evidence-bound advisory review that cannot mutate canonical geometry.</p>
               </div>
             </div>
             <!-- Card 15 -->
@@ -1124,8 +1152,8 @@
                 <rect data-hf-id="hf-t6em" x="6" y="14" width="36" height="26" rx="3" stroke="#fff6ea" stroke-width="1.5" /><circle data-hf-id="hf-y4pm" cx="24" cy="27" r="6" stroke="#ff4e00" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-6e7d" class="step-detail">
-                <h4 data-hf-id="hf-8fzy" style="font-size: 17px; margin-bottom: 2px;">AI Concept Generator</h4>
-                <p data-hf-id="hf-s4fh" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Renders realistic conceptual exterior styles directly from massing references.</p>
+                <h4 data-hf-id="hf-8fzy" style="font-size: 17px; margin-bottom: 2px;">Study Lifecycle</h4>
+                <p data-hf-id="hf-s4fh" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Persist projects, scheme choices and downstream design evidence together.</p>
               </div>
             </div>
             <!-- Card 16 -->
@@ -1134,8 +1162,8 @@
                 <rect data-hf-id="hf-snkn" x="8" y="6" width="32" height="36" rx="2" stroke="#fff6ea" stroke-width="1.5" /><path data-hf-id="hf-wvaj" d="M14,18 L30,18" stroke="#c97940" stroke-width="1.5" />
               </svg>
               <div data-hf-id="hf-2tg4" class="step-detail">
-                <h4 data-hf-id="hf-qt9o" style="font-size: 17px; margin-bottom: 2px;">Printable Report Export</h4>
-                <p data-hf-id="hf-y3is" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Downloads PDF booklets compiling plans, cost bands, and validation logs.</p>
+                <h4 data-hf-id="hf-qt9o" style="font-size: 17px; margin-bottom: 2px;">Feasibility Deck &amp; PDF</h4>
+                <p data-hf-id="hf-y3is" style="font-size: 13px; line-height: 1.3; color: #b5a697;">Export plan, validation, cost, render and rationale sheets as one artifact.</p>
               </div>
             </div>
           </div>
@@ -1153,25 +1181,25 @@
           <div data-hf-id="hf-i4y6" class="corner-mark bottom-right"></div>
           <div data-hf-id="hf-la9d" class="scene-header">
             <div data-hf-id="hf-dhil" class="brand">BRICKPILOT <span data-hf-id="hf-rco2" style="color:#ff4e00">.</span></div>
-            <div data-hf-id="hf-wi8x" class="phase">STAGE 11 // ARCHITECTURE</div>
+            <div data-hf-id="hf-wi8x" class="phase">STAGE 11 // DELIVERY_CHAIN</div>
           </div>
           <div data-hf-id="hf-evh3" class="scene-footer">
-            <div data-hf-id="hf-9oqh" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-e1m5" class="page-num">11 / 12</div>
+            <div data-hf-id="hf-9oqh" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-e1m5" class="page-num">11 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-l899" class="scene-content">
           <div data-hf-id="hf-4ylx" class="col-left">
-            <div data-hf-id="hf-5l4m" class="slide-label">07 // GENERATIVE CORE</div>
-            <h2 data-hf-id="hf-q1ps" class="slide-title" id="scene11-title">The Deterministic Engine</h2>
+            <div data-hf-id="hf-5l4m" class="slide-label">10 // THE TECHNICAL MOAT</div>
+            <h2 data-hf-id="hf-q1ps" class="slide-title" id="scene11-title">Generative, But Grounded</h2>
             <div data-hf-id="hf-ryvw" class="slide-body" id="scene11-body">
-              <p data-hf-id="hf-k73y" style="margin-bottom: 15px;">We believe in topology before presentation. BrickPilot layout solver models room relationships, stairwells, and openings before rendering drawings.</p>
-              <p data-hf-id="hf-5ouw" style="margin-bottom: 20px; font-weight: bold; color: #fff6ea;">Real-World Case Examples:</p>
+              <p data-hf-id="hf-k73y" style="margin-bottom: 15px;">Our differentiator is the order of operations: resolve the brief into canonical geometry, prove it against hard constraints, then create the visual story.</p>
+              <p data-hf-id="hf-5ouw" style="margin-bottom: 20px; font-weight: bold; color: #fff6ea;">What stays bound to the selected scheme:</p>
               <ul data-hf-id="hf-g2km" class="bullet-list" style="margin-top: 0; gap: 10px;">
-                <li data-hf-id="hf-eyb6" style="font-size: 16px;"><strong data-hf-id="hf-byc5">30×50 East Vastu:</strong> Aligns eastern entry and pooja room, grouping wet areas logically.</li>
-                <li data-hf-id="hf-b79i" style="font-size: 16px;"><strong data-hf-id="hf-o8oe">40×60 G+2 Home:</strong> Aligns the stair core vertically across multiple floors for structural stacking.</li>
-                <li data-hf-id="hf-jf85" style="font-size: 16px;"><strong data-hf-id="hf-t7zk">20×30 Narrow Lot:</strong> Optimizes compact circulation pathways to maximize usable room sizes.</li>
+                <li data-hf-id="hf-eyb6" style="font-size: 16px;"><strong data-hf-id="hf-byc5">Plan:</strong> rooms, openings, access and geometry hash.</li>
+                <li data-hf-id="hf-b79i" style="font-size: 16px;"><strong data-hf-id="hf-o8oe">Physical form:</strong> roofs, supports, guards and facade intent.</li>
+                <li data-hf-id="hf-jf85" style="font-size: 16px;"><strong data-hf-id="hf-t7zk">Presentation:</strong> 3D massing, camera-bound render references, cost and PDF evidence.</li>
               </ul>
             </div>
           </div>
@@ -1179,21 +1207,21 @@
             <!-- Infographic: Core Technology Block Pipeline -->
             <div data-hf-id="hf-5hm8" id="scene11-ask" style="width: 100%; display: flex; flex-direction: column; gap: 20px;">
               <div data-hf-id="hf-b7fo" style="background: #171512; border: 1px solid rgba(201, 121, 64, 0.2); padding: 25px; font-family: monospace; font-size: 13px; color: #b5a697; line-height: 1.6;">
-                <div data-hf-id="hf-gpsr" style="color: #ff4e00; margin-bottom: 10px; font-weight: bold;">// BYLAW SOLVER TRANSFORM</div>
-                "Zoning text guidelines are parsed into coordinates. Parametric setback limits construct the lot footprint envelope, ensuring valid room connectivity indexes."
+                <div data-hf-id="hf-gpsr" style="color: #ff4e00; margin-bottom: 10px; font-weight: bold;">// DELIVERY CONTRACT</div>
+                "No downstream stage may silently replace the selected scheme: validation, cost, massing, render references and deck sheets share its canonical design data."
               </div>
               <div data-hf-id="hf-ie75" class="horizontal-flow">
                 <div data-hf-id="hf-0g2t" class="flow-node">
                   <span data-hf-id="hf-cmue" class="node-num">INPUT</span>
-                  <span data-hf-id="hf-miw0" class="node-label">Zoning Text</span>
+                  <span data-hf-id="hf-miw0" class="node-label">Brief + Site</span>
                 </div>
                 <div data-hf-id="hf-7d7h" class="flow-node active">
                   <span data-hf-id="hf-hlct" class="node-num">SOLVER</span>
-                  <span data-hf-id="hf-0e56" class="node-label">Spatial AI</span>
+                  <span data-hf-id="hf-0e56" class="node-label">Validated Scheme</span>
                 </div>
                 <div data-hf-id="hf-abp5" class="flow-node">
                   <span data-hf-id="hf-tvsz" class="node-num">OUTPUT</span>
-                  <span data-hf-id="hf-yg7r" class="node-label">SVG / PDF Drawing</span>
+                  <span data-hf-id="hf-yg7r" class="node-label">Evidence Package</span>
                 </div>
               </div>
             </div>
@@ -1201,8 +1229,85 @@
         </div>
       </div>
 
-      <!-- Slide 10: Investment Ask (81s - 90s) -->
-      <div data-hf-id="hf-vj55" id="scene12" class="scene">
+      <!-- Slide 12: Technology stack -->
+      <div data-hf-id="hf-tech-root" id="scene12" class="scene">
+        <div data-hf-id="hf-tech-bg" class="scene-bg">
+          <div data-hf-id="hf-tech-grid" class="grid-overlay"></div>
+          <div data-hf-id="hf-tech-border" class="border-inset"></div>
+          <div data-hf-id="hf-tech-tl" class="corner-mark top-left"></div>
+          <div data-hf-id="hf-tech-tr" class="corner-mark top-right"></div>
+          <div data-hf-id="hf-tech-bl" class="corner-mark bottom-left"></div>
+          <div data-hf-id="hf-tech-br" class="corner-mark bottom-right"></div>
+          <div data-hf-id="hf-tech-header" class="scene-header">
+            <div class="brand">BRICKPILOT <span style="color:#ff4e00">.</span></div>
+            <div class="phase">STAGE 12 // TECH_STACK</div>
+          </div>
+          <div data-hf-id="hf-tech-footer" class="scene-footer">
+            <div class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div class="page-num">12 / 14</div>
+          </div>
+        </div>
+        <div class="scene-content">
+          <div class="col-left">
+            <div class="slide-label">11 // TECHNOLOGY STACK</div>
+            <h2 class="slide-title" id="scene12-title">A Modern, Grounded Stack</h2>
+            <div class="slide-body" id="scene12-body">
+              <p style="margin-bottom: 20px;">BrickPilot combines deterministic spatial modeling with production web infrastructure and carefully bounded AI services.</p>
+              <p>Each component has a clear role: capture the brief, preserve canonical data, inspect the form, and create reviewable concept evidence.</p>
+            </div>
+          </div>
+          <div class="col-right">
+            <div id="scene12-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;">
+              <div class="comp-card"><div class="comp-header green-title">Application</div><p class="slide-body" style="font-size:16px;line-height:1.45;">Next.js + React for the interactive product workspace.</p></div>
+              <div class="comp-card"><div class="comp-header green-title">Data</div><p class="slide-body" style="font-size:16px;line-height:1.45;">Drizzle ORM + PostgreSQL for versioned studies and design evidence.</p></div>
+              <div class="comp-card"><div class="comp-header green-title">Spatial</div><p class="slide-body" style="font-size:16px;line-height:1.45;">Three.js for inspectable 3D massing and camera references.</p></div>
+              <div class="comp-card"><div class="comp-header green-title">Reasoning</div><p class="slide-body" style="font-size:16px;line-height:1.45;">Fireworks AI for structured LLM intake and advisory review.</p></div>
+              <div class="comp-card highlight"><div class="comp-header green-title">Generative Renders</div><p class="slide-body" style="font-size:16px;line-height:1.45;">Replicate + GPT Image 2, grounded by the selected massing reference.</p></div>
+              <div class="comp-card highlight"><div class="comp-header green-title">Artifacts</div><p class="slide-body" style="font-size:16px;line-height:1.45;">React PDF turns the selected study into a shareable feasibility package.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slide 13: Roadmap -->
+      <div data-hf-id="hf-roadmap-root" id="scene13" class="scene">
+        <div data-hf-id="hf-roadmap-bg" class="scene-bg">
+          <div data-hf-id="hf-roadmap-grid" class="grid-overlay"></div>
+          <div data-hf-id="hf-roadmap-border" class="border-inset"></div>
+          <div data-hf-id="hf-roadmap-tl" class="corner-mark top-left"></div>
+          <div data-hf-id="hf-roadmap-tr" class="corner-mark top-right"></div>
+          <div data-hf-id="hf-roadmap-bl" class="corner-mark bottom-left"></div>
+          <div data-hf-id="hf-roadmap-br" class="corner-mark bottom-right"></div>
+          <div data-hf-id="hf-roadmap-header" class="scene-header">
+            <div class="brand">BRICKPILOT <span style="color:#ff4e00">.</span></div>
+            <div class="phase">STAGE 13 // ROADMAP</div>
+          </div>
+          <div data-hf-id="hf-roadmap-footer" class="scene-footer">
+            <div class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div class="page-num">13 / 14</div>
+          </div>
+        </div>
+        <div class="scene-content">
+          <div class="col-left">
+            <div class="slide-label">12 // WHAT'S NEXT</div>
+            <h2 class="slide-title" id="scene13-title">The Roadmap Starts With Two Next Phases</h2>
+            <div class="slide-body" id="scene13-body">
+              <p style="margin-bottom: 20px;">Phase 1 is the current product: generate a concept from a brief, validate it, inspect it and share the evidence.</p>
+              <p>Next, BrickPilot moves from creating new concepts to helping designers validate and improve work they already have.</p>
+            </div>
+          </div>
+          <div class="col-right">
+            <div id="scene13-roadmap" class="flow-container">
+              <div class="flow-step active"><span class="step-num">01</span><div class="step-detail"><h4>Current: Generate &amp; Validate</h4><p>Brief to distinct residential schemes, canonical geometry, massing, grounded renders and feasibility PDF.</p></div></div>
+              <div class="flow-step"><span class="step-num">02</span><div class="step-detail"><h4>Next: Upload a Floor Plan</h4><p>Bring an existing floor plan into BrickPilot, reconstruct its geometry and run the same validation evidence against it.</p></div></div>
+              <div class="flow-step"><span class="step-num">03</span><div class="step-detail"><h4>Then: Selective Corrections</h4><p>Propose targeted, reviewable corrections and deepen the validation rule pack without replacing designer intent.</p></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slide 14: Closing cover -->
+      <div data-hf-id="hf-vj55" id="scene14" class="scene">
         <div data-hf-id="hf-jaxk" class="scene-bg">
           <div data-hf-id="hf-o9v3" class="grid-overlay"></div>
           <div data-hf-id="hf-sbqa" class="border-inset"></div>
@@ -1212,26 +1317,26 @@
           <div data-hf-id="hf-hqn5" class="corner-mark bottom-right"></div>
           <div data-hf-id="hf-loke" class="scene-header">
             <div data-hf-id="hf-dvtm" class="brand">BRICKPILOT <span data-hf-id="hf-qyd1" style="color:#ff4e00">.</span></div>
-            <div data-hf-id="hf-nqra" class="phase">STAGE 12 // PROPOSAL</div>
+            <div data-hf-id="hf-nqra" class="phase">STAGE 14 // DEMO_READY</div>
           </div>
           <div data-hf-id="hf-f9s4" class="scene-footer">
-            <div data-hf-id="hf-a31i" class="doc-title">FEASIBILITY REPORT // CONCEPT_DECK_V1.0</div>
-            <div data-hf-id="hf-4p2b" class="page-num">12 / 12</div>
+            <div data-hf-id="hf-a31i" class="doc-title">BRICKPILOT // HACKATHON DEMO · JULY 2026</div>
+            <div data-hf-id="hf-4p2b" class="page-num">14 / 14</div>
           </div>
         </div>
 
         <div data-hf-id="hf-30gw" style="position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;">
           <div data-hf-id="hf-od95" style="width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
-            <div data-hf-id="hf-r9pf" class="slide-label" id="scene12-label">INVESTMENT PROPOSAL</div>
-            <h1 data-hf-id="hf-tqsk" class="slide-title" id="scene12-title" style="font-size: 80px; line-height: 1.0; margin-bottom: 30px;">
-              Scale the Drafting Table<span data-hf-id="hf-erxh" class="accent-dot">.</span>
+            <div data-hf-id="hf-r9pf" class="slide-label" id="scene14-label">HACKATHON DEMO</div>
+            <h1 data-hf-id="hf-tqsk" class="slide-title" id="scene14-title" style="font-size: 80px; line-height: 1.0; margin-bottom: 30px;">
+              Make the First Design Decision a Better One<span data-hf-id="hf-erxh" class="accent-dot">.</span>
             </h1>
-            <p data-hf-id="hf-zu1a" class="slide-body" id="scene12-body" style="font-size: 26px; line-height: 1.6; color: #b5a697; max-width: 900px; margin-bottom: 50px;">
-              Partner with us to expand regional cost packs, build out multi-storey structural layout models, and integrate compliance parsers for municipal markets.
+            <p data-hf-id="hf-zu1a" class="slide-body" id="scene14-body" style="font-size: 26px; line-height: 1.6; color: #b5a697; max-width: 900px; margin-bottom: 50px;">
+              BrickPilot gives a homeowner and designer a shared, inspectable starting point: distinct directions, grounded evidence and a clear handoff into licensed professional work.
             </p>
-            <div data-hf-id="hf-ak61" id="scene12-button" style="display: inline-block;">
+            <div data-hf-id="hf-ak61" id="scene14-button" style="display: inline-block;">
               <div data-hf-id="hf-9m3i" style="background: #ff4e00; color: #090908; font-family: 'Avenir Next', sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 0.15em; padding: 20px 45px; border: none; cursor: pointer; text-transform: uppercase; box-shadow: 0 4px 20px rgba(255, 78, 0, 0.2);">
-                Partner with BrickPilot
+                BUILD WITH EVIDENCE
               </div>
             </div>
           </div>
@@ -1318,10 +1423,20 @@
       tl.fromTo("#scene11-ask", { scale: 0.93, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8, ease: "power3.out" }, 90.9);
 
       // Slide 12 Entrance (99.4s)
-      tl.fromTo("#scene12-label", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.5);
-      tl.fromTo("#scene12-title", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.7);
-      tl.fromTo("#scene12-body", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.9);
-      tl.fromTo("#scene12-button", { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8, ease: "back.out(1.5)" }, 100.1);
+      tl.fromTo("#scene12-title", { y: 45, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.5);
+      tl.fromTo("#scene12-body", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.7);
+      tl.fromTo("#scene12-stack", { scale: 0.95, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8, ease: "power3.out" }, 99.9);
+
+      // Slide 13 Entrance (108.4s)
+      tl.fromTo("#scene13-title", { y: 45, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 108.5);
+      tl.fromTo("#scene13-body", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 108.7);
+      tl.fromTo("#scene13-roadmap", { scale: 0.95, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8, ease: "power3.out" }, 108.9);
+
+      // Slide 14 Entrance (117.4s)
+      tl.fromTo("#scene14-label", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 117.5);
+      tl.fromTo("#scene14-title", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 117.7);
+      tl.fromTo("#scene14-body", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8, ease: "power3.out" }, 117.9);
+      tl.fromTo("#scene14-button", { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8, ease: "back.out(1.5)" }, 118.1);
 
 
       // ==========================================
@@ -1394,9 +1509,21 @@
       tl.set("#scene12", { filter: "blur(20px)", scale: 0.95, opacity: 0, visibility: "visible" }, 99.1);
       tl.to("#scene12", { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.6, ease: "power2.inOut" }, 99.1);
 
-      // T = 108s: Scene 12 Outro (Fade to Black)
-      tl.to("#scene12", { opacity: 0, duration: 0.8, ease: "power1.in" }, 107.2);
-      tl.set("#scene12", { visibility: "hidden" }, 108.0);
+      // T = 108s: Scene 12 -> Scene 13 (Push Slide Left)
+      tl.to("#scene12", { x: -1920, duration: 0.6, ease: "power3.inOut" }, 108.0);
+      tl.set("#scene12", { visibility: "hidden", opacity: 0 }, 108.6);
+      tl.set("#scene13", { x: 1920, opacity: 1, visibility: "visible" }, 108.0);
+      tl.to("#scene13", { x: 0, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 108.0);
+
+      // T = 117s: Scene 13 -> Scene 14 (Blur Crossfade)
+      tl.to("#scene13", { filter: "blur(20px)", scale: 1.05, opacity: 0, duration: 0.6, ease: "power2.inOut" }, 117.0);
+      tl.set("#scene13", { visibility: "hidden", opacity: 0 }, 117.6);
+      tl.set("#scene14", { filter: "blur(20px)", scale: 0.95, opacity: 0, visibility: "visible" }, 117.1);
+      tl.to("#scene14", { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.6, ease: "power2.inOut" }, 117.1);
+
+      // T = 126s: Scene 14 Outro (Fade to Black)
+      tl.to("#scene14", { opacity: 0, duration: 0.8, ease: "power1.in" }, 125.2);
+      tl.set("#scene14", { visibility: "hidden" }, 126.0);
 
       // Register the main timeline
       window.__timelines["main"] = tl;

@@ -53,13 +53,16 @@ describe("v3 physical systems", () => {
     expect(roofPlanesForRectangle("canopy", "solid_canopy", rectangle, 3_100)).toHaveLength(1);
   });
 
-  test("realizes sloped roofs, independent supports, an open pergola and a distinct main door", () => {
+  test("overrides historical sloped intent with flat roofs while preserving supports, pergola and the distinct main door", () => {
     const result = generateV3PhysicalStage(physicalRequirements());
     expect(result.contractVersion).toBe("physical-stage-v3");
     expect(result.schemes.length).toBeGreaterThan(0);
     for (const { building } of result.schemes) {
       expect(currentBuildingSchema.safeParse(building).success).toBe(true);
-      expect(building.roofSystems.some((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed")).toBe(true);
+      const enclosureRoofs = building.roofSystems.filter((roof) => roof.kind !== "open_pergola");
+      expect(enclosureRoofs.length).toBeGreaterThan(0);
+      expect(enclosureRoofs.every((roof) => roof.kind === "flat_slab" || roof.kind === "solid_canopy")).toBe(true);
+      expect(building.roofSystems.some((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed")).toBe(false);
       const pergola = building.roofSystems.find((roof) => roof.kind === "open_pergola");
       expect(pergola).toBeDefined();
       if (!pergola || pergola.kind !== "open_pergola") throw new Error("expected pergola");
@@ -98,17 +101,22 @@ describe("v3 physical systems", () => {
       expect(massing.primitives.find((primitive) => primitive.sourceId === main?.id)?.materialToken).toBe("door.main-entry.warm-wood");
       const highestVertex = Math.max(...massing.primitives.flatMap((primitive) => primitive.shape === "mesh" ? primitive.vertices.map((point) => point[1]) : []));
       expect(massing.heightM).toBeGreaterThanOrEqual(highestVertex);
-      expect(massingMetrics(building).heightM).toBeGreaterThan(building.floors.at(-1)!.elevationMm / 1000 + building.floors.at(-1)!.floorHeightMm / 1000);
+      const expectedPhysicalTopMm = Math.max(
+        building.floors.at(-1)!.elevationMm + building.floors.at(-1)!.floorHeightMm,
+        ...building.roofSystems.map((roof) => roof.kind === "open_pergola" ? roof.topElevationMm : roof.eaveHeightMm),
+      );
+      expect(massingMetrics(building).heightM).toBe(expectedPhysicalTopMm / 1000);
     }
   });
 
-  test("realizes the reported articulated reference with pitched multi-roofs, parking support, upper guards and an open pergola", () => {
+  test("realizes the reported articulated reference with flat multi-roofs, parking support, upper guards and an open pergola", () => {
     const result = generateV3PhysicalStage(referencePhysicalRequirements());
     expect(result.schemes).toHaveLength(3);
     for (const { building } of result.schemes) {
-      const pitched = building.roofSystems.filter((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed");
-      expect(pitched.length).toBeGreaterThan(1);
-      expect(new Set(pitched.map((roof) => roof.id.split("-roof-")[0])).size).toBeGreaterThan(1);
+      const enclosureRoofs = building.roofSystems.filter((roof) => roof.kind !== "open_pergola");
+      expect(enclosureRoofs.length).toBeGreaterThan(1);
+      expect(enclosureRoofs.every((roof) => roof.kind === "flat_slab" || roof.kind === "solid_canopy")).toBe(true);
+      expect(building.roofSystems.some((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed")).toBe(false);
       const parkingCanopy = building.roofSystems.find((roof) => roof.kind === "solid_canopy" && roof.servesSpaceIds.includes("parking"));
       expect(parkingCanopy).toBeDefined();
       expect(building.secondaryRoofSupports.some((support) => parkingCanopy && support.roofSystemIds.includes(parkingCanopy.id))).toBe(true);

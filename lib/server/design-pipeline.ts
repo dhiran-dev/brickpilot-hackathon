@@ -92,6 +92,14 @@ export type DesignPipelineOptions = {
   v3ValidateSchemes?: typeof validateV3SchemeStage;
 };
 
+function applyFlatOnlyRoofPolicy(requirements: CurrentBuildingRequirements) {
+  return currentBuildingRequirementsSchema.parse({
+    ...requirements,
+    architecture: { ...requirements.architecture, roofCharacter: "flat_parapet" },
+    roof: { value: "flat_parapet", source: "default" },
+  });
+}
+
 export class DesignPipelineContractError extends Error {
   constructor(
     readonly code: "REQUIREMENTS_CONTRACT_MISMATCH" | "UNSUPPORTED_DESIGN_CONTRACT",
@@ -293,19 +301,20 @@ export async function runDesignPipelineV3(
       "The v3 design pipeline requires valid schema-v3 requirements.",
     );
   }
+  const activeRequirements = applyFlatOnlyRoofPolicy(parsed.data);
   try {
     const generatePhysical = options.v3GeneratePhysical ?? generateV3PhysicalStage;
-    const generated = generatePhysical(parsed.data);
+    const generated = generatePhysical(activeRequirements);
     const validateSchemes = options.v3ValidateSchemes ?? validateV3SchemeStage;
-    const validated = validateSchemes(generated.schemes, parsed.data, { cohortId: "pipeline-v3" });
+    const validated = validateSchemes(generated.schemes, activeRequirements, { cohortId: "pipeline-v3" });
     const selected = validated.schemes.find((scheme) => scheme.schemeId === validated.selectedSchemeId);
     if (!selected || !selected.validation.valid || selected.building.candidate.geometryHash !== validated.building.candidate.geometryHash) {
       throw new Error("V3_SELECTED_SCHEME_INVARIANT_FAILED");
     }
     const estimateCost = options.v3EstimateCost ?? estimateBuildingCost;
-    const costEstimate = estimateCost(selected.building, parsed.data);
+    const costEstimate = estimateCost(selected.building, activeRequirements);
     const aiReview = await reviewBuilding(
-      { requirements: parsed.data, building: selected.building, validation: selected.validation },
+      { requirements: activeRequirements, building: selected.building, validation: selected.validation },
       { complete: options.reviewComplete },
     );
     const validationDiagnostics: V3PipelineDiagnostics["validation"] = {

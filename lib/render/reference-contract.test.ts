@@ -4,6 +4,8 @@ import { generateV3PhysicalStage } from "@/lib/building/generate-v3-physical";
 import { currentBuildingRequirementsSchema } from "@/lib/building/requirements";
 import { REFERENCE_ARTICULATED_SLOPED_REQUIREMENTS } from "@/lib/building/fixtures/reference-articulated-sloped";
 import { generateBuilding } from "@/lib/building/generate";
+import { orthogonalPolygonBounds } from "@/lib/building/orthogonal-partition";
+import { roofPlanesForRectangle } from "@/lib/building/roofs";
 import { buildMassingModel, massingMetrics } from "@/lib/render/massing";
 import { buildSemanticRenderCameras } from "@/lib/render/camera";
 import { buildCurrentRenderSpecs, compileCurrentGeometryLock, currentRenderSpecPreservesGeometry } from "@/lib/render/current-prompts";
@@ -86,16 +88,40 @@ describe("reference render before-state contract", () => {
     });
   });
 
-  test("sloped intent creates mesh roof planes whose ridge contributes to massing bounds", () => {
+  test("historical sloped intent is overridden by flat-only physical generation", () => {
     const { building, massing } = currentReference;
-    const pitchedIds = new Set(building.roofSystems
-      .filter((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed")
-      .map((roof) => roof.id));
-    const pitchedMeshes = massing.primitives.filter((primitive) => primitive.shape === "mesh" && primitive.sourceId && pitchedIds.has(primitive.sourceId));
-    const ridgeHeightM = Math.max(...pitchedMeshes.flatMap((primitive) => primitive.shape === "mesh" ? primitive.vertices.map((vertex) => vertex[1]) : []));
-    expect(pitchedMeshes.length).toBeGreaterThan(0);
-    expect(massing.heightM).toBeCloseTo(ridgeHeightM, 6);
-    expect(massingMetrics(building).heightM).toBeGreaterThan(building.floors.at(-1)!.elevationMm / 1000 + building.floors.at(-1)!.floorHeightMm / 1000);
+    expect(building.roofSystems.some((roof) => roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed")).toBe(false);
+    expect(building.roofSystems.filter((roof) => roof.kind !== "open_pergola")
+      .every((roof) => roof.kind === "flat_slab" || roof.kind === "solid_canopy")).toBe(true);
+    const roofMeshes = massing.primitives.filter((primitive) => primitive.shape === "mesh" && primitive.semanticKind === "roof");
+    expect(roofMeshes.length).toBeGreaterThan(0);
+    expect(roofMeshes.every((primitive) => primitive.shape === "mesh"
+      && new Set(primitive.vertices.map((vertex) => vertex[1])).size === 1)).toBe(true);
+    const expectedPhysicalTopMm = Math.max(
+      building.floors.at(-1)!.elevationMm + building.floors.at(-1)!.floorHeightMm,
+      ...building.roofSystems.map((roof) => roof.kind === "open_pergola" ? roof.topElevationMm : roof.eaveHeightMm),
+    );
+    expect(massingMetrics(building).heightM).toBe(expectedPhysicalTopMm / 1000);
+  });
+
+  test("saved pitched v3 geometry is flattened at the massing display boundary", () => {
+    const saved = structuredClone(currentReference.building);
+    const roof = saved.roofSystems.find((candidate) => candidate.kind === "flat_slab");
+    if (!roof || roof.kind === "open_pergola") throw new Error("expected enclosure roof");
+    const bounds = orthogonalPolygonBounds(roof.footprint);
+    roof.kind = "gable";
+    roof.planes = roofPlanesForRectangle(roof.id, "gable", bounds, roof.eaveHeightMm);
+
+    const massing = buildMassingModel(saved);
+    const displayed = massing.primitives.filter((primitive) => primitive.shape === "mesh" && primitive.sourceId === roof.id);
+    expect(displayed).toHaveLength(1);
+    expect(displayed[0].id).toBe(`${roof.id}-flat-policy`);
+    expect(displayed[0].shape === "mesh" && new Set(displayed[0].vertices.map((vertex) => vertex[1])).size).toBe(1);
+    const expectedPhysicalTopMm = Math.max(
+      saved.floors.at(-1)!.elevationMm + saved.floors.at(-1)!.floorHeightMm,
+      ...saved.roofSystems.map((candidate) => candidate.kind === "open_pergola" ? candidate.topElevationMm : candidate.eaveHeightMm),
+    );
+    expect(massingMetrics(saved).heightM).toBe(expectedPhysicalTopMm / 1000);
   });
 
   test("every canopy and pergola has visible wall, ledger or post support primitives", () => {

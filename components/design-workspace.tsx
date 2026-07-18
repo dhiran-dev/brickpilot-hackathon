@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, Plus, RotateCcw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { CadWorkspace } from "@/components/cad-workspace";
 import { GuidedIntake } from "@/components/guided-intake";
@@ -377,9 +377,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
           {result && normalProjectAccess && error ? <div className="mb-5 border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button">Dismiss</button></div></div> : null}
           {!result && !blockedProjectAccess && !isGenerating && !isRestoring && draftId ? <div className="mx-auto w-full max-w-[92rem] space-y-5">
             {error ? <div className="border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.actions.length ? <div className="mt-4"><p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#9f9183]">Recommended changes</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#b5a697]">{error.actions.map((action) => <li key={action}>{action}</li>)}</ul></div> : null}{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button"><RotateCcw className="h-3.5 w-3.5" /> Adjust questionnaire</button></div></div> : null}
-            <section className="flex flex-wrap items-center justify-end gap-4 border border-[#8e5a31]/45 bg-[#0d0c0a] p-4" aria-label="Project draft actions">
-              <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea] hover:bg-[#171512]" onClick={startNewProject} type="button"><Plus className="h-3.5 w-3.5" /> New blank project</button>
-            </section>
             <GuidedIntake draftId={draftId} isSubmitting={isGenerating} key={draftId} onSubmit={generate} submitLabel="Generate verified concept" />
           </div> : null}
 

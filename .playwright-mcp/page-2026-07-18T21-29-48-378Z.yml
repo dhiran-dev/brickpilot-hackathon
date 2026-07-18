@@ -1,0 +1,83 @@
+- generic [ref=f11e1]:
+  - main [ref=f11e2]:
+    - generic [ref=f11e3]:
+      - generic [ref=f11e4]:
+        - generic [ref=f11e5]:
+          - generic [ref=f11e6]:
+            - paragraph [ref=f11e7]: BrickPilot
+            - paragraph [ref=f11e8]: Residential concept engineering
+          - generic [ref=f11e9]: Topology · validation · cost · drawing
+        - generic [ref=f11e10]:
+          - generic [ref=f11e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f11e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f11e18]
+      - generic [ref=f11e25]:
+        - generic [ref=f11e27]:
+          - paragraph [ref=f11e28]: Guided residential brief
+          - button "Back" [disabled] [ref=f11e29]
+          - navigation "Brief steps" [ref=f11e32]:
+            - list [ref=f11e33]:
+              - listitem [ref=f11e34]:
+                - button "Project" [ref=f11e35]:
+                  - generic [ref=f11e36]: "01"
+              - listitem [ref=f11e39]:
+                - button "Region" [ref=f11e40]:
+                  - generic [ref=f11e41]: "02"
+              - listitem [ref=f11e42]:
+                - button "Site" [ref=f11e43]:
+                  - generic [ref=f11e44]: "03"
+              - listitem [ref=f11e45]:
+                - button "Levels" [ref=f11e46]:
+                  - generic [ref=f11e47]: "04"
+              - listitem [ref=f11e48]:
+                - button "Rooms" [ref=f11e49]:
+                  - generic [ref=f11e50]: "05"
+              - listitem [ref=f11e51]:
+                - button "Style" [ref=f11e52]:
+                  - generic [ref=f11e53]: "06"
+              - listitem [ref=f11e54]:
+                - button "Budget" [ref=f11e55]:
+                  - generic [ref=f11e56]: "07"
+              - listitem [ref=f11e57]:
+                - button "Review" [ref=f11e58]:
+                  - generic [ref=f11e59]: "08"
+          - button "Reset brief" [ref=f11e60]:
+            - generic [ref=f11e64]: Reset
+          - button "Confirm & continue" [ref=f11e65]
+        - generic [ref=f11e68]:
+          - generic [ref=f11e69]:
+            - paragraph [ref=f11e70]: Step 1 of 8
+            - heading "What are we planning?" [level=2] [ref=f11e71]
+          - generic [ref=f11e72]:
+            - generic [ref=f11e73]:
+              - text: Project name
+              - textbox "Project name" [active] [ref=f11e74]:
+                - /placeholder: The Nair family home
+                - text: My family home
+            - generic [ref=f11e75]:
+              - paragraph [ref=f11e76]: Building type
+              - generic [ref=f11e77]:
+                - button "Selected Villa / bungalow A single-family bungalow or multi-level villa, from ground-only through G+3." [pressed] [ref=f11e78]:
+                  - generic [ref=f11e79]: Selected
+                  - generic [ref=f11e88]:
+                    - paragraph [ref=f11e89]: Villa / bungalow
+                    - paragraph [ref=f11e90]: A single-family bungalow or multi-level villa, from ground-only through G+3.
+                - button "Coming soon Apartments Multi-unit residential planning is not enabled yet." [disabled] [ref=f11e91]:
+                  - generic [ref=f11e92]: Coming soon
+                  - generic [ref=f11e99]:
+                    - paragraph [ref=f11e100]: Apartments
+                    - paragraph [ref=f11e101]: Multi-unit residential planning is not enabled yet.
+                - button "Coming soon Corporate / commercial Office, retail and institutional rule packs are coming later." [disabled] [ref=f11e102]:
+                  - generic [ref=f11e103]: Coming soon
+                  - generic [ref=f11e109]:
+                    - paragraph [ref=f11e110]: Corporate / commercial
+                    - paragraph [ref=f11e111]: Office, retail and institutional rule packs are coming later.
+            - generic [ref=f11e112]:
+              - strong [ref=f11e113]: "Scope:"
+              - text: BrickPilot produces a residential concept and feasibility package. A licensed architect and engineers must verify it before permits or construction.
+          - generic [ref=f11e114]:
+            - button "Back" [disabled] [ref=f11e115]
+            - button "Confirm & continue" [ref=f11e118]
+  - button "Open Next.js Dev Tools" [ref=f11e126] [cursor=pointer]
+  - alert [ref=f11e130]
