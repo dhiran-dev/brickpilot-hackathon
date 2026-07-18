@@ -4,6 +4,7 @@ import { createCurrentRequirements, DEFAULT_INTAKE_DRAFT } from "@/components/gu
 import { AiProviderError } from "@/lib/ai/client";
 import { BUILDING_FIXTURES } from "@/lib/building/fixtures";
 import { REFERENCE_ARTICULATED_SLOPED_REQUIREMENTS } from "@/lib/building/fixtures/reference-articulated-sloped";
+import { V3AllocationGenerationError } from "@/lib/building/generate-v3-allocation";
 import { currentBuildingRequirementsSchema } from "@/lib/building/requirements";
 import { estimateBuildingCost } from "@/lib/cost/estimate";
 import { classifyReadablePersistedStudy } from "@/lib/design/persisted-study";
@@ -12,6 +13,7 @@ import {
   runDesignPipeline,
   runDesignPipelineForContract,
   runDesignPipelineV2,
+  runDesignPipelineV3,
 } from "@/lib/server/design-pipeline";
 import { validateV3SchemeStage } from "@/lib/validation/validate-v3";
 
@@ -134,6 +136,72 @@ describe("runDesignPipeline", () => {
     expect(result.status).toBe("failed");
     expect(costCalled).toBe(false);
     expect(reviewCalled).toBe(false);
+  });
+
+  test("maps expected v3 allocation exhaustion to floor-specific NO_FEASIBLE_LAYOUT findings", async () => {
+    const currentRequirements = createCurrentRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      floorCount: 2,
+      programs: DEFAULT_INTAKE_DRAFT.programs.map((program, level) =>
+        level < 2 ? { ...program, studies: 1 } : program),
+    });
+    const diagnostics = {
+      contractVersion: "allocation-stage-v3" as const,
+      attemptedSchemeCount: 3,
+      allocatedSchemeCount: 0,
+      rejectedSchemes: [{
+        topologySchemeId: "topology-a",
+        code: "PROGRAM_AREA_INFEASIBLE" as const,
+        requirementIds: ["study-f0-1", "study-f1-1"],
+      }],
+    };
+
+    const result = await runDesignPipelineV3(currentRequirements, {
+      v3GeneratePhysical: () => {
+        throw new V3AllocationGenerationError(
+          "PROGRAM_AREA_INFEASIBLE",
+          "No topology can fit the requested program.",
+          ["study-f0-1", "study-f1-1"],
+          diagnostics,
+        );
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      code: "NO_FEASIBLE_LAYOUT",
+      message: "The requested minimum program cannot fit while preserving access and area rules.",
+      conflicts: [
+        {
+          ruleId: "PLANNING_PROGRAM_AREA_INFEASIBLE",
+          floorId: "F0",
+          objectIds: ["study-f0-1"],
+          suggestedAction: "Increase the buildable envelope serving Ground floor; reduce setbacks only where local rules permit.",
+        },
+        {
+          ruleId: "PLANNING_PROGRAM_AREA_INFEASIBLE",
+          floorId: "F1",
+          objectIds: ["study-f1-1"],
+          suggestedAction: "Increase the buildable envelope serving Floor 1; reduce setbacks only where local rules permit.",
+        },
+      ],
+      diagnostics: {
+        allocationFailure: {
+          code: "PROGRAM_AREA_INFEASIBLE",
+          requirementIds: ["study-f0-1", "study-f1-1"],
+        },
+        allocation: diagnostics,
+      },
+    });
+  });
+
+  test("keeps unexpected v3 physical-stage faults outside typed infeasibility handling", async () => {
+    const currentRequirements = createCurrentRequirements(DEFAULT_INTAKE_DRAFT);
+    await expect(runDesignPipelineV3(currentRequirements, {
+      v3GeneratePhysical: () => {
+        throw new Error("unexpected physical fault");
+      },
+    })).rejects.toThrow("unexpected physical fault");
   });
 
   test("keeps an authoritative v3 result when the advisory reviewer is unavailable", async () => {

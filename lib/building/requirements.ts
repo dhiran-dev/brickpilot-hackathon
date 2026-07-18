@@ -299,6 +299,16 @@ export const currentBuildingRequirementsSchema = z.object({
       context.addIssue({ code: "custom", path: ["outdoorAreas", index], message: "Outdoor-area intent must correspond to a programmed balcony or verandah." });
     }
   }
+  for (const [index, room] of requirements.rooms.entries()) {
+    if ((room.type === "balcony" || room.type === "verandah")
+      && !requirements.outdoorAreas.some((outdoor) => outdoor.floorId === room.floorId && outdoor.type === room.type)) {
+      context.addIssue({
+        code: "custom",
+        path: ["rooms", index],
+        message: "Every programmed balcony or verandah requires matching outdoor-area intent on the same floor.",
+      });
+    }
+  }
   const hasCourtyardRoom = requirements.rooms.some((room) => room.type === "courtyard");
   if (requirements.courtyard.value === "none" && hasCourtyardRoom) {
     context.addIssue({ code: "custom", path: ["courtyard"], message: "Courtyard provenance conflicts with the room program." });

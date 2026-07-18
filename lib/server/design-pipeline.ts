@@ -3,6 +3,10 @@ import type { callJsonModeCompletion } from "@/lib/ai/client";
 import type { ArchitecturalReviewResult } from "@/lib/ai/schema";
 import { BuildingGenerationError, generateBuildingSchemes, type BuildingGenerationErrorCode, type GeneratedScheme, type GenerationDiagnostics } from "@/lib/building/generate";
 import {
+  V3AllocationGenerationError,
+  withRequiredV3VerticalCirculation,
+} from "@/lib/building/generate-v3-allocation";
+import {
   V3CirculationGenerationError,
 } from "@/lib/building/generate-v3-circulation";
 import { generateV3PhysicalStage, type V3PhysicalDiagnostics, type V3PhysicalScheme } from "@/lib/building/generate-v3-physical";
@@ -80,6 +84,8 @@ export type V3PipelineDiagnostics = V3PhysicalDiagnostics & {
 };
 export type DesignPipelineOptions = {
   reviewComplete?: typeof callJsonModeCompletion;
+  /** Focused test seam for proving allocation failures remain typed at the pipeline boundary. */
+  v3GeneratePhysical?: typeof generateV3PhysicalStage;
   /** Focused test seam for proving that cost cannot run before hard validation. */
   v3EstimateCost?: typeof estimateBuildingCost;
   /** Focused test seam for proving downstream stages cannot bypass hard validation. */
@@ -94,6 +100,131 @@ export class DesignPipelineContractError extends Error {
     super(message);
     this.name = "DesignPipelineContractError";
   }
+}
+
+const OPTIONAL_MOVE_CANDIDATE_TYPES = [
+  "study",
+  "pooja",
+  "store",
+  "bedroom",
+] as const;
+
+function allocationFailureAction(
+  requirements: CurrentBuildingRequirements,
+  floor: CurrentBuildingRequirements["floors"][number],
+  affectedRequirementIds: readonly string[],
+  infeasibleFloorIds: ReadonlySet<string>,
+  minimumAreaByFloor: ReadonlyMap<string, number>,
+  buildableAreaMm2: number,
+) {
+  const roomsOnFloor = requirements.rooms.filter((room) => room.floorId === floor.id);
+  const affected = new Set(affectedRequirementIds);
+  const movable = OPTIONAL_MOVE_CANDIDATE_TYPES.flatMap((type) =>
+    roomsOnFloor.filter((room) => room.type === type))
+    .sort((left, right) => Number(affected.has(right.id)) - Number(affected.has(left.id)))[0];
+  const capacityFloor = movable
+    ? requirements.floors
+        .filter((candidate) => candidate.id !== floor.id && !infeasibleFloorIds.has(candidate.id))
+        .sort((left, right) => left.level - right.level)
+        .find((candidate) =>
+          (minimumAreaByFloor.get(candidate.id) ?? 0) + movable.minAreaMm2 <= buildableAreaMm2)
+    : undefined;
+  if (movable && capacityFloor) {
+    return `Move ${movable.name} from ${floor.label} to ${capacityFloor.label}, which has minimum-area capacity.`;
+  }
+  return `Increase the buildable envelope serving ${floor.label}; reduce setbacks only where local rules permit.`;
+}
+
+function allocationFailureConflicts(
+  error: V3AllocationGenerationError,
+  requirements: CurrentBuildingRequirements,
+): ValidationFindingV3[] {
+  const planningRequirements = withRequiredV3VerticalCirculation(requirements);
+  const floorById = new Map(planningRequirements.floors.map((floor) => [floor.id, floor]));
+  const floorByLevel = new Map(planningRequirements.floors.map((floor) => [floor.level, floor]));
+  const roomById = new Map(planningRequirements.rooms.map((room) => [room.id, room]));
+  const rejectedRequirementIds = [
+    ...error.requirementIds,
+    ...(error.diagnostics?.rejectedSchemes?.flatMap((rejection) => rejection.requirementIds) ?? []),
+  ];
+  const uniqueRequirementIds = [...new Set(rejectedRequirementIds)];
+  const requirementIdsByFloor = new Map<string, string[]>();
+
+  for (const requirementId of uniqueRequirementIds) {
+    const room = roomById.get(requirementId);
+    const inferredStairLevel = /^stair-f(\d+)$/.exec(requirementId)?.[1];
+    const floor = room
+      ? floorById.get(room.floorId)
+      : inferredStairLevel
+        ? floorByLevel.get(Number(inferredStairLevel))
+        : requirementId === "aboveParkingUse"
+          ? [...planningRequirements.floors].sort((left, right) => left.level - right.level).find((candidate) => candidate.level > 0)
+          : undefined;
+    if (!floor) continue;
+    requirementIdsByFloor.set(floor.id, [
+      ...(requirementIdsByFloor.get(floor.id) ?? []),
+      requirementId,
+    ]);
+  }
+
+  if (requirementIdsByFloor.size === 0) {
+    const fallbackFloor = [...planningRequirements.floors].sort((left, right) => left.level - right.level)[0];
+    if (fallbackFloor) {
+      requirementIdsByFloor.set(
+        fallbackFloor.id,
+        planningRequirements.rooms.filter((room) => room.floorId === fallbackFloor.id).map((room) => room.id),
+      );
+    }
+  }
+
+  const buildableWidthMm = Math.max(
+    0,
+    planningRequirements.site.widthMm - planningRequirements.site.setbacksMm.east - planningRequirements.site.setbacksMm.west,
+  );
+  const buildableDepthMm = Math.max(
+    0,
+    planningRequirements.site.depthMm - planningRequirements.site.setbacksMm.north - planningRequirements.site.setbacksMm.south,
+  );
+  const buildableAreaMm2 = buildableWidthMm * buildableDepthMm;
+  const minimumAreaByFloor = new Map(planningRequirements.floors.map((candidate) => [
+    candidate.id,
+    planningRequirements.rooms
+      .filter((room) => room.floorId === candidate.id)
+      .reduce((sum, room) => sum + room.minAreaMm2, 0),
+  ]));
+  const infeasibleFloorIds = new Set(requirementIdsByFloor.keys());
+
+  return [...requirementIdsByFloor.entries()].map(([floorId, requirementIds]) => {
+    const floor = floorById.get(floorId)!;
+    const minimumProgramAreaMm2 = minimumAreaByFloor.get(floorId) ?? 0;
+    const exceedsEnvelope = minimumProgramAreaMm2 > buildableAreaMm2;
+    return {
+      ruleId: "PLANNING_PROGRAM_AREA_INFEASIBLE",
+      ruleVersion: 1,
+      severity: "error",
+      category: "planning",
+      floorId,
+      objectIds: [...new Set(requirementIds)],
+      ...(exceedsEnvelope
+        ? {
+            measured: { value: minimumProgramAreaMm2, unit: "mm2" },
+            required: { max: buildableAreaMm2, unit: "mm2" },
+          }
+        : {}),
+      message: exceedsEnvelope
+        ? `${floor.label} requires at least ${(minimumProgramAreaMm2 / 1_000_000).toFixed(1)} m², but its buildable envelope provides ${(buildableAreaMm2 / 1_000_000).toFixed(1)} m².`
+        : `${floor.label} cannot be arranged inside its ${(buildableAreaMm2 / 1_000_000).toFixed(1)} m² buildable envelope while preserving hard room-area, frontage, and protected-circulation rules.`,
+      suggestedAction: allocationFailureAction(
+        planningRequirements,
+        floor,
+        requirementIds,
+        infeasibleFloorIds,
+        minimumAreaByFloor,
+        buildableAreaMm2,
+      ),
+      sourceKind: "requirement_and_geometry",
+    };
+  });
 }
 
 /** Frozen schema-v2 generation, validation, costing and AI-review behavior. */
@@ -163,7 +294,8 @@ export async function runDesignPipelineV3(
     );
   }
   try {
-    const generated = generateV3PhysicalStage(parsed.data);
+    const generatePhysical = options.v3GeneratePhysical ?? generateV3PhysicalStage;
+    const generated = generatePhysical(parsed.data);
     const validateSchemes = options.v3ValidateSchemes ?? validateV3SchemeStage;
     const validated = validateSchemes(generated.schemes, parsed.data, { cohortId: "pipeline-v3" });
     const selected = validated.schemes.find((scheme) => scheme.schemeId === validated.selectedSchemeId);
@@ -214,6 +346,19 @@ export async function runDesignPipelineV3(
       },
     };
   } catch (error) {
+    if (error instanceof V3AllocationGenerationError) return {
+      status: "failed",
+      code: "NO_FEASIBLE_LAYOUT",
+      message: "The requested minimum program cannot fit while preserving access and area rules.",
+      conflicts: allocationFailureConflicts(error, parsed.data),
+      diagnostics: {
+        allocationFailure: {
+          code: error.code,
+          requirementIds: error.requirementIds,
+        },
+        ...(error.diagnostics ? { allocation: error.diagnostics } : {}),
+      },
+    };
     if (error instanceof V3CirculationGenerationError) return {
       status: "failed",
       code: error.code,

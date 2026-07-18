@@ -90,17 +90,16 @@ describe("v3 drawing, deck, CAD and cost consistency", () => {
     expect(V3_OUTPUT_CONSUMER_BUILT_AREA_MM2 + V3_OUTPUT_CONSUMER_UNBUILT_AREA_MM2).toBe(36_000_000);
   });
 
-  test("exposes the same physical overlays to deck/PDF and CAD-facing primitives", () => {
+  test("keeps safety overlays while omitting deferred roof geometry from floor-plan consumers", () => {
     const artifact = buildDrawing(V3_OUTPUT_CONSUMER_BUILDING).floors[0];
     const primitives = planPrimitives(artifact);
     expect(artifact.mainEntryId).toBe("door-main");
     expect(artifact.openings.find((opening) => opening.id === "door-main")).toMatchObject({ role: "main_entry", isMainEntry: true, widthMm: 1200 });
-    expect(artifact.roofOverlay?.[0]).toMatchObject({ id: "roof-main", kind: "gable" });
-    expect(artifact.roofOverlay?.[0].ridges).toHaveLength(1);
+    expect(artifact.roofOverlay).toEqual([]);
     expect(artifact.supports?.map((support) => support.id)).toContain("column-southwest");
     expect(artifact.guards?.map((guard) => guard.id)).toContain("guard-future-edge");
     expect(primitives.intentionalUnbuilt).toHaveLength(1);
-    expect(primitives.roofLines.length).toBeGreaterThan(4);
+    expect(primitives.roofLines).toEqual([]);
     expect(primitives.supportPoints).toHaveLength(1);
     expect(primitives.guardLines).toHaveLength(1);
   });

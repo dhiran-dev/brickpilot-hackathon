@@ -37,7 +37,7 @@ export function LayerPanel({ appearance, layers, activePreset, onAppearanceChang
       </div>
 
       <div className={compact ? "grid grid-cols-2 p-2" : "p-2"}>
-        {DRAWING_LAYER_DEFINITIONS.map((layer) => {
+        {DRAWING_LAYER_DEFINITIONS.filter((layer) => layer.id !== "roof").map((layer) => {
           const visible = layers[layer.id];
           const itemCount = layerCounts[layer.id];
           return <button aria-label={`${layer.label}, applies to all floors${itemCount === undefined ? "" : `, ${itemCount} items on current floor`}`} aria-pressed={visible} className={`flex min-h-11 w-full items-center justify-between gap-3 border-b border-[#8e5a31]/25 px-2.5 py-2.5 text-left transition-colors last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#fff6ea] ${visible ? "text-[#fff6ea]" : "text-[#9f9183] hover:text-[#d8c9bc]"}`} key={layer.id} onClick={() => onLayerChange(layer.id, !visible)} type="button"><span><span className="block text-[0.8125rem] font-semibold tracking-[0.02em]">{layer.label}</span>{itemCount === undefined ? null : <span className={`mt-0.5 block text-[0.8125rem] uppercase tracking-[0.08em] ${itemCount ? "text-[#9f9183]" : "text-[#c49a7a]"}`}>{itemCount ? `${itemCount} on this floor` : "None on this floor"}</span>}</span><span aria-hidden="true" className={`grid h-6 w-6 shrink-0 place-items-center border ${visible ? "border-[#c97940] bg-[#c97940]/15 text-[#f1b17d]" : "border-[#6e6258] text-[#9f9183]"}`}>{visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</span></button>;

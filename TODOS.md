@@ -2,6 +2,14 @@
 
 Deferred work with full context. Source of truth for "later" — if it isn't here, it doesn't exist.
 
+## P2 — Correct intermediate-floor roof semantics
+- **What:** Generate pitched roof systems only over the actual top exterior roof unless a lower-level wing is genuinely exposed. Intermediate occupied floors and transfer slabs should remain flat; lower-floor rooms must not receive partial gable or hip fragments merely because the upper footprint is stepped.
+- **Why:** Current exposed-fragment roof synthesis can place a partial sloped roof on ground and intermediate floors. The geometry is technically traceable but visually misleading in floor plans and massing.
+- **Temporary product decision:** Roof-character selection is hidden and roof overlays are omitted from 2D floor-plan sheets. Canonical roof geometry remains available to 3D massing, render grounding, validation, and quantities.
+- **Acceptance:** A multi-floor stepped scheme shows flat intermediate slabs, pitched geometry only over the true top/exposed roof, and no roof plane intersects an occupied upper storey.
+- **Effort:** M. **Priority:** P2.
+- **Decision trail:** Deferred by user on 2026-07-19 to avoid spending time on roof generation during workspace cleanup.
+
 ## P2 — Regional convention packs (E4)
 - **What:** Optional per-region convention packs applied as soft preferences with a questionnaire toggle: India Vastu-lite (NE pooja, E/N entry preference), East Asia feng-shui-lite (entry/kitchen placement), Gulf (majlis / gender-separable reception), Western (mudroom, en-suite conventions).
 - **Why:** "Suitable in various regions" beyond climate/materials; cultural placement conventions are real purchase criteria.

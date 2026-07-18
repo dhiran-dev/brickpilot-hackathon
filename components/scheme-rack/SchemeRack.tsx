@@ -4,6 +4,7 @@ import { useId, useMemo } from "react";
 import { Check, Pin } from "lucide-react";
 
 import { CadPlan } from "@/components/cad-plan";
+import { schemeRationaleForDisplay } from "@/components/design-workspace-state";
 import type { ReadablePersistedScheme } from "@/lib/design/persisted-study";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
 import { visibilityForPreset } from "@/lib/drawing/schema";
@@ -28,7 +29,7 @@ function SchemeOption({ scheme, active, pending, name, disabled, onChange }: {
     <input aria-describedby={detailId} checked={pending} className="peer sr-only" disabled={disabled} name={name} onChange={() => onChange(scheme.schemeId)} type="radio" value={scheme.schemeId} />
     <span className="block min-h-11 border-b border-[#8e5a31]/35 px-3 py-2.5 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#fff6ea]"><span className="flex items-center justify-between gap-3"><span className="text-[0.8125rem] font-extrabold uppercase tracking-[0.1em] text-[#fff6ea]">{scheme.name}</span>{active ? <span className="inline-flex items-center gap-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-[#fff6ea]"><Pin className="h-3 w-3" /> Pinned</span> : pending ? <span className="inline-flex items-center gap-1 text-[0.8125rem] font-bold uppercase tracking-[0.08em] text-[#c97940]"><Check className="h-3 w-3" /> Ready</span> : null}</span></span>
     <span aria-hidden="true" className="hidden aspect-[3/2] overflow-hidden border-b border-[#8e5a31]/30 bg-[#171512] p-1.5 sm:block">{artifact ? <CadPlan appearance="cad-dark" artifact={artifact} className="h-full w-full" layers={visibilityForPreset("architectural")} projectName={scheme.name} /> : null}</span>
-    <span className="block p-3" id={detailId}><span className="block text-[0.8125rem] font-bold uppercase tracking-[0.09em] text-[#c97940]">{scheme.partiId.replaceAll("_", " ")} · rung {scheme.ladderRung}</span><span className="mt-1.5 line-clamp-2 block text-base leading-6 text-[#b5a697]">{scheme.rationale}</span></span>
+    <span className="block p-3" id={detailId}><span className="block text-[0.8125rem] font-bold uppercase tracking-[0.09em] text-[#c97940]">{scheme.partiId.replaceAll("_", " ")}</span><span className="mt-1.5 line-clamp-2 block text-base leading-6 text-[#b5a697]">{schemeRationaleForDisplay(scheme.rationale)}</span></span>
   </label>;
 }
 

@@ -1,8 +1,55 @@
 import { describe, expect, test } from "bun:test";
 
-import { explainGenerationFailure, parseWorkspaceStep, relaxationNotice, restoredWorkspaceStep, schemeEvidenceLabels } from "@/components/design-workspace-state";
+import {
+  explainGenerationFailure,
+  isLegacyGenerationDiagnostics,
+  normalizeSchemeEvidence,
+  parseWorkspaceStep,
+  relaxationNotice,
+  restoredWorkspaceStep,
+  schemeEvidenceLabels,
+  schemeRationaleForDisplay,
+} from "@/components/design-workspace-state";
 
 describe("workspace design state matrix", () => {
+  test("accepts legacy search diagnostics and rejects schema-v3 physical diagnostics", () => {
+    expect(isLegacyGenerationDiagnostics({
+      watchdogMs: 8000,
+      candidateCeiling: 3000,
+      plannedCandidateCount: 16,
+      constructedCandidateCount: 4,
+      evaluatedCandidateCount: 3,
+      quotaUsage: [{ partiId: "compact", rung: 0, relaxationId: "preferred", simplifiedCourt: false, quota: 1, attempted: 1 }],
+    })).toBe(true);
+    expect(isLegacyGenerationDiagnostics({
+      physicalContractVersion: "physical-stage-v3",
+      physicalSchemeCount: 3,
+      evaluatedCandidateCount: 3,
+    })).toBe(false);
+    expect(isLegacyGenerationDiagnostics({ evaluatedCandidateCount: 3, quotaUsage: undefined })).toBe(false);
+  });
+
+  test("turns persisted intent codes and the legacy v3 rationale into user-facing copy", () => {
+    expect(normalizeSchemeEvidence([
+      "entry.primarySide:realized",
+      "roof:realized",
+      "courtyard:realized",
+      "aboveParkingUse:realized",
+      "outdoorAreas:realized",
+      "outdoorAreas:realized",
+    ])).toEqual([
+      "The main entrance is placed on the selected road-facing side.",
+      "Roof geometry is coordinated with the building model.",
+      "The courtyard choice is reflected in the plan.",
+      "The space above parking is used as requested.",
+      "Requested balconies, verandahs, and terraces are included.",
+    ]);
+    expect(schemeRationaleForDisplay("Canonical v3 geometry passed the complete deterministic physical and circulation rule pack."))
+      .toBe("The plan keeps the requested spaces, access routes, and physical systems coordinated.");
+    expect(schemeRationaleForDisplay("Compact Villa is the deterministic preferred parti option at relaxation rung 0."))
+      .toBe("Compact Villa is the deterministic preferred parti option.");
+  });
+
   test("names compact fallback without hiding earlier ladder rungs", () => {
     expect(relaxationNotice(0)).toBeNull();
     expect(relaxationNotice(2)).toBe("Relaxation rung 2");
@@ -43,10 +90,49 @@ describe("workspace design state matrix", () => {
       }],
     });
 
+    expect(state.title).toBe("This brief needs adjustment");
+    expect(state.message).toContain("Affected floor: floor-2.");
     expect(state.message).toContain("Blocking condition on floor-2: Bedroom 4 cannot reach the stair lobby.");
     expect(state.actions[0]).toBe("Remove one bedroom from Floor 2.");
-    expect(state.actions).toContain("Move one or more ground-floor rooms to an upper floor.");
+    expect(state.actions).toEqual(["Remove one bedroom from Floor 2."]);
     expect(state.code).toBe("NO_FEASIBLE_LAYOUT");
+  });
+
+  test("shows every affected floor and only the pipeline's concrete rescue actions", () => {
+    const state = explainGenerationFailure({
+      code: "NO_FEASIBLE_LAYOUT",
+      details: [
+        {
+          floorId: "F0",
+          ruleId: "PLANNING_PROGRAM_AREA_INFEASIBLE",
+          message: "Ground floor cannot preserve protected circulation.",
+          suggestedAction: "Move Study / office from Ground floor to another floor.",
+        },
+        {
+          floorId: "F1",
+          ruleId: "PLANNING_PROGRAM_AREA_INFEASIBLE",
+          message: "Floor 1 cannot preserve protected circulation.",
+          suggestedAction: "Move Study / office from Floor 1 to another floor.",
+        },
+      ],
+    });
+
+    expect(state.title).not.toBe("Generation could not start");
+    expect(state.message).toContain("Affected floors: F0, F1.");
+    expect(state.actions).toEqual([
+      "Move Study / office from Ground floor to another floor.",
+      "Move Study / office from Floor 1 to another floor.",
+    ]);
+    expect(state.actions.some((action) => action.includes("Remove an optional courtyard"))).toBe(false);
+  });
+
+  test("uses non-destructive floor-program fallbacks when no detailed finding is available", () => {
+    const state = explainGenerationFailure({ code: "NO_FEASIBLE_LAYOUT" });
+    expect(state.actions).toEqual([
+      "Move one room from the affected floor to another modeled floor.",
+      "Increase plot dimensions; reduce setbacks only where local rules permit.",
+      "Reduce a flexible room-area target without going below its minimum.",
+    ]);
   });
 
   test("preserves the capacity error's blocking floor and offers reductions", () => {

@@ -27,6 +27,7 @@ describe("gate-aware scheme rack", () => {
     expect(markup).toContain('data-scheme-count="2"');
     expect(markup).toContain("Pinned");
     expect(markup).toContain("Ready");
+    expect(markup.toLowerCase()).not.toContain("rung 0");
   });
 
   test("renders exactly three labeled choices and a mobile tab treatment for a three-scheme study", () => {

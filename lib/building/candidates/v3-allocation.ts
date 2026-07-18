@@ -13,9 +13,21 @@ import {
 } from "@/lib/building/orthogonal-partition";
 import type { V3TopologyScheme } from "@/lib/building/generate-v3-topology";
 import { DOOR_JUNCTION_CLEARANCE_MM, MAIN_ENTRY_MIN_WALL_RUN_MM } from "@/lib/building/v3-constants";
+import {
+  allocateZonedFloor,
+  allocateZonedUpperFloor,
+  type ZonedAllocationRejection,
+} from "@/lib/building/candidates/v3-zoned-allocation";
 
 const ALLOCATION_GRID_MM = 100;
 const DENSE_ORDER_ATTEMPT_LIMIT = 1_000;
+const PEDESTRIAN_RELAY_ROOM_TYPES = new Set<RoomRequirement["type"]>([
+  "foyer",
+  "circulation",
+  "living",
+  "dining",
+  "stair",
+]);
 
 export type DerivedAllocatedSpace = {
   id: string;
@@ -66,10 +78,38 @@ export type V3AllocatedScheme = {
 };
 
 export class ProgramAreaInfeasibleError extends Error {
-  constructor(readonly requirementIds: string[], message: string) {
+  constructor(
+    readonly requirementIds: string[],
+    message: string,
+    readonly planningDiagnostics?: {
+      evaluatedCandidateCount: number;
+      rejections: ZonedAllocationRejection[];
+    },
+  ) {
     super(message);
     this.name = "ProgramAreaInfeasibleError";
   }
+}
+
+function zonedFailureDiagnostics(error: Error) {
+  const details = error as Error & {
+    evaluatedCandidateCount?: unknown;
+    rejections?: unknown;
+    requirementIds?: unknown;
+  };
+  return {
+    requirementIds: Array.isArray(details.requirementIds)
+      ? details.requirementIds.filter((value): value is string => typeof value === "string")
+      : [],
+    planningDiagnostics: {
+      evaluatedCandidateCount: typeof details.evaluatedCandidateCount === "number"
+        ? details.evaluatedCandidateCount
+        : 0,
+      rejections: Array.isArray(details.rejections)
+        ? details.rejections as ZonedAllocationRejection[]
+        : [],
+    },
+  };
 }
 
 function ceilGrid(value: number) {
@@ -202,6 +242,81 @@ function placeRoom(input: {
   throw new ProgramAreaInfeasibleError([input.policy.requirementId], `PROGRAM_AREA_INFEASIBLE:${input.policy.requirementId}`);
 }
 
+function aboveParkingOutdoorCandidates(input: {
+  room: RoomRequirement;
+  policy: ResolvedRoomAreaPolicy;
+  projection: Rectangle;
+  occupied: Rectangle[];
+  adjacent: Rectangle[];
+  targetAreaMm2: number;
+  placementEnvelope?: Rectangle;
+}) {
+  const placementEnvelope = input.placementEnvelope ?? input.projection;
+  const target = Math.min(input.targetAreaMm2, input.projection.width * input.projection.depth);
+  const dimensions = [
+    target,
+    Math.round((target + input.policy.minimumAreaMm2) / 2),
+    input.policy.minimumAreaMm2,
+  ].flatMap((candidateTarget) => dimensionCandidates(
+    input.room,
+    input.policy,
+    placementEnvelope,
+    candidateTarget,
+  )).filter((dimension, index, candidates) =>
+    candidates.findIndex((candidate) =>
+      candidate.width === dimension.width && candidate.depth === dimension.depth,
+    ) === index,
+  );
+  const right = input.projection.x + input.projection.width;
+  const bottom = input.projection.y + input.projection.depth;
+  const placements: Array<{ rectangle: Rectangle; footprintExpanded: true }> = [];
+  for (const dimension of dimensions) {
+    const clampX = (value: number) => Math.max(
+      placementEnvelope.x,
+      Math.min(placementEnvelope.x + placementEnvelope.width - dimension.width, value),
+    );
+    const clampY = (value: number) => Math.max(
+      placementEnvelope.y,
+      Math.min(placementEnvelope.y + placementEnvelope.depth - dimension.depth, value),
+    );
+    const xs = new Set([
+      clampX(input.projection.x),
+      clampX(right - dimension.width),
+      clampX(input.projection.x - Math.floor(dimension.width / 2)),
+      clampX(right - Math.ceil(dimension.width / 2)),
+      ...input.adjacent.flatMap((rectangle) => [
+        clampX(rectangle.x),
+        clampX(rectangle.x + rectangle.width - dimension.width),
+      ]),
+    ]);
+    const ys = new Set([
+      clampY(input.projection.y),
+      clampY(bottom - dimension.depth),
+      clampY(input.projection.y - Math.floor(dimension.depth / 2)),
+      clampY(bottom - Math.ceil(dimension.depth / 2)),
+      ...input.adjacent.flatMap((rectangle) => [
+        clampY(rectangle.y),
+        clampY(rectangle.y + rectangle.depth - dimension.depth),
+      ]),
+    ]);
+    for (const x of [...xs].sort((left, candidate) => left - candidate)) {
+      for (const y of [...ys].sort((left, candidate) => left - candidate)) {
+        const rectangle = { x, y, width: dimension.width, depth: dimension.depth };
+        if (overlapArea(rectangle, input.projection) * 2 < rectangle.width * rectangle.depth) continue;
+        if (input.occupied.some((candidate) => overlapArea(candidate, rectangle) > 0)) continue;
+        if (input.adjacent.length > 0
+          && !input.adjacent.some((candidate) => sharedBoundaryLength(candidate, rectangle) >= 1_000)) continue;
+        placements.push({ rectangle, footprintExpanded: true });
+      }
+    }
+  }
+  return placements;
+}
+
+function placeAboveParkingOutdoor(input: Parameters<typeof aboveParkingOutdoorCandidates>[0]) {
+  return aboveParkingOutdoorCandidates(input)[0];
+}
+
 function regionKind(room: RoomRequirement): FloorRegion["kind"] {
   if (room.type === "parking" || room.type === "balcony" || room.type === "verandah") return "covered_outdoor";
   if (room.type === "courtyard" || room.type === "terrace") return "open_to_sky";
@@ -212,7 +327,28 @@ function pointRegion(regions: FloorRegion[], x: number, y: number) {
   return regions.find((region) => region.spaceId && region.kind !== "open_to_sky" && polygonContainsPoint(region.polygon, x, y));
 }
 
-function deriveWalls(floorId: string, envelope: Rectangle, regions: FloorRegion[]): WallSegment[] {
+function deriveWalls(
+  floorId: string,
+  envelope: Rectangle,
+  regions: FloorRegion[],
+  rooms: readonly RoomRequirement[],
+): WallSegment[] {
+  const roomTypeById = new Map(rooms.map((room) => [room.id, room.type]));
+  const isOpenDaylightEdge = (region: FloorRegion | undefined) =>
+    region?.kind === "open_to_sky"
+    || (region?.spaceId
+      ? roomTypeById.get(region.spaceId) === "verandah"
+        || roomTypeById.get(region.spaceId) === "balcony"
+      : false);
+  const wallRole = (left: FloorRegion | undefined, right: FloorRegion | undefined) => {
+    const enclosureBoundary = left && right
+      && isOpenDaylightEdge(left) !== isOpenDaylightEdge(right)
+      && (isOpenDaylightEdge(left) || isOpenDaylightEdge(right));
+    return {
+      type: left && right && !enclosureBoundary ? "interior" as const : "exterior" as const,
+      thicknessMm: left && right && !enclosureBoundary ? 115 : 230,
+    };
+  };
   const xs = [...new Set([envelope.x, envelope.x + envelope.width, ...regions.flatMap((region) => region.polygon.points.map((point) => point.x))])].sort((a, b) => a - b);
   const ys = [...new Set([envelope.y, envelope.y + envelope.depth, ...regions.flatMap((region) => region.polygon.points.map((point) => point.y))])].sort((a, b) => a - b);
   const walls: WallSegment[] = [];
@@ -223,13 +359,14 @@ function deriveWalls(floorId: string, envelope: Rectangle, regions: FloorRegion[
     const left = pointRegion(regions, x - 0.25, middle);
     const right = pointRegion(regions, x + 0.25, middle);
     if (left?.spaceId === right?.spaceId || (!left && !right)) continue;
+    const role = wallRole(left, right);
     walls.push({
       id: `${floorId}-wall-v-${x}-${from}-${to}`,
       floorId,
       start: { x, y: from },
       end: { x, y: to },
-      thicknessMm: left && right ? 115 : 230,
-      type: left && right ? "interior" : "exterior",
+      thicknessMm: role.thicknessMm,
+      type: role.type,
       adjacentSpaceIds: [left?.spaceId, right?.spaceId].filter((value): value is string => Boolean(value)).sort(),
     });
   }
@@ -240,13 +377,14 @@ function deriveWalls(floorId: string, envelope: Rectangle, regions: FloorRegion[
     const above = pointRegion(regions, middle, y - 0.25);
     const below = pointRegion(regions, middle, y + 0.25);
     if (above?.spaceId === below?.spaceId || (!above && !below)) continue;
+    const role = wallRole(above, below);
     walls.push({
       id: `${floorId}-wall-h-${y}-${from}-${to}`,
       floorId,
       start: { x: from, y },
       end: { x: to, y },
-      thicknessMm: above && below ? 115 : 230,
-      type: above && below ? "interior" : "exterior",
+      thicknessMm: role.thicknessMm,
+      type: role.type,
       adjacentSpaceIds: [above?.spaceId, below?.spaceId].filter((value): value is string => Boolean(value)).sort(),
     });
   }
@@ -280,6 +418,27 @@ function resolvedAboveParkingUse(requirements: CurrentBuildingRequirements, floo
   return requirements.rooms.some((room) => room.floorId === floorId && !["balcony", "terrace", "circulation"].includes(room.type))
     ? "occupied_rooms" as const
     : "unbuilt" as const;
+}
+
+function zonedAboveParkingCompatible(input: {
+  placements: ReadonlyMap<string, Rectangle>;
+  rooms: readonly RoomRequirement[];
+  use: ReturnType<typeof resolvedAboveParkingUse> | undefined;
+  targetId?: string;
+  projection?: Rectangle;
+}) {
+  if (!input.use || !input.projection) return true;
+  const roomById = new Map(input.rooms.map((room) => [room.id, room]));
+  const overlaps = [...input.placements].filter(([, rectangle]) =>
+    overlapArea(rectangle, input.projection!) > 0);
+  if (input.use === "unbuilt") return overlaps.length === 0;
+  if (input.use === "occupied_rooms") {
+    return overlaps.some(([roomId]) =>
+      !["balcony", "terrace", "circulation", "stair"].includes(roomById.get(roomId)?.type ?? ""));
+  }
+  const target = input.targetId ? input.placements.get(input.targetId) : undefined;
+  if (!target || overlapArea(target, input.projection) !== target.width * target.depth) return false;
+  return overlaps.every(([roomId]) => roomId === input.targetId);
 }
 
 function denseProgramPlacements(input: {
@@ -381,184 +540,12 @@ function denseProgramPlacements(input: {
   const additionalPinned = input.additionalBoundaryRoom
     ? input.rooms.find((room) => room.id === input.additionalBoundaryRoom?.roomId)
     : undefined;
-  const spine = input.rooms.find((room) => room.type === "circulation"
-    && room.id !== pinned?.id && room.id !== additionalPinned?.id);
-  if (pinned && additionalPinned && spine
-    && input.requiredBoundaryRoom?.boundary.side === input.additionalBoundaryRoom?.boundary.side) {
-    const side = input.requiredBoundaryRoom.boundary.side;
-    const horizontalFrontage = side === "north" || side === "south";
-    const frontageSpan = side === "north" || side === "south" ? input.envelope.width : input.envelope.depth;
-    const pinnedRooms = [pinned, additionalPinned];
-    const pinnedPolicies = pinnedRooms.map((room) => input.policyByRoom.get(room.id));
-    const pinnedTargets = pinnedRooms.map((room) => input.targetByRoom.get(room.id) ?? room.targetAreaMm2);
-    const frontageThickness = ceilGrid(Math.max(
-      ...pinnedRooms.map((room) => minimumClearDimensionMm(room.type, room.accessible)),
-      (pinnedTargets[0] + pinnedTargets[1]) / frontageSpan,
-    ));
-    const frontageLengths = pinnedRooms.map((room, index) => ceilGrid(Math.max(
-      input.requiredBoundaryRoom?.roomId === room.id
-        ? input.requiredBoundaryRoom.boundary.minimumWallRunMm
-        : input.additionalBoundaryRoom?.boundary.minimumWallRunMm ?? 0,
-      minimumClearDimensionMm(room.type, room.accessible),
-      pinnedTargets[index] / frontageThickness,
-    )));
-    const spinePolicy = input.policyByRoom.get(spine.id);
-    const spineTarget = input.targetByRoom.get(spine.id) ?? spine.targetAreaMm2;
-    const inwardSpan = (horizontalFrontage ? input.envelope.depth : input.envelope.width) - frontageThickness;
-    const spineThickness = ceilGrid(Math.max(minimumClearDimensionMm(spine.type, spine.accessible), spineTarget / inwardSpan));
-    const remainingRooms = input.rooms.filter((room) => !pinnedRooms.includes(room) && room.id !== spine.id);
-    const areaWithinPolicy = (rectangle: Rectangle, policy: ResolvedRoomAreaPolicy | undefined) => Boolean(policy)
-      && rectangle.width * rectangle.depth >= policy!.minimumAreaMm2
-      && rectangle.width * rectangle.depth <= policy!.hardMaximumAreaMm2;
-    if (frontageLengths[0] + frontageLengths[1] <= frontageSpan
-      && spinePolicy
-      && remainingRooms.length <= 16) {
-      let firstPinned: Rectangle;
-      let secondPinned: Rectangle;
-      let spineRectangle: Rectangle;
-      let wingSpans: [number, number];
-      let inwardStart: number;
-      if (horizontalFrontage) {
-        const frontageY = side === "north"
-          ? input.envelope.y
-          : input.envelope.y + input.envelope.depth - frontageThickness;
-        secondPinned = {
-          x: input.envelope.x,
-          y: frontageY,
-          width: frontageLengths[1],
-          depth: frontageThickness,
-        };
-        firstPinned = {
-          x: secondPinned.x + secondPinned.width,
-          y: frontageY,
-          width: frontageLengths[0],
-          depth: frontageThickness,
-        };
-        const spineX = firstPinned.x;
-        inwardStart = side === "north" ? frontageY + frontageThickness : input.envelope.y;
-        spineRectangle = { x: spineX, y: inwardStart, width: spineThickness, depth: inwardSpan };
-        wingSpans = [
-          spineRectangle.x - input.envelope.x,
-          input.envelope.x + input.envelope.width - spineRectangle.x - spineRectangle.width,
-        ];
-      } else {
-        const frontageX = side === "west"
-          ? input.envelope.x
-          : input.envelope.x + input.envelope.width - frontageThickness;
-        secondPinned = {
-          x: frontageX,
-          y: input.envelope.y,
-          width: frontageThickness,
-          depth: frontageLengths[1],
-        };
-        firstPinned = {
-          x: frontageX,
-          y: secondPinned.y + secondPinned.depth,
-          width: frontageThickness,
-          depth: frontageLengths[0],
-        };
-        const spineY = firstPinned.y;
-        inwardStart = side === "west" ? frontageX + frontageThickness : input.envelope.x;
-        spineRectangle = { x: inwardStart, y: spineY, width: inwardSpan, depth: spineThickness };
-        wingSpans = [
-          spineRectangle.y - input.envelope.y,
-          input.envelope.y + input.envelope.depth - spineRectangle.y - spineRectangle.depth,
-        ];
-      }
-      if (areaWithinPolicy(firstPinned, pinnedPolicies[0])
-        && areaWithinPolicy(secondPinned, pinnedPolicies[1])
-        && areaWithinPolicy(spineRectangle, spinePolicy)
-        && wingSpans.every((span) => span >= ALLOCATION_GRID_MM)) {
-        const roomIndex = new Map(remainingRooms.map((room, index) => [room.id, index]));
-        for (const targetScale of [1, 0.75, 0.5, 0.25, 0]) {
-          const assignmentCount = 2 ** remainingRooms.length;
-          for (let assignment = 0; assignment < assignmentCount; assignment += 1) {
-            const sideByRoom = new Map(remainingRooms.map((room, index) => [room.id, (assignment >> index) & 1]));
-            if ([...input.attachedBathroomBedroom].some(([bathroomId, bedroomId]) =>
-              sideByRoom.has(bathroomId) && sideByRoom.has(bedroomId)
-              && sideByRoom.get(bathroomId) !== sideByRoom.get(bedroomId))) continue;
-            const lengthByRoom = new Map<string, number>();
-            let assignmentValid = true;
-            for (const room of remainingRooms) {
-              const wing = sideByRoom.get(room.id) ?? 0;
-              const wingSpan = wingSpans[wing];
-              const policy = input.policyByRoom.get(room.id);
-              if (!policy || wingSpan < minimumClearDimensionMm(room.type, room.accessible)) {
-                assignmentValid = false;
-                break;
-              }
-              const requestedTarget = input.targetByRoom.get(room.id) ?? room.targetAreaMm2;
-              const desiredArea = policy.minimumAreaMm2 + (requestedTarget - policy.minimumAreaMm2) * targetScale;
-              const length = ceilGrid(Math.max(minimumClearDimensionMm(room.type, room.accessible), desiredArea / wingSpan));
-              const actualArea = wingSpan * length;
-              if (actualArea < policy.minimumAreaMm2 || actualArea > policy.hardMaximumAreaMm2) {
-                assignmentValid = false;
-                break;
-              }
-              lengthByRoom.set(room.id, length);
-            }
-            if (!assignmentValid) continue;
-            const wingRooms = ([0, 1] as const).map((wing) => {
-              const assigned = remainingRooms.filter((room) => sideByRoom.get(room.id) === wing);
-              const ordered: RoomRequirement[] = [];
-              const consumed = new Set<string>();
-              for (const room of assigned) {
-                if (consumed.has(room.id) || input.attachedBathroomBedroom.has(room.id)) continue;
-                ordered.push(room);
-                consumed.add(room.id);
-                for (const [bathroomId, bedroomId] of input.attachedBathroomBedroom) {
-                  if (bedroomId !== room.id) continue;
-                  const bathroom = assigned.find((candidate) => candidate.id === bathroomId);
-                  if (bathroom) {
-                    ordered.push(bathroom);
-                    consumed.add(bathroom.id);
-                  }
-                }
-              }
-              for (const room of assigned) if (!consumed.has(room.id)) ordered.push(room);
-              return ordered;
-            });
-            const wingSums = wingRooms.map((rooms) => rooms.reduce((sum, room) => sum + (lengthByRoom.get(room.id) ?? 0), 0));
-            const overflow = Math.max(...wingSums.map((sum) => sum - inwardSpan));
-            if (overflow > 0) continue;
-            const frontageSpinePlacements = new Map<string, Rectangle>([
-              [pinned.id, firstPinned],
-              [additionalPinned.id, secondPinned],
-              [spine.id, spineRectangle],
-            ]);
-            for (const wing of [0, 1] as const) {
-              let offset = 0;
-              for (const room of wingRooms[wing]) {
-                const length = lengthByRoom.get(room.id)!;
-                const rectangle = horizontalFrontage
-                  ? {
-                      x: wing === 0 ? input.envelope.x : spineRectangle.x + spineRectangle.width,
-                      y: inwardStart + offset,
-                      width: wingSpans[wing],
-                      depth: length,
-                    }
-                  : {
-                      x: inwardStart + offset,
-                      y: wing === 0 ? input.envelope.y : spineRectangle.y + spineRectangle.depth,
-                      width: length,
-                      depth: wingSpans[wing],
-                    };
-                frontageSpinePlacements.set(room.id, rectangle);
-                offset += length;
-              }
-            }
-            if (roomIndex.size === remainingRooms.length && connectivityValid(frontageSpinePlacements)) return frontageSpinePlacements;
-          }
-        }
-      }
-    }
-  }
   const movable = input.rooms.filter((room) => room.id !== pinned?.id && room.id !== additionalPinned?.id);
   const orders: RoomRequirement[][] = [];
   const seenOrders = new Set<string>();
   const pinnedLast = input.requiredBoundaryRoom?.boundary.side === "south"
     || input.requiredBoundaryRoom?.boundary.side === "east";
-  function collect(movableOrder: RoomRequirement[]) {
+  function appendOrders(movableOrder: RoomRequirement[]) {
     const candidates = pinned && additionalPinned
       ? pinnedLast
         ? [[...movableOrder, additionalPinned, pinned], [...movableOrder, pinned, additionalPinned]]
@@ -572,53 +559,65 @@ function denseProgramPlacements(input: {
       if (orders.length >= DENSE_ORDER_ATTEMPT_LIMIT) return;
     }
   }
-  collect(movable);
-  collect([...movable].reverse());
+  const prefixBudget = Math.min(250, DENSE_ORDER_ATTEMPT_LIMIT);
+  const used = new Set<number>();
+  function collectPrefix(current: RoomRequirement[]) {
+    if (orders.length >= prefixBudget) return;
+    if (current.length === movable.length) {
+      appendOrders(current);
+      return;
+    }
+    for (let index = 0; index < movable.length; index += 1) {
+      if (used.has(index)) continue;
+      used.add(index);
+      collectPrefix([...current, movable[index]]);
+      used.delete(index);
+      if (orders.length >= prefixBudget) return;
+    }
+  }
+  appendOrders(movable);
+  appendOrders([...movable].reverse());
+  collectPrefix([]);
 
-  // A depth-first prefix of N! permutations barely changes the early rooms once N grows. Dense
-  // programmes need relay rooms distributed through the partition tree, so seed the bounded search
-  // with evenly interleaved relay/leaf orders and then deterministic full-span shuffles.
   const relayTypes = new Set<RoomRequirement["type"]>(["circulation", "foyer", "living", "dining", "stair"]);
   const relays = movable.filter((room) => relayTypes.has(room.type));
-  const leaves = movable.filter((room) => !relayTypes.has(room.type));
+  const destinations = movable.filter((room) => !relayTypes.has(room.type));
   for (let relayOffset = 0; relayOffset < Math.max(1, relays.length); relayOffset += 1) {
-    for (let leafOffset = 0; leafOffset < Math.max(1, leaves.length); leafOffset += 1) {
+    for (let destinationOffset = 0; destinationOffset < Math.max(1, destinations.length); destinationOffset += 1) {
       const relayOrder = relays.map((_, index) => relays[(index + relayOffset) % relays.length]);
-      const leafOrder = leaves.map((_, index) => leaves[(index + leafOffset) % leaves.length]);
+      const destinationOrder = destinations.map((_, index) => destinations[(index + destinationOffset) % destinations.length]);
       const interleaved: RoomRequirement[] = [];
       let relayIndex = 0;
-      let leafIndex = 0;
-      while (relayIndex < relayOrder.length || leafIndex < leafOrder.length) {
-        const shouldPlaceRelay = relayIndex < relayOrder.length
-          && (leafIndex >= leafOrder.length
+      let destinationIndex = 0;
+      while (relayIndex < relayOrder.length || destinationIndex < destinationOrder.length) {
+        const placeRelay = relayIndex < relayOrder.length
+          && (destinationIndex >= destinationOrder.length
             || Math.floor((interleaved.length + 1) * relayOrder.length / Math.max(1, movable.length)) > relayIndex);
-        if (shouldPlaceRelay) interleaved.push(relayOrder[relayIndex++]);
-        else interleaved.push(leafOrder[leafIndex++]);
+        if (placeRelay) interleaved.push(relayOrder[relayIndex++]);
+        else interleaved.push(destinationOrder[destinationIndex++]);
       }
-      collect(interleaved);
-      collect([...interleaved].reverse());
+      appendOrders(interleaved);
+      appendOrders([...interleaved].reverse());
       if (orders.length >= DENSE_ORDER_ATTEMPT_LIMIT) break;
     }
     if (orders.length >= DENSE_ORDER_ATTEMPT_LIMIT) break;
   }
 
-  let state = movable.reduce((hash, room) => {
+  let shuffleState = movable.reduce((hash, room) => {
     for (const character of room.id) {
       hash ^= character.charCodeAt(0);
       hash = Math.imul(hash, 0x01000193);
     }
     return hash;
   }, 0x811c9dc5) >>> 0;
-  for (let shuffleAttempt = 0;
-    orders.length < DENSE_ORDER_ATTEMPT_LIMIT && shuffleAttempt < DENSE_ORDER_ATTEMPT_LIMIT * 4;
-    shuffleAttempt += 1) {
+  for (let attempt = 0; orders.length < DENSE_ORDER_ATTEMPT_LIMIT && attempt < DENSE_ORDER_ATTEMPT_LIMIT * 4; attempt += 1) {
     const shuffled = [...movable];
     for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
-      const swapIndex = state % (index + 1);
+      shuffleState = (Math.imul(shuffleState, 1_664_525) + 1_013_904_223) >>> 0;
+      const swapIndex = shuffleState % (index + 1);
       [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
     }
-    collect(shuffled);
+    appendOrders(shuffled);
   }
   for (const order of orders) {
     const placements = new Map<string, Rectangle>();
@@ -681,8 +680,12 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
     const occupied: Rectangle[] = [];
     const regionByRoom = new Map<string, FloorRegion>();
     const forbidden: Rectangle[] = [];
-    const aboveUse = floorRequirement.level > 0 && groundParkingBounds ? resolvedAboveParkingUse(requirements, floorRequirement.id) : undefined;
-    if (aboveUse === "unbuilt" && groundParkingBounds) forbidden.push(groundParkingBounds);
+    const aboveUse = floorRequirement.level === 1 && groundParkingBounds
+      ? resolvedAboveParkingUse(requirements, floorRequirement.id)
+      : undefined;
+    if ((aboveUse === "unbuilt" || aboveUse === "balcony" || aboveUse === "terrace") && groundParkingBounds) {
+      forbidden.push(groundParkingBounds);
+    }
     const aboveTarget = aboveUse === "balcony"
       ? rooms.find((room) => room.type === "balcony")
       : aboveUse === "terrace"
@@ -699,11 +702,13 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
         ? 0
         : room.type === "circulation"
           ? 1
-        : room.type === "living" || room.type === "dining"
-          ? 2
-          : ["balcony", "verandah", "courtyard", "terrace"].includes(room.type)
-            ? 4
-            : 3
+          : room.type === "living" || room.type === "dining"
+            ? 2
+            : room.id === aboveTarget?.id
+              ? 3
+              : ["balcony", "verandah", "courtyard", "terrace"].includes(room.type)
+                ? 5
+                : 4
       : room.id === scheme.topology.foyerWallRunReservation.targetRoomId
         ? 0
         : room.id === scheme.topology.vehicleApertureReservation?.targetRoomId
@@ -738,6 +743,26 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
       if (from?.type === "bathroom" && to?.type === "bedroom") attachedBathroomBedroom.set(from.id, to.id);
       if (to?.type === "bathroom" && from?.type === "bedroom") attachedBathroomBedroom.set(to.id, from.id);
     }
+    const placementOrder: RoomRequirement[] = [];
+    const placementConsumed = new Set<string>();
+    for (const room of roomOrder) {
+      if (placementConsumed.has(room.id) || attachedBathroomBedroom.has(room.id)) continue;
+      placementOrder.push(room);
+      placementConsumed.add(room.id);
+      const attachedBathrooms = [...attachedBathroomBedroom]
+        .filter(([, bedroomId]) => bedroomId === room.id)
+        .map(([bathroomId]) => roomOrder.find((candidate) => candidate.id === bathroomId))
+        .filter((candidate): candidate is RoomRequirement => Boolean(candidate))
+        .sort((left, right) => left.id.localeCompare(right.id));
+      for (const bathroom of attachedBathrooms) {
+        placementOrder.push(bathroom);
+        placementConsumed.add(bathroom.id);
+      }
+    }
+    for (const room of roomOrder) if (!placementConsumed.has(room.id)) {
+      placementOrder.push(room);
+      placementConsumed.add(room.id);
+    }
     const denseFoyerBoundary: RequiredBoundary | undefined = floorRequirement.level === 0
       ? {
           side: scheme.topology.foyerWallRunReservation.side,
@@ -747,12 +772,154 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
           ),
         }
       : undefined;
-    const densePlacements = requestedProgramAreaMm2 > usableAreaMm2 * 0.9
-      && forbidden.length === 0
-      ? denseProgramPlacements({
+    const denseIndoorRooms = roomOrder.filter((room) =>
+      room.type !== "verandah"
+      && room.type !== "balcony"
+      && room.type !== "terrace"
+      && room.type !== "courtyard");
+    const denseIndoorTargets = new Map(denseIndoorRooms.map((room) => [
+      room.id,
+      targetByRoom.get(room.id) ?? room.targetAreaMm2,
+    ]));
+    const denseIndoorPolicies = new Map(denseIndoorRooms.flatMap((room) => {
+      const policy = policyByRoom.get(room.id);
+      return policy ? [[room.id, policy] as const] : [];
+    }));
+    const zonedBoundaryByRoom = new Map<string, RequiredBoundary>();
+    if (denseFoyerBoundary) {
+      zonedBoundaryByRoom.set(
+        scheme.topology.foyerWallRunReservation.targetRoomId,
+        denseFoyerBoundary,
+      );
+    }
+    if (floorRequirement.level === 0 && scheme.topology.vehicleApertureReservation) {
+      zonedBoundaryByRoom.set(
+        scheme.topology.vehicleApertureReservation.targetRoomId,
+        {
+          side: scheme.topology.vehicleApertureReservation.side,
+          minimumWallRunMm: scheme.topology.vehicleApertureReservation.minimumClearWidthMm
+            + 2 * DOOR_JUNCTION_CLEARANCE_MM,
+        },
+      );
+    }
+    let zonedPlacements: Map<string, Rectangle> | undefined;
+    let zonedOutdoorReservation: Rectangle | undefined;
+    let failedZonedPlanning: ReturnType<typeof zonedFailureDiagnostics> | undefined;
+    if (floorRequirement.level === 0 && forbidden.length === 0) {
+      try {
+        zonedPlacements = allocateZonedFloor({
+          floorId: floorRequirement.id,
           rooms: roomOrder,
-          targetByRoom,
           policyByRoom,
+          targetByRoom,
+          envelope,
+          entrySide: scheme.topology.mainEntry.side,
+          rootRoomId: scheme.topology.mainEntry.targetRoomId,
+          requiredBoundaryByRoom: zonedBoundaryByRoom,
+          attachedBathroomBedroom,
+          minimumDimensionByRoom: new Map(roomOrder
+            .filter((room) => room.type === "stair")
+            .map((room) => [room.id, requirements.vertical.stairWidthMm])),
+        }).placements;
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.startsWith("ZONED_ALLOCATION_")) throw error;
+        failedZonedPlanning = zonedFailureDiagnostics(error);
+      }
+    } else if (floorRequirement.level > 0 && verticalStairBounds) {
+      const stair = roomOrder.find((room) => room.type === "stair");
+      if (stair) try {
+        const projectedOutdoorReservations = (aboveUse === "balcony" || aboveUse === "terrace")
+          && aboveTarget
+          && groundParkingBounds
+          && policyByRoom.get(aboveTarget.id)
+          ? aboveParkingOutdoorCandidates({
+              room: aboveTarget,
+              policy: policyByRoom.get(aboveTarget.id)!,
+              projection: groundParkingBounds,
+              placementEnvelope: envelope,
+              occupied: [verticalStairBounds],
+              adjacent: [],
+              targetAreaMm2: policyByRoom.get(aboveTarget.id)!.minimumAreaMm2,
+            }).map((candidate) => candidate.rectangle)
+          : [];
+        const zonedUpperRooms = (aboveUse === "balcony" || aboveUse === "terrace") && aboveTarget
+          ? roomOrder.filter((room) => room.id !== aboveTarget.id)
+          : roomOrder;
+        if ((aboveUse === "balcony" || aboveUse === "terrace") && projectedOutdoorReservations.length === 0) {
+          throw new Error(`ZONED_UPPER_ALLOCATION_OUTDOOR_RESERVATION_INFEASIBLE:${floorRequirement.id}`);
+        }
+        const reservationAttempts: Array<Rectangle | undefined> = projectedOutdoorReservations.length > 0
+          ? projectedOutdoorReservations
+          : [undefined];
+        let zoned: ReturnType<typeof allocateZonedUpperFloor> | undefined;
+        let selectedOutdoorReservation: Rectangle | undefined;
+        let lastZonedError: Error | undefined;
+        for (const outdoorReservation of reservationAttempts) {
+          const zonedForbidden = aboveUse === "unbuilt" && groundParkingBounds
+            ? [groundParkingBounds]
+            : outdoorReservation
+              ? [outdoorReservation]
+              : [];
+          try {
+            zoned = allocateZonedUpperFloor({
+              floorId: floorRequirement.id,
+              rooms: zonedUpperRooms,
+              policyByRoom,
+              targetByRoom,
+              envelope,
+              entrySide: scheme.topology.mainEntry.side,
+              rootRoomId: stair.id,
+              attachedBathroomBedroom,
+              fixedPlacements: new Map([[stair.id, verticalStairBounds]]),
+              forbiddenRectangles: zonedForbidden,
+              minimumDimensionByRoom: new Map([[stair.id, requirements.vertical.stairWidthMm]]),
+            });
+            if (outdoorReservation) {
+              const relayRectangles = [...zoned.placements]
+                .filter(([roomId]) =>
+                  PEDESTRIAN_RELAY_ROOM_TYPES.has(zonedUpperRooms.find((room) => room.id === roomId)?.type ?? "bedroom"))
+                .map(([, rectangle]) => rectangle);
+              if (!relayRectangles.some((rectangle) =>
+                sharedBoundaryLength(rectangle, outdoorReservation) >= 1_000)) {
+                zoned = undefined;
+                continue;
+              }
+            }
+            selectedOutdoorReservation = outdoorReservation;
+            break;
+          } catch (error) {
+            if (!(error instanceof Error) || !error.message.startsWith("ZONED_UPPER_ALLOCATION_")) throw error;
+            lastZonedError = error;
+          }
+        }
+        if (!zoned) throw lastZonedError
+          ?? new Error(`ZONED_UPPER_ALLOCATION_INFEASIBLE:${floorRequirement.id}`);
+        const upperPlacementCompatible = aboveUse === "balcony" || aboveUse === "terrace" || aboveUse === "unbuilt"
+          ? true
+          : zonedAboveParkingCompatible({
+              placements: zoned.placements,
+              rooms: zonedUpperRooms,
+              use: aboveUse,
+              targetId: aboveTarget?.id,
+              projection: groundParkingBounds,
+            });
+        if (upperPlacementCompatible) {
+          zonedPlacements = zoned.placements;
+          zonedOutdoorReservation = selectedOutdoorReservation;
+        }
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.startsWith("ZONED_UPPER_ALLOCATION_")) throw error;
+        failedZonedPlanning = zonedFailureDiagnostics(error);
+      }
+    }
+    let densePlacements: Map<string, Rectangle> | undefined;
+    try {
+      densePlacements = zonedPlacements ?? (requestedProgramAreaMm2 > usableAreaMm2 * 0.9
+        && forbidden.length === 0
+        ? denseProgramPlacements({
+          rooms: denseIndoorRooms,
+          targetByRoom: denseIndoorTargets,
+          policyByRoom: denseIndoorPolicies,
           envelope,
           entrySide: scheme.topology.mainEntry.side,
           rootRoomId: floorRequirement.level === 0
@@ -775,15 +942,26 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
               }
             : undefined,
         })
-      : undefined;
+        : undefined);
+    } catch (error) {
+      if (!(error instanceof ProgramAreaInfeasibleError) || !failedZonedPlanning) throw error;
+      throw new ProgramAreaInfeasibleError(
+        [...new Set([...failedZonedPlanning.requirementIds, ...error.requirementIds])],
+        error.message,
+        failedZonedPlanning.planningDiagnostics,
+      );
+    }
     let footprintExpandedForProgram = false;
     const placedByRoom = new Map<string, Rectangle>();
-    const relayRoomTypes = new Set<RoomRequirement["type"]>(["foyer", "circulation", "living", "dining", "stair"]);
-    for (const room of roomOrder) {
+    for (const room of placementOrder) {
       const policy = policies.find((candidate) => candidate.roomType === room.type && candidate.requirementId === room.id)
         ?? policies.find((candidate) => candidate.roomType === room.type);
       if (!policy || policy.effectiveTargetAreaMm2 === 0) continue;
-      const preferred = room.id === aboveTarget?.id && groundParkingBounds
+      const prefersAboveParkingEdge = groundParkingBounds
+        && (room.id === aboveTarget?.id
+          || (["circulation", "living"].includes(room.type)
+            && (aboveUse === "balcony" || aboveUse === "terrace")));
+      const preferred = prefersAboveParkingEdge && groundParkingBounds
         ? { x: groundParkingBounds.x + groundParkingBounds.width / 2, y: groundParkingBounds.y + groundParkingBounds.depth / 2 }
         : topologyRooms.get(room.id)?.centroid ?? { x: envelope.x + envelope.width / 2, y: envelope.y + envelope.depth / 2 };
       const requiredBoundary = floorRequirement.level !== 0
@@ -811,7 +989,7 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
         ? [placedByRoom.get(attachedBedroomId)].filter((rectangle): rectangle is Rectangle => Boolean(rectangle))
         : !isFloorRoot && !requiresNoInteriorDoor
           ? [...placedByRoom.entries()]
-              .filter(([roomId]) => relayRoomTypes.has(rooms.find((candidate) => candidate.id === roomId)?.type ?? "bedroom"))
+              .filter(([roomId]) => PEDESTRIAN_RELAY_ROOM_TYPES.has(rooms.find((candidate) => candidate.id === roomId)?.type ?? "bedroom"))
               .map(([, rectangle]) => rectangle)
           : [];
       if (attachedBedroomId && requiredAdjacentRectangles.length === 0) throw new ProgramAreaInfeasibleError(
@@ -823,6 +1001,11 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
         `PROGRAM_AREA_INFEASIBLE:${room.id}:interior_spine_not_allocated`,
       );
       const denseRectangle = densePlacements?.get(room.id);
+      const aboveParkingEnvelope = room.id === aboveTarget?.id
+        && groundParkingBounds
+        && (aboveUse === "balcony" || aboveUse === "terrace")
+        ? groundParkingBounds
+        : undefined;
       const alignedStairRectangle = room.type === "stair" && verticalStairBounds
         && overlapArea(verticalStairBounds, envelope) === verticalStairBounds.width * verticalStairBounds.depth
         && occupied.every((rectangle) => overlapArea(rectangle, verticalStairBounds!) === 0)
@@ -831,17 +1014,39 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
         && verticalStairBounds.width * verticalStairBounds.depth <= policy.hardMaximumAreaMm2
         ? verticalStairBounds
         : undefined;
+      const alignedAboveParkingOutdoor = aboveParkingEnvelope
+        ? zonedOutdoorReservation && room.id === aboveTarget?.id
+          ? { rectangle: zonedOutdoorReservation, footprintExpanded: true as const }
+          : placeAboveParkingOutdoor({
+            room,
+            policy,
+            projection: aboveParkingEnvelope,
+            placementEnvelope: envelope,
+            occupied,
+            adjacent: requiredAdjacentRectangles,
+            targetAreaMm2: allocationTargetByPolicy.get(policy) ?? policy.effectiveTargetAreaMm2,
+          })
+        : undefined;
       const placed = alignedStairRectangle
         ? { rectangle: alignedStairRectangle, footprintExpanded: !rectangleInsideAnyFootprint(alignedStairRectangle, topologyFootprints) }
+        : alignedAboveParkingOutdoor
+          ? alignedAboveParkingOutdoor
         : denseRectangle ? { rectangle: denseRectangle, footprintExpanded: true } : placeRoom({
         room,
         policy,
-        envelope,
+        envelope: aboveParkingEnvelope ?? envelope,
         preferred,
         topologyFootprints,
         occupied,
-        forbidden,
-        allocationTargetAreaMm2: room.type === "circulation"
+        forbidden: aboveParkingEnvelope
+          ? forbidden.filter((rectangle) => rectangle !== groundParkingBounds)
+          : forbidden,
+        allocationTargetAreaMm2: aboveParkingEnvelope
+          ? Math.min(
+              allocationTargetByPolicy.get(policy) ?? policy.effectiveTargetAreaMm2,
+              aboveParkingEnvelope.width * aboveParkingEnvelope.depth,
+            )
+          : room.type === "circulation"
           ? Math.max(allocationTargetByPolicy.get(policy) ?? policy.effectiveTargetAreaMm2, Math.floor(policy.hardMaximumAreaMm2 * 0.9))
           : allocationTargetByPolicy.get(policy) ?? policy.effectiveTargetAreaMm2,
         requiredBoundary,
@@ -851,6 +1056,8 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
           ? requirements.vertical.stairFamily === "dog_leg"
             ? requirements.vertical.stairWidthMm * 2 + 200
             : requirements.vertical.stairWidthMm
+          : room.type === "circulation" && (aboveUse === "balcony" || aboveUse === "terrace")
+            ? 1_300
           : undefined,
       });
       const placedAreaMm2 = placed.rectangle.width * placed.rectangle.depth;
@@ -887,6 +1094,14 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
     }));
     const programRegions = [...regionByRoom.values()];
     const regions = [...programRegions, ...intentionalUnbuiltRegions];
+    const missingRequirementIds = rooms
+      .filter((room) => !regionByRoom.has(room.id))
+      .map((room) => room.id);
+    if (missingRequirementIds.length > 0) throw new ProgramAreaInfeasibleError(
+      missingRequirementIds,
+      `PROGRAM_AREA_INFEASIBLE:${floorRequirement.id}:requested_rooms_not_realized`,
+      failedZonedPlanning?.planningDiagnostics,
+    );
     const spaces: DerivedAllocatedSpace[] = rooms.flatMap((room) => {
       const region = regionByRoom.get(room.id);
       if (!region) return [];
@@ -919,7 +1134,7 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
       envelope: envelopePolygon,
       regions,
       spaces,
-      walls: deriveWalls(floorRequirement.id, envelope, regions),
+      walls: deriveWalls(floorRequirement.id, envelope, regions, rooms),
       constructedFootprints: programRegions.filter((region) => region.kind !== "open_to_sky").map((region) => region.polygon),
       intentionalUnbuiltRegions,
       coverage,

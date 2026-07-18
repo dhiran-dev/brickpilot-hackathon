@@ -270,6 +270,7 @@ function supportsAlongEdges(input: {
 function coordinatePointSupportAroundOpenings(
   support: SecondaryRoofSupport & { role: "canopy_post" | "pergola_post"; geometry: Point; sectionMm: { x: number; y: number } },
   floor: V3CirculatedFloor,
+  perimeterEdges?: readonly Segment2[],
 ) {
   let geometries = [support.geometry];
   for (const opening of floor.openings) {
@@ -278,6 +279,11 @@ function coordinatePointSupportAroundOpenings(
     const length = segmentLength(wallSegment(wall));
     geometries = geometries.flatMap((geometry) => {
       if (!pointOnSegment(geometry, wallSegment(wall))) return [geometry];
+      // A support may meet an unrelated door wall at a T-junction. Only coordinate
+      // openings that lie on the same perimeter edge as the support; otherwise a
+      // valid perimeter post can be deleted or moved into the host clear zone.
+      if (perimeterEdges && !perimeterEdges.some((edge) => pointOnSegment(geometry, edge)
+        && collinearOverlap(edge, wallSegment(wall)))) return [geometry];
       const offset = Math.hypot(geometry.x - wall.start.x, geometry.y - wall.start.y);
       const halfSection = support.sectionMm.x / 2;
       if (offset + halfSection < opening.offsetMm || offset - halfSection > opening.offsetMm + opening.widthMm) return [geometry];
@@ -289,7 +295,8 @@ function coordinatePointSupportAroundOpenings(
             x: Math.round(wall.start.x + (wall.end.x - wall.start.x) * ratio),
             y: Math.round(wall.start.y + (wall.end.y - wall.start.y) * ratio),
           };
-        });
+        })
+        .filter((candidate) => !perimeterEdges || perimeterEdges.some((edge) => pointOnSegment(candidate, edge)));
     });
   }
   return [...new Map(geometries.map((geometry) => [pointKey(geometry), geometry])).values()].map((geometry, index) => ({
@@ -333,12 +340,15 @@ function canopySupports(roof: EnclosureRoofSystem, floor: V3CirculatedFloor, flo
     sectionMm: CANOPY_POST_SECTION_MM,
     excludedEdge: undefined,
   }).flatMap((support) => {
+    // Ledger-bearing edges transfer into the enclosure wall; duplicating a post
+    // on that same edge can obstruct the door/window the ledger is spanning.
+    if (ledgerEdges.some((edge) => pointOnSegment(support.geometry, edge))) return [];
     // Fragment roofs can have internal cut edges where an upper storey overlaps the parking
     // canopy. Posts on those cut edges obstruct the host clear zone; keep posts on the actual
     // host perimeter and coordinate them around authoritative openings.
     if (servedBounds.some((bounds) => support.geometry.x > bounds.x && support.geometry.x < rectangleRight(bounds)
       && support.geometry.y > bounds.y && support.geometry.y < rectangleBottom(bounds))) return [];
-    return coordinatePointSupportAroundOpenings(support, floor);
+    return coordinatePointSupportAroundOpenings(support, floor, footprintEdges);
   });
   if (ledgers.length === 0 && posts.length === 0) {
     // A fully internal setback island is bounded by the upper slab edge on every side. Model
@@ -461,7 +471,22 @@ function solidCanopyForRequirement(
 }
 
 function pergolaSupports(roof: OpenPergolaSystem, floor: V3CirculatedFloor) {
-  const supports = supportsAlongEdges({
+  const footprintEdges = polygonSegments(roof.footprint);
+  const hostSpaceId = roof.hostSpaceId;
+  const ledgerEdges = hostSpaceId ? footprintEdges.filter((edge) => floor.walls.some((wall) => wall.type === "interior"
+    && wall.adjacentSpaceIds.includes(hostSpaceId)
+    && collinearOverlap(edge, wallSegment(wall)))) : [];
+  const ledgers: SecondaryRoofSupport[] = ledgerEdges.map((edge, index) => ({
+    id: `${roof.id}-ledger-${index + 1}`,
+    role: "ledger",
+    floorId: floor.floorId,
+    baseElevationMm: floor.elevationMm,
+    topElevationMm: roof.topElevationMm,
+    roofSystemIds: [roof.id],
+    geometry: edge,
+    sectionMm: { x: PERGOLA_FRAME_SECTION_MM.width, y: PERGOLA_FRAME_SECTION_MM.depth },
+  }));
+  const posts = supportsAlongEdges({
     roofId: roof.id,
     floorId: floor.floorId,
     baseElevationMm: floor.elevationMm,
@@ -470,18 +495,26 @@ function pergolaSupports(roof: OpenPergolaSystem, floor: V3CirculatedFloor) {
     footprint: roof.footprint,
     maximumSpacingMm: PERGOLA_MAX_POST_SPACING_MM,
     sectionMm: PERGOLA_POST_SECTION_MM,
-  }).flatMap((support) => coordinatePointSupportAroundOpenings(support, floor));
+  }).flatMap((support) => {
+    const containingEdges = footprintEdges.filter((edge) => pointOnSegment(support.geometry, edge));
+    const ledgerOnly = containingEdges.length > 0 && containingEdges.every((edge) => ledgerEdges.some((ledger) => sameSegment(ledger, edge)));
+    if (ledgerOnly) return [];
+    return coordinatePointSupportAroundOpenings(support, floor, footprintEdges);
+  });
+  const supports = [...ledgers, ...posts];
   return {
     supports,
     reference: {
       roofSystemId: roof.id,
-      bearingLines: polygonSegments(roof.footprint).map((segment, index) => ({
+      bearingLines: footprintEdges.map((segment, index) => ({
         id: `${roof.id}-bearing-${index + 1}`,
         segment,
         role: "perimeter" as const,
         bearingWallIds: [],
         structuralColumnIds: [],
-        secondarySupportIds: supports.filter((support) => support.role === "pergola_post" && pointOnSegment(support.geometry, segment)).map((support) => support.id),
+        secondarySupportIds: supports.filter((support) => support.role === "ledger"
+          ? sameSegment(support.geometry, segment)
+          : pointOnSegment(support.geometry, segment)).map((support) => support.id),
       })),
     } satisfies RoofSupportReference,
   };
@@ -525,7 +558,14 @@ export function deriveV3RoofSystems(
       const space = floor.spaces.find((candidate) => candidate.id === region.spaceId);
       if (!space) continue;
       if (region.kind === "covered_outdoor" && explicitlyShadedHostIds.has(space.id)) continue;
-      for (const exposed of subtractRectangles(orthogonalPolygonBounds(region.polygon), upperBounds)) {
+      const regionBounds = orthogonalPolygonBounds(region.polygon);
+      const exposedFragments = subtractRectangles(regionBounds, upperBounds);
+      const roofFragments = region.kind === "covered_outdoor" && exposedFragments.length === 0
+        // A fully occupied upper floor still needs an explicit supported transfer
+        // slab over the covered outdoor space; it is not a roofless overlap.
+        ? [regionBounds]
+        : exposedFragments;
+      for (const exposed of roofFragments) {
         const id = `${floor.floorId}-roof-${space.id}-${fragmentIndex + 1}`;
         const kind = region.kind === "covered_outdoor" ? "solid_canopy" : roofKind(requirements, floorIndex, fragmentIndex);
         const roof: EnclosureRoofSystem = {

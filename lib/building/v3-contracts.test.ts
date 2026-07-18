@@ -151,6 +151,20 @@ describe("schema-v3 contracts", () => {
     expect(requirements.shadeStructures[0]?.type).toBe("open_pergola");
   });
 
+  test("rejects a programmed balcony or verandah when its matching outdoor intent is missing", () => {
+    const requirements = createCurrentRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      floorCount: 2,
+      programs: DEFAULT_INTAKE_DRAFT.programs.map((program, level) =>
+        level === 1 ? { ...program, balcony: true } : program),
+    });
+    expect(requirements.rooms.some((room) => room.type === "balcony")).toBe(true);
+    expect(currentBuildingRequirementsSchema.safeParse({
+      ...requirements,
+      outdoorAreas: requirements.outdoorAreas.filter((outdoor) => outdoor.type !== "balcony"),
+    }).success).toBe(false);
+  });
+
   test("round-trips canonical v3 building geometry and reports its version", () => {
     const fixture = currentBuildingFixture();
     const parsed = currentBuildingSchema.parse(JSON.parse(JSON.stringify(fixture)));

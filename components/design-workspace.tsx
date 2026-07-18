@@ -7,16 +7,18 @@ import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, La
 import { CadWorkspace } from "@/components/cad-workspace";
 import { GuidedIntake } from "@/components/guided-intake";
 import { capabilitiesForWorkspace, ProjectCapabilityNotice, projectCapabilityPresentation, PROJECT_VIEW_ONLY_EXPLANATION, type ProjectCapabilityPresentation } from "@/components/project-capability-ui";
-import { ProjectDeletionControl } from "@/components/project-deletion-control";
 import { RelaxationNoticeBadge } from "@/components/RelaxationNoticeBadge";
 import { SchemeEvidenceSummary } from "@/components/SchemeEvidenceSummary";
 import { SchemeRack, shouldShowSchemeRack } from "@/components/scheme-rack";
 import { WorkspaceStepper, type WorkspaceStepperItem } from "@/components/workspace-stepper";
 import {
   explainGenerationFailure,
+  isLegacyGenerationDiagnostics,
+  normalizeSchemeEvidence,
   parseWorkspaceStep,
   restoredWorkspaceStep,
   schemeEvidenceLabels,
+  schemeRationaleForDisplay,
   type GenerationConflict,
   type GenerationDiagnosticsSummary,
   type WorkspaceError,
@@ -24,7 +26,6 @@ import {
 } from "@/components/design-workspace-state";
 import { authClient } from "@/lib/auth-client";
 import type { RequirementDelta } from "@/lib/ai/schema";
-import type { GenerationDiagnostics as PersistedGenerationDiagnostics } from "@/lib/building/generate";
 import type { LegacyBuildingRequirements, ReadableBuildingRequirements } from "@/lib/building/requirements";
 import type { ReadableBuilding } from "@/lib/building/schema";
 import { formatEstimateRange } from "@/lib/cost/format";
@@ -69,7 +70,9 @@ function EvidenceDetails({ title, children }: { title: string; children: ReactNo
   </details>;
 }
 
-function GenerationReport({ diagnostics }: { diagnostics: PersistedGenerationDiagnostics }) {
+function GenerationReport({ diagnostics: unparsedDiagnostics }: { diagnostics: unknown }) {
+  if (!isLegacyGenerationDiagnostics(unparsedDiagnostics)) return null;
+  const diagnostics = unparsedDiagnostics;
   const attemptedRungs = diagnostics.quotaUsage.filter((usage) => usage.attempted > 0);
   return <details className="group border-b border-[#8e5a31]/25">
     <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea]">
@@ -83,7 +86,7 @@ function GenerationReport({ diagnostics }: { diagnostics: PersistedGenerationDia
         ["Hard ceiling", diagnostics.candidateCeiling],
         ["Watchdog", `${(diagnostics.watchdogMs / 1000).toFixed(1)} s`],
       ].map(([label, value]) => <div className="bg-[#090908] p-3" key={label}><dt className="text-[0.65rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">{label}</dt><dd className="mt-1 font-[family-name:var(--font-display)] text-xl text-[#fff6ea]">{value}</dd></div>)}</dl>
-      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[36rem] border-collapse text-left text-sm"><caption className="pb-2 text-left text-[0.65rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Attempted parti and relaxation rungs</caption><thead><tr className="border-y border-[#8e5a31]/30 text-[0.65rem] uppercase tracking-[0.09em] text-[#b5a697]"><th className="px-2 py-2">Parti</th><th className="px-2 py-2">Rung</th><th className="px-2 py-2">Relaxation</th><th className="px-2 py-2">Court</th><th className="px-2 py-2">Attempted / quota</th></tr></thead><tbody>{attemptedRungs.map((usage) => <tr className="border-b border-[#8e5a31]/20 text-[#b5a697]" key={`${usage.partiId}-${usage.rung}-${usage.relaxationId}`}><td className="px-2 py-2 text-[#fff6ea]">{usage.partiId.replaceAll("_", " ")}</td><td className="px-2 py-2">{usage.rung}</td><td className="px-2 py-2">{usage.relaxationId.replaceAll("_", " ")}</td><td className="px-2 py-2">{usage.simplifiedCourt ? "Simplified" : "Preferred"}</td><td className="px-2 py-2">{usage.attempted} / {usage.quota}</td></tr>)}</tbody></table></div>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[32rem] border-collapse text-left text-sm"><caption className="pb-2 text-left text-[0.65rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Attempted plan strategies</caption><thead><tr className="border-y border-[#8e5a31]/30 text-[0.65rem] uppercase tracking-[0.09em] text-[#b5a697]"><th className="px-2 py-2">Parti</th><th className="px-2 py-2">Relaxation</th><th className="px-2 py-2">Court</th><th className="px-2 py-2">Attempted / quota</th></tr></thead><tbody>{attemptedRungs.map((usage) => <tr className="border-b border-[#8e5a31]/20 text-[#b5a697]" key={`${usage.partiId}-${usage.rung}-${usage.relaxationId}`}><td className="px-2 py-2 text-[#fff6ea]">{usage.partiId.replaceAll("_", " ")}</td><td className="px-2 py-2">{usage.relaxationId.replaceAll("_", " ")}</td><td className="px-2 py-2">{usage.simplifiedCourt ? "Simplified" : "Preferred"}</td><td className="px-2 py-2">{usage.attempted} / {usage.quota}</td></tr>)}</tbody></table></div>
     </div>
   </details>;
 }
@@ -301,13 +304,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
     syncDraftParam(nextDraftId);
   }
 
-  function finishProjectDeletion() {
-    setResult(null);
-    setBlockedProjectAccess(null);
-    setError(null);
-    window.location.assign("/dashboard");
-  }
-
   async function selectPendingScheme(force = false) {
     if (!result || !projectCapabilities.canSelectScheme || !pendingSchemeId || pendingSchemeId === result.selectedSchemeId || isSelectingScheme) return;
     setIsSelectingScheme(true);
@@ -389,7 +385,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
 
           {!result && !isGenerating && isRestoring ? <div aria-busy="true" className="grid min-h-[32rem] place-items-center border border-[#8e5a31]/45 bg-[#0d0c0a] p-8 text-center" role="status"><div><LoaderCircle className="mx-auto h-8 w-8 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-5 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Reopening your saved study</p><p className="mt-3 text-sm leading-6 text-[#9f9183]">Restoring the plan, its evidence and render state from the server.</p></div></div> : null}
 
-          {blockedProjectAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={blockedProjectAccess} /><div className="mx-auto mt-5 flex max-w-2xl justify-end"><ProjectDeletionControl canDelete={false} designId={initialDesignId} onCompleted={finishProjectDeletion} /></div></div> : result && capabilityPresentation?.blocksNormalAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={capabilityPresentation} /><div className="mx-auto mt-5 flex max-w-2xl justify-end"><ProjectDeletionControl canDelete={projectCapabilities.canDelete && !isGenerating} designId={result.designId} onCompleted={finishProjectDeletion} projectId={result.projectId} projectTitle={result.title} /></div></div> : null}
+          {blockedProjectAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={blockedProjectAccess} /></div> : result && capabilityPresentation?.blocksNormalAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={capabilityPresentation} /></div> : null}
 
           <section className="min-w-0 scroll-mt-4 self-start" ref={resultRef}>
             {isGenerating && !result ? <div aria-busy="true" className="grid min-h-[44rem] place-items-center border border-[#8e5a31]/55 bg-[#0d0c0a] p-8 text-center"><div className="max-w-md"><LoaderCircle className="mx-auto h-9 w-9 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-6 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Evaluating deterministic candidates</p><h1 className="mt-4 font-[family-name:var(--font-display)] text-5xl font-normal leading-[0.95] tracking-[-0.04em]">Building a plan that can explain itself<span className="text-[#ff4e00]">.</span></h1><p className="mt-5 text-base leading-7 text-[#b5a697]">Normalizing shared walls, placing openings and stairs, proving circulation, reconciling regional cost, and composing the drawing sheet.</p><p aria-atomic="true" aria-live="polite" className="mt-4 text-sm text-[#c97940]" role="status">Elapsed {generationElapsedSeconds} seconds · no partial scheme will be saved</p></div></div> : null}
@@ -401,10 +397,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
               <div className="border border-[#8e5a31]/45 bg-[#0d0c0a]">
                 <div className="flex flex-wrap items-end justify-between gap-4 px-5 py-4">
                   <div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Study {result.designId.slice(0, 8)} · immutable v{result.version ?? 1}</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em]">{result.title}</h1></div>
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    <ProjectDeletionControl canDelete={projectCapabilities.canDelete && !isGenerating} designId={result.designId} onCompleted={finishProjectDeletion} projectId={result.projectId} projectTitle={result.title} />
-                    <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-3 py-2 text-[0.7rem] font-bold uppercase tracking-[0.1em] transition hover:bg-[#171512] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea]" onClick={startNewProject} type="button"><Plus className="h-3.5 w-3.5" /> New study</button>
-                  </div>
                 </div>
 
                 <WorkspaceStepper current={step} items={([
@@ -424,8 +416,8 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
                         <p className="text-[0.65rem] font-extrabold uppercase tracking-[0.13em] text-[#c97940]">Why this works</p>
                         <h3 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.025em]">{displayedScheme.name}</h3>
                         <div className="mt-2"><RelaxationNoticeBadge rung={displayedScheme.ladderRung} /></div>
-                        <p className="mt-3 max-w-3xl text-sm leading-6 text-[#b5a697]">{displayedScheme.rationale}</p>
-                        {displayedScheme.evidence.length ? <ul className="mt-4 space-y-2 text-sm leading-6 text-[#b5a697]">{displayedScheme.evidence.slice(0, 4).map((item) => <li className="border-l border-[#c97940] pl-3" key={item}>{item}</li>)}</ul> : null}
+                        <p className="mt-3 max-w-3xl text-sm leading-6 text-[#b5a697]">{schemeRationaleForDisplay(displayedScheme.rationale)}</p>
+                        {displayedScheme.evidence.length ? <ul className="mt-4 space-y-2 text-sm leading-6 text-[#b5a697]">{normalizeSchemeEvidence(displayedScheme.evidence).slice(0, 5).map((item) => <li className="border-l border-[#c97940] pl-3" key={item}>{item}</li>)}</ul> : null}
                       </div>
                       <div className="border-t border-[#8e5a31]/25 pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
                         <SchemeEvidenceSummary evidence={displayedEvidence} validationScore={displayedValidation.score} />
@@ -437,8 +429,8 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
                   </> : null}
 
                   {!showSchemeRack && selectedScheme ? <section aria-label="Selected villa scheme">
-                    <div className="flex flex-wrap items-start justify-between gap-4 border-t border-[#8e5a31]/25 pt-6"><div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Selected parti · {selectedScheme.partiId.replaceAll("_", " ")}</p><h3 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.025em]">{selectedScheme.name}</h3><p className="mt-2 max-w-3xl text-sm leading-6 text-[#b5a697]">{selectedScheme.rationale}</p></div><RelaxationNoticeBadge rung={selectedScheme.ladderRung} /></div>
-                    {selectedScheme.evidence.length > 0 ? <ul className="mt-4 flex flex-wrap gap-2" aria-label="Scheme evidence">{selectedScheme.evidence.slice(0, 5).map((item) => <li className="border border-[#c97940]/45 px-2.5 py-1.5 text-xs text-[#b5a697]" key={item}>{item}</li>)}</ul> : null}
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-t border-[#8e5a31]/25 pt-6"><div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Selected parti · {selectedScheme.partiId.replaceAll("_", " ")}</p><h3 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.025em]">{selectedScheme.name}</h3><p className="mt-2 max-w-3xl text-sm leading-6 text-[#b5a697]">{schemeRationaleForDisplay(selectedScheme.rationale)}</p></div><RelaxationNoticeBadge rung={selectedScheme.ladderRung} /></div>
+                    {selectedScheme.evidence.length > 0 ? <ul className="mt-4 flex flex-wrap gap-2" aria-label="Scheme evidence">{normalizeSchemeEvidence(selectedScheme.evidence).slice(0, 5).map((item) => <li className="border border-[#c97940]/45 px-2.5 py-1.5 text-xs text-[#b5a697]" key={item}>{item}</li>)}</ul> : null}
                   </section> : null}
 
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5">

@@ -1,5 +1,5 @@
 import type { RoomType } from "@/lib/building/requirements";
-import type { Building, CurrentBuilding, CurrentFloor, Floor, Opening, Point, ReadableBuilding, Rectangle, Segment2, Space, WallSegment } from "@/lib/building/schema";
+import type { Building, CurrentBuilding, CurrentFloor, Floor, Opening, Point, ReadableBuilding, Rectangle, Space, WallSegment } from "@/lib/building/schema";
 import { orthogonalPolygonAreaMm2, orthogonalPolygonBounds } from "@/lib/building/orthogonal-partition";
 import { isVerandahSpace } from "@/lib/building/space-semantics";
 import { EXTERIOR, isPerimeterOpenSpace, isVerandahOpenEdgeWall } from "@/lib/building/topology";
@@ -395,13 +395,6 @@ function floorArtifact(building: Building, floor: Floor, options: DrawingBuildOp
   };
 }
 
-function projectedRidges(planes: Array<{ vertices: Array<{ x: number; y: number; z: number }> }>): Segment2[] {
-  const vertices = planes.flatMap((plane) => plane.vertices);
-  const maximum = Math.max(...vertices.map((point) => point.z));
-  const high = [...new Map(vertices.filter((point) => point.z === maximum).map((point) => [`${point.x}:${point.y}`, point])).values()];
-  return high.length === 2 ? [{ start: { x: high[0].x, y: high[0].y }, end: { x: high[1].x, y: high[1].y } }] : [];
-}
-
 function legacyDrawingAdapter(building: CurrentBuilding, floor: CurrentFloor): { building: Building; floor: Floor } {
   const spaces: Space[] = floor.spaces.map((space) => {
     const region = floor.regions.find((candidate) => candidate.id === space.regionId);
@@ -452,18 +445,6 @@ function currentFloorArtifact(building: CurrentBuilding, floor: CurrentFloor, op
   const adapter = legacyDrawingAdapter(building, floor);
   const artifact = floorArtifact(adapter.building, adapter.floor, options);
   const openingById = new Map(floor.openings.map((opening) => [opening.id, opening]));
-  const floorSpaceIds = new Set(floor.spaces.map((space) => space.id));
-  const roofOverlay = building.roofSystems.flatMap((roof) => {
-    const onFloor = roof.kind === "open_pergola" ? roof.hostFloorId === floor.id : roof.servesSpaceIds.some((id) => floorSpaceIds.has(id));
-    if (!onFloor) return [];
-    return [{
-      id: roof.id,
-      kind: roof.kind,
-      footprint: roof.footprint.points,
-      planes: roof.kind === "open_pergola" ? [] : roof.planes.map((plane) => ({ id: plane.id, vertices: plane.vertices })),
-      ridges: roof.kind === "open_pergola" ? [] : projectedRidges(roof.planes),
-    }];
-  });
   return {
     ...artifact,
     artifactSchemaVersion: 3,
@@ -489,7 +470,10 @@ function currentFloorArtifact(building: CurrentBuilding, floor: CurrentFloor, op
     }),
     constructedFootprints: floor.regions.filter((region) => region.kind === "interior" || region.kind === "covered_outdoor").map((region) => region.polygon.points),
     intentionalUnbuiltRegions: floor.regions.filter((region) => region.kind === "intentional_unbuilt").map((region) => ({ id: region.id, polygon: region.polygon.points })),
-    roofOverlay,
+    // Roof geometry remains available to massing, render, quantities, and validation.
+    // It is intentionally omitted from floor-plan sheets until intermediate-floor
+    // roof semantics are corrected; showing partial pitches here is misleading.
+    roofOverlay: [],
     supports: [
       ...building.structuralConcept.columns.filter((column) => column.servedFloorIds.includes(floor.id)).map((column) => ({ id: column.id, role: "primary_column" as const, geometry: column.center })),
       ...building.secondaryRoofSupports.filter((support) => support.floorId === floor.id).map((support) => ({ id: support.id, role: support.role, geometry: support.geometry })),

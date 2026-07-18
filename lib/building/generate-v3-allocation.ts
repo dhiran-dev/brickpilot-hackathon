@@ -1,6 +1,7 @@
 import { currentBuildingRequirementsSchema, type CurrentBuildingRequirements } from "@/lib/building/requirements";
 import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
 import { allocateV3TopologyScheme, ProgramAreaInfeasibleError, type V3AllocatedScheme } from "@/lib/building/candidates/v3-allocation";
+import type { ZonedAllocationRejection } from "@/lib/building/candidates/v3-zoned-allocation";
 import { generateV3TopologySchemes, type V3TopologyDiagnostics } from "@/lib/building/generate-v3-topology";
 
 export type V3AllocationDiagnostics = {
@@ -8,7 +9,15 @@ export type V3AllocationDiagnostics = {
   topology: V3TopologyDiagnostics;
   attemptedSchemeCount: number;
   allocatedSchemeCount: number;
-  rejectedSchemes: Array<{ topologySchemeId: string; code: "PROGRAM_AREA_INFEASIBLE"; requirementIds: string[] }>;
+  rejectedSchemes: Array<{
+    topologySchemeId: string;
+    code: "PROGRAM_AREA_INFEASIBLE";
+    requirementIds: string[];
+    planningDiagnostics?: {
+      evaluatedCandidateCount: number;
+      rejections: ZonedAllocationRejection[];
+    };
+  }>;
 };
 
 export type V3AllocationStageResult = {
@@ -79,6 +88,7 @@ export function generateV3AllocationStage(input: unknown): V3AllocationStageResu
         topologySchemeId: topologyScheme.schemeId,
         code: "PROGRAM_AREA_INFEASIBLE",
         requirementIds: error.requirementIds,
+        ...(error.planningDiagnostics ? { planningDiagnostics: error.planningDiagnostics } : {}),
       });
     }
   }

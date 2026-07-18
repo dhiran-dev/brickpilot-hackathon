@@ -29,22 +29,22 @@ export const DRAWING_PRESETS: Record<DrawingPreset, { label: string; appearance:
   presentation: {
     label: "Presentation",
     appearance: "cad-dark",
-    visible: ["site", "zoning", "walls", "openings", "roof", "safety", "furniture", "labels", "annotation"],
+    visible: ["site", "zoning", "walls", "openings", "safety", "furniture", "labels", "annotation"],
   },
   architectural: {
     label: "Architectural",
     appearance: "cad-dark",
-    visible: ["site", "walls", "openings", "roof", "safety", "furniture", "labels", "dimensions-overall", "annotation"],
+    visible: ["site", "walls", "openings", "safety", "furniture", "labels", "dimensions-overall", "annotation"],
   },
   validation: {
     label: "Validation",
     appearance: "cad-dark",
-    visible: ["site", "zoning", "circulation", "walls", "openings", "roof", "safety", "labels", "validation", "annotation"],
+    visible: ["site", "zoning", "circulation", "walls", "openings", "safety", "labels", "validation", "annotation"],
   },
   print: {
     label: "Print",
     appearance: "paper-light",
-    visible: ["site", "walls", "openings", "roof", "safety", "furniture", "labels", "dimensions-overall", "dimensions-internal", "validation", "annotation"],
+    visible: ["site", "walls", "openings", "safety", "furniture", "labels", "dimensions-overall", "dimensions-internal", "validation", "annotation"],
   },
 };
 

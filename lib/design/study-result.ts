@@ -4,6 +4,7 @@ import type { BuildingRequirements, CurrentBuildingRequirements } from "@/lib/bu
 import type { Building, CurrentBuilding } from "@/lib/building/schema";
 import type { CostEstimate } from "@/lib/cost/schema";
 import type { CurrentPersistedScheme, PersistedScheme } from "@/lib/design/persisted-study";
+import type { V3PipelineDiagnostics } from "@/lib/server/design-pipeline";
 import type { ProjectCapabilities, ProjectCapabilityProfile, ProjectLifecycleStatus } from "@/lib/server/project-capabilities";
 import type { ValidationReport, ValidationReportV3 } from "@/lib/validation";
 
@@ -46,12 +47,13 @@ export type RecentStudy = {
   capabilities?: ProjectCapabilities;
 };
 
-export type CurrentDesignResult = Omit<DesignResult, "requirements" | "building" | "validation" | "schemes" | "aiReview"> & {
+export type CurrentDesignResult = Omit<DesignResult, "requirements" | "building" | "validation" | "schemes" | "aiReview" | "diagnostics"> & {
   requirements: CurrentBuildingRequirements;
   building: CurrentBuilding;
   validation: ValidationReportV3;
   aiReview: ArchitecturalReviewResult;
   schemes?: CurrentPersistedScheme[];
+  diagnostics?: V3PipelineDiagnostics;
 };
 
 export type ReadableDesignResult = DesignResult | CurrentDesignResult;

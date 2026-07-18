@@ -1,4 +1,5 @@
 import type { CostEstimate } from "@/lib/cost/schema";
+import type { GenerationDiagnostics } from "@/lib/building/generate";
 
 export type GenerationConflict = {
   floorId?: string;
@@ -20,6 +21,67 @@ export type WorkspaceError = {
   actions: string[];
 };
 
+const LEGACY_V3_RATIONALE = "Canonical v3 geometry passed the complete deterministic physical and circulation rule pack.";
+const FRIENDLY_V3_RATIONALE = "The plan keeps the requested spaces, access routes, and physical systems coordinated.";
+
+const REALIZED_EVIDENCE: Record<string, string> = {
+  "entry.primarySide": "The main entrance is placed on the selected road-facing side.",
+  roof: "Roof geometry is coordinated with the building model.",
+  courtyard: "The courtyard choice is reflected in the plan.",
+  aboveParkingUse: "The space above parking is used as requested.",
+  outdoorAreas: "Requested balconies, verandahs, and terraces are included.",
+  "parking.preferredSide": "Vehicle access is placed on the selected parking side.",
+  shadeStructures: "Requested pergolas and canopies are included.",
+};
+
+function humanizeEvidencePath(path: string) {
+  return path
+    .replaceAll(".", " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function normalizeSchemeEvidence(items: readonly string[]) {
+  const normalized = items.map((item) => {
+    const separator = item.lastIndexOf(":");
+    if (separator < 1) return item;
+    const path = item.slice(0, separator);
+    const status = item.slice(separator + 1);
+    if (status === "realized") return REALIZED_EVIDENCE[path] ?? `${humanizeEvidencePath(path)} is included as requested.`;
+    if (status === "relaxed") return `${humanizeEvidencePath(path)} was adjusted to keep the plan feasible.`;
+    if (status === "incompatible") return `${humanizeEvidencePath(path)} could not be included in this direction.`;
+    return item;
+  });
+  return [...new Set(normalized)];
+}
+
+export function schemeRationaleForDisplay(rationale: string) {
+  if (rationale === LEGACY_V3_RATIONALE) return FRIENDLY_V3_RATIONALE;
+  return rationale.replace(/\s+at relaxation rung \d+(?=\.)/gi, "");
+}
+
+export function isLegacyGenerationDiagnostics(value: unknown): value is GenerationDiagnostics {
+  if (!value || typeof value !== "object") return false;
+  const diagnostics = value as Record<string, unknown>;
+  if (!Array.isArray(diagnostics.quotaUsage)
+    || typeof diagnostics.watchdogMs !== "number"
+    || typeof diagnostics.candidateCeiling !== "number"
+    || typeof diagnostics.plannedCandidateCount !== "number"
+    || typeof diagnostics.constructedCandidateCount !== "number"
+    || typeof diagnostics.evaluatedCandidateCount !== "number") return false;
+  return diagnostics.quotaUsage.every((usage) => {
+    if (!usage || typeof usage !== "object") return false;
+    const entry = usage as Record<string, unknown>;
+    return typeof entry.partiId === "string"
+      && typeof entry.rung === "number"
+      && typeof entry.relaxationId === "string"
+      && typeof entry.simplifiedCourt === "boolean"
+      && typeof entry.quota === "number"
+      && typeof entry.attempted === "number";
+  });
+}
+
 export function explainGenerationFailure(payload: {
   error?: string;
   code?: string;
@@ -32,19 +94,25 @@ export function explainGenerationFailure(payload: {
       .map((conflict) => conflict.suggestedAction)
       .filter((action): action is string => Boolean(action));
     const firstConflict = conflicts[0];
+    const affectedFloors = [...new Set(conflicts
+      .map((conflict) => conflict.floorId)
+      .filter((floorId): floorId is string => Boolean(floorId)))];
+    const affectedFloorDetail = affectedFloors.length > 0
+      ? ` Affected floor${affectedFloors.length === 1 ? "" : "s"}: ${affectedFloors.join(", ")}.`
+      : "";
     const blockingDetail = firstConflict?.message
       ? ` Blocking condition${firstConflict.floorId ? ` on ${firstConflict.floorId}` : ""}: ${firstConflict.message}`
       : "";
+    const fallbackActions = [
+      "Move one room from the affected floor to another modeled floor.",
+      "Increase plot dimensions; reduce setbacks only where local rules permit.",
+      "Reduce a flexible room-area target without going below its minimum.",
+    ];
     return {
       title: "This brief needs adjustment",
-      message: `BrickPilot could not connect every requested room with valid walls, doors and circulation inside the current buildable envelope.${blockingDetail}`,
+      message: `BrickPilot could not arrange every requested space with valid room areas, frontage and protected circulation inside the current buildable envelope.${affectedFloorDetail}${blockingDetail}`,
       code,
-      actions: [...new Set([
-        ...reportedActions,
-        "Move one or more ground-floor rooms to an upper floor.",
-        "Remove an optional courtyard, parking bay or secondary room.",
-        "Increase the plot or reduce setbacks only where local rules permit.",
-      ])].slice(0, 4),
+      actions: [...new Set(reportedActions.length > 0 ? reportedActions : fallbackActions)].slice(0, 4),
     };
   }
   if (code === "GENERATION_TIMEOUT") return {

@@ -157,4 +157,12 @@ describe("GuidedIntake architecture option cards", () => {
     expect(css).toContain(".intake-stepper");
     expect(css).toContain(".intake-actions");
   });
+
+  test("keeps the deferred roof character choice out of the questionnaire and review", () => {
+    const source = readFileSync("components/guided-intake/GuidedIntake.tsx", "utf8");
+
+    expect(source).not.toContain('Field label="Roof character"');
+    expect(source).not.toContain('["Roof + shade"');
+    expect(source).toContain('["Shade structures"');
+  });
 });

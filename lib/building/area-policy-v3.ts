@@ -62,7 +62,7 @@ export function resolveRoomAreaPolicy(input: {
     const derivedTarget = Math.max(6_000_000, Math.min(12_000_000, roundArea(usableFloorAreaMm2 * 0.08)));
     const effectiveTargetAreaMm2 = outdoor.targetAreaMm2 ?? derivedTarget;
     return {
-      requirementId: outdoor.id,
+      requirementId: room.id,
       roomType: room.type,
       flexibilityClass: "outdoor",
       minimumAreaMm2: outdoor.minimumAreaMm2 ?? room.minAreaMm2,
