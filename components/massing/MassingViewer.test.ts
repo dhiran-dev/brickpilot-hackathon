@@ -159,8 +159,7 @@ describe("fixed render source cameras", () => {
     expect(parapet.depthWrite).toBe(false);
   });
 
-  test("capture layer contract suppresses scale references in GPT sources", () => {
-    expect(MASSING_CAPTURE_LAYER_STATE.showScaleReferences).toBe(false); // prompts.ts forbids people/cars
+  test("capture layer contract keeps GPT sources structural", () => {
     expect(MASSING_CAPTURE_LAYER_STATE.showInteriorWalls).toBe(false);
     expect(MASSING_CAPTURE_LAYER_STATE.showColumns).toBe(true);
     expect(MASSING_CAPTURE_LAYER_STATE.showSlabs).toBe(true);

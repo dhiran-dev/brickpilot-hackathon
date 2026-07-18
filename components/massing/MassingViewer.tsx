@@ -6,7 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { Building } from "@/lib/building/schema";
 import { entranceRoadSide } from "@/lib/building/topology";
-import { buildMassingModel, MASSING_GRID_Y_M, MASSING_SITE_GRADE_M, type MassingPrimitiveKind } from "@/lib/render/massing";
+import { buildMassingModel, MASSING_GRID_Y_M, type MassingPrimitiveKind } from "@/lib/render/massing";
 
 export type MassingView = "front" | "rear" | "left" | "right" | "iso" | "top";
 export type MassingCapture = { role: "massing_front" | "massing_collage" | "massing_top"; dataUri: string };
@@ -57,14 +57,13 @@ export function massingVisibilityOptions(input: {
   };
 }
 
-/** Layer state forced during captureReferenceViews(): GPT sources must show full structure and no scale figures. */
+/** Layer state forced during captureReferenceViews(): GPT sources must show the full structure. */
 export const MASSING_CAPTURE_LAYER_STATE = {
   showInteriorWalls: false,
   showColumns: true,
   showSlabs: true,
   showRoof: true,
   showSite: true,
-  showScaleReferences: false,
   presentationMode: false,
 } as const;
 
@@ -83,7 +82,6 @@ type MassingViewerProps = {
   showSlabs: boolean;
   showRoof: boolean;
   showSite: boolean;
-  showScaleReferences: boolean;
   presentationMode: boolean;
   onReadyChange?: (ready: boolean) => void;
   onError?: (message: string) => void;
@@ -177,48 +175,6 @@ function frontVector(facing: Building["site"]["facing"]) {
   return new THREE.Vector3(-1, 0, 0);
 }
 
-const SCALE_REFERENCE_COLOR = 0x8f867b;
-
-function scaleReferenceMaterial() {
-  return new THREE.MeshStandardMaterial({ color: SCALE_REFERENCE_COLOR, roughness: 0.9, metalness: 0.02 });
-}
-
-function enableScaleReferenceShadows(group: THREE.Group) {
-  group.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
-  });
-  return group;
-}
-
-/** Flat neutral silhouette of a standing person, ~1.7 m tall, feet at the group origin. */
-function buildPersonMesh(position: THREE.Vector3) {
-  const group = new THREE.Group();
-  const material = scaleReferenceMaterial();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 1.4, 10), material);
-  body.position.y = 0.7;
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.26, 10), material);
-  head.position.y = 1.55;
-  group.add(body, head);
-  group.position.copy(position);
-  return enableScaleReferenceShadows(group);
-}
-
-/** Flat neutral silhouette of a car, ~4.4 m long along local X, wheels at the group origin. */
-function buildCarMesh(position: THREE.Vector3) {
-  const group = new THREE.Group();
-  const material = scaleReferenceMaterial();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.62, 1.8), material);
-  body.position.y = 0.5;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.52, 1.62), material);
-  cabin.position.set(-0.25, 1.05, 0);
-  group.add(body, cabin);
-  group.position.copy(position);
-  return enableScaleReferenceShadows(group);
-}
-
 export function massingViewVector(view: MassingView, facing: Building["site"]["facing"]) {
   const front = frontVector(facing).normalize();
   const right = new THREE.Vector3(-front.z, 0, front.x).normalize();
@@ -299,7 +255,6 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
   showSlabs,
   showRoof,
   showSite,
-  showScaleReferences,
   presentationMode,
   onReadyChange,
   onError,
@@ -566,18 +521,6 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       const centre = min.clone().add(max).multiplyScalar(0.5);
       runtime.modelRadius = Math.max(4, size.length() / 2);
       runtime.controls.target.set(centre.x, min.y + size.y * 0.45, centre.z);
-      if (showScaleReferences) {
-        const outward = frontVector(entranceSide); // entranceSide from Task 1, top of this effect
-        const alongFront = (point: THREE.Vector3) => point.x * outward.x + point.z * outward.z;
-        const buildingFrontM = Math.max(alongFront(min), alongFront(max));
-        const siteHalfM = outward.x !== 0 ? model.widthM / 2 : model.depthM / 2;
-        const offsetM = Math.min(buildingFrontM + 1.6, Math.max(buildingFrontM + 0.6, siteHalfM - 0.6));
-        const lateral = new THREE.Vector3(-outward.z, 0, outward.x);
-        const person = buildPersonMesh(outward.clone().multiplyScalar(offsetM).setY(MASSING_SITE_GRADE_M).addScaledVector(lateral, -1.8));
-        const car = buildCarMesh(outward.clone().multiplyScalar(offsetM).setY(MASSING_SITE_GRADE_M).addScaledVector(lateral, 2.2));
-        if (entranceSide === "east" || entranceSide === "west") car.rotation.y = Math.PI / 2; // long axis parallel to the road
-        runtime.root.add(person, car);
-      }
     } else {
       runtime.modelRadius = Math.max(6, Math.hypot(model.widthM, model.depthM, model.heightM) / 2);
       runtime.controls.target.set(...model.centre);
@@ -591,7 +534,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       runtime.hasFramedModel = true;
       setView("iso", false);
     }
-  }, [building, explodeM, presentationMode, showColumns, showInteriorWalls, showRoof, showScaleReferences, showSite, showSlabs, visibleFloorIds.join("|")]);
+  }, [building, explodeM, presentationMode, showColumns, showInteriorWalls, showRoof, showSite, showSlabs, visibleFloorIds.join("|")]);
 
   return <div className={MASSING_VIEWER_CLASS_NAME} ref={containerRef} role="img" aria-label="Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." />;
 });
