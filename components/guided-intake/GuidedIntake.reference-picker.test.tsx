@@ -35,6 +35,9 @@ describe("GuidedIntake architecture option cards", () => {
     expect(markup).toContain("name=\"architectural-style-test-");
     expect(markup.match(/type="radio"/g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length);
     expect(markup.match(/<img /g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length);
+    expect(markup.match(/disabled=""/g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length - 1);
+    expect(markup.match(/Coming soon/g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length - 1);
+    expect(markup.indexOf("Modernist")).toBeLessThan(markup.indexOf("Contemporary tropical"));
     for (const option of ARCHITECTURAL_STYLE_PREVIEWS) {
       expect(markup).toContain(option.title);
       expect(markup).toContain(option.detail);
@@ -55,15 +58,15 @@ describe("GuidedIntake architecture option cards", () => {
       description: "Choose a grounded regional reference.",
       name: "architectural-style-test",
       options: ARCHITECTURAL_STYLE_PREVIEWS,
-      value: "kerala_contemporary",
+      value: "modernist",
       onChange: () => undefined,
     }));
 
     expect(markup.match(/checked=""/g)?.length).toBe(1);
-    expect(markup).toMatch(/<input(?=[^>]*checked="")(?=[^>]*value="kerala_contemporary")[^>]*>/);
+    expect(markup).toMatch(/<input(?=[^>]*checked="")(?=[^>]*value="modernist")[^>]*>/);
     expect(markup).toContain("<span class=\"sr-only\">Selected</span>");
     expect(markup).toContain("aria-live=\"polite\"");
-    expect(markup).toContain("Selected Kerala contemporary.");
+    expect(markup).toContain("Selected Modernist.");
   });
 
   test("shows the regional suggestion once as a compact badge", () => {
@@ -73,7 +76,7 @@ describe("GuidedIntake architecture option cards", () => {
       name: "architectural-style-test",
       options: ARCHITECTURAL_STYLE_PREVIEWS,
       value: "modernist",
-      suggestedValue: "kerala_contemporary",
+      suggestedValue: "modernist",
       suggestionLabel: "Kerala",
       onChange: () => undefined,
     }));
@@ -101,7 +104,7 @@ describe("GuidedIntake architecture option cards", () => {
   });
 
   test("calls onChange with the option value when a card radio changes", () => {
-    const option = FORM_STRATEGY_PREVIEWS[1];
+    const option = FORM_STRATEGY_PREVIEWS[0];
     const selected: string[] = [];
     const card = ArchitectureOptionCard({
       option,
@@ -117,6 +120,23 @@ describe("GuidedIntake architecture option cards", () => {
     expect((radios[0].props as { value: string }).value).toBe(option.value);
     (radios[0].props as { onChange: () => void }).onChange();
     expect(selected).toEqual([option.value]);
+  });
+
+  test("keeps coming-soon cards inert even if their change handler is invoked", () => {
+    const option = FORM_STRATEGY_PREVIEWS[1];
+    const selected: string[] = [];
+    const card = ArchitectureOptionCard({
+      option,
+      checked: false,
+      radioName: "form-strategy-group",
+      onSelect: (value) => selected.push(value),
+      onImageError: () => undefined,
+    });
+
+    const radio = findElements(card, (element) => element.type === "input")[0];
+    expect((radio.props as { disabled: boolean }).disabled).toBe(true);
+    (radio.props as { onChange: () => void }).onChange();
+    expect(selected).toEqual([]);
   });
 
   test("hides the thumbnail entirely after an image error so the card still reads complete", () => {

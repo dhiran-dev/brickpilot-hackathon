@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { ArrowLeft, ArrowRight, Briefcase, Building2, Check, CircleDollarSign, Home, LoaderCircle, RotateCcw, Ruler, Sparkles, type LucideIcon } from "lucide-react";
 
 import { BUILDING_TYPE_OPTIONS, currentBuildingRequirementsSchema, legacyBuildingRequirementsSchema, type CurrentBuildingRequirements, type LegacyBuildingRequirements, type ReadableBuildingRequirements, type ShadeStructureRequirement } from "@/lib/building/requirements";
-import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS, formStrategyPatch, type ArchitecturePreviewOption } from "@/components/guided-intake/architecture-options";
+import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS, constrainArchitectureChoices, formStrategyPatch, type ArchitecturePreviewOption } from "@/components/guided-intake/architecture-options";
 import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
 import { adminAreaForRegion, CURRENCY_OPTIONS, LOCALE_OPTIONS, REGION_OPTIONS, regionForCountry } from "@/components/guided-intake/region-options";
 import { clearDraft, loadDraft, resolveDraftHydration, saveDraft } from "@/lib/design/draft-storage";
@@ -105,20 +105,23 @@ export function ArchitectureOptionCard<Value extends string>({
   onSelect: (value: Value) => void;
   onImageError: (source: string) => void;
 }) {
+  const disabled = !option.available;
+
   return (
-    <label className={`group relative flex cursor-pointer flex-col border transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#fff6ea] ${checked ? "border-[#ff4e00] bg-[#1c130c]" : "border-[#8e5a31]/30 bg-[#11100e] hover:border-[#c97940]/60 hover:bg-[#151310]"}`}>
-      <input checked={checked} className="sr-only" name={radioName} onChange={() => onSelect(option.value)} type="radio" value={option.value} />
-      {!imageFailed ? <span className="block aspect-[16/10] overflow-hidden border-b border-[#8e5a31]/25 bg-[#11100e]"><img alt={option.imageAlt} className="h-full w-full object-cover" draggable={false} onError={() => onImageError(option.imageSrc)} src={option.imageSrc} /></span> : null}
+    <label aria-disabled={disabled} className={`group relative flex flex-col border transition-colors ${disabled ? "cursor-not-allowed border-[#45392f]/35 bg-[#0b0a09]" : checked ? "cursor-pointer border-[#ff4e00] bg-[#1c130c] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#fff6ea]" : "cursor-pointer border-[#8e5a31]/30 bg-[#11100e] hover:border-[#c97940]/60 hover:bg-[#151310] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#fff6ea]"}`}>
+      <input checked={!disabled && checked} className="sr-only" disabled={disabled} name={radioName} onChange={() => { if (!disabled) onSelect(option.value); }} type="radio" value={option.value} />
+      {disabled ? <span className="absolute right-3 top-3 z-10 border border-[#8e5a31]/60 bg-[#0b0a09]/90 px-2 py-1 text-[0.55rem] font-extrabold uppercase tracking-[0.12em] text-[#b5a697]">Coming soon</span> : null}
+      {!imageFailed ? <span className={`block aspect-[16/10] overflow-hidden border-b border-[#8e5a31]/25 bg-[#11100e] ${disabled ? "opacity-45 grayscale" : ""}`}><img alt={option.imageAlt} className="h-full w-full object-cover" draggable={false} onError={() => onImageError(option.imageSrc)} src={option.imageSrc} /></span> : null}
       <span className="flex flex-1 flex-col p-4">
         <span className="flex items-start justify-between gap-2">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[0.55rem] font-bold uppercase tracking-[0.14em] text-[#c97940]">{option.plate}</span>
-            {suggested && suggestionLabel ? <span className="whitespace-nowrap border border-[#c97940]/35 px-1.5 py-0.5 text-[0.52rem] font-bold uppercase tracking-[0.08em] text-[#c97940]">Suggested for {suggestionLabel}</span> : null}
+            <span className={`text-[0.55rem] font-bold uppercase tracking-[0.14em] ${disabled ? "text-[#655d55]" : "text-[#c97940]"}`}>{option.plate}</span>
+            {!disabled && suggested && suggestionLabel ? <span className="whitespace-nowrap border border-[#c97940]/35 px-1.5 py-0.5 text-[0.52rem] font-bold uppercase tracking-[0.08em] text-[#c97940]">Suggested for {suggestionLabel}</span> : null}
           </span>
-          {checked ? <span className="grid h-5 w-5 shrink-0 place-items-center bg-[#ff4e00] text-[#090908]"><Check aria-hidden="true" className="h-3 w-3" /><span className="sr-only">Selected</span></span> : null}
+          {!disabled && checked ? <span className="grid h-5 w-5 shrink-0 place-items-center bg-[#ff4e00] text-[#090908]"><Check aria-hidden="true" className="h-3 w-3" /><span className="sr-only">Selected</span></span> : null}
         </span>
-        <span className="mt-2 block text-sm font-semibold text-[#fff6ea]">{option.title}</span>
-        <span className="mt-1 block text-xs leading-5 text-[#9f9183]">{option.detail}</span>
+        <span className={`mt-2 block text-sm font-semibold ${disabled ? "text-[#776a5d]" : "text-[#fff6ea]"}`}>{option.title}</span>
+        <span className={`mt-1 block text-xs leading-5 ${disabled ? "text-[#5f564c]" : "text-[#9f9183]"}`}>{option.detail}</span>
       </span>
     </label>
   );
@@ -146,7 +149,7 @@ export function ArchitectureReferencePicker<Value extends string>({
   const descriptionId = useId();
   const radioName = `${name}-${useId().replaceAll(":", "")}`;
   const [failedSources, setFailedSources] = useState<ReadonlySet<string>>(() => new Set());
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  const selected = options.find((option) => option.available && option.value === value) ?? options.find((option) => option.available);
   if (!selected) return null;
 
   return (
@@ -154,7 +157,7 @@ export function ArchitectureReferencePicker<Value extends string>({
       <legend className="text-sm font-semibold text-[#fff6ea]">{legend}</legend>
       <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#9f9183]" id={descriptionId}>{description}</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {options.map((option) => <ArchitectureOptionCard checked={option.value === value} imageFailed={failedSources.has(option.imageSrc)} key={option.value} onImageError={(source) => setFailedSources((current) => new Set(current).add(source))} onSelect={onChange} option={option} radioName={radioName} suggested={option.value === suggestedValue} suggestionLabel={suggestionLabel} />)}
+        {options.map((option) => <ArchitectureOptionCard checked={option.available && option.value === value} imageFailed={failedSources.has(option.imageSrc)} key={option.value} onImageError={(source) => setFailedSources((current) => new Set(current).add(source))} onSelect={onChange} option={option} radioName={radioName} suggested={option.value === suggestedValue} suggestionLabel={suggestionLabel} />)}
       </div>
       <p aria-live="polite" className="sr-only">Selected {selected.title}. {selected.detail}</p>
     </fieldset>
@@ -200,7 +203,7 @@ function stepReady(step: StepId, draft: IntakeDraft) {
 }
 
 export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = false, draftId, submitLabel = "Generate feasible plan", className }: GuidedIntakeProps) {
-  const [draft, setDraft] = useState<IntakeDraft>(() => initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT);
+  const [draft, setDraft] = useState<IntakeDraft>(() => constrainArchitectureChoices(initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT));
   const [stepIndex, setStepIndex] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +227,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
       const hydration = resolveDraftHydration({ authoritativeValue, storedDraft: stored, defaultValue: DEFAULT_INTAKE_DRAFT });
       if (hydration.source === "draft") {
         const storedDraft = hydration.value as IntakeDraft & { roadEdge?: IntakeDraft["roadEdges"][number] };
-        setDraft({
+        setDraft(constrainArchitectureChoices({
           ...DEFAULT_INTAKE_DRAFT,
           ...storedDraft,
           roadEdges: storedDraft.roadEdges?.length ? storedDraft.roadEdges : storedDraft.roadEdge ? [storedDraft.roadEdge] : DEFAULT_INTAKE_DRAFT.roadEdges,
@@ -235,15 +238,15 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           programs: DEFAULT_INTAKE_DRAFT.programs.map((fallback, level) => (stored?.version ?? 0) >= 2
             ? normalizeFloorProgram(storedDraft.programs?.[level], fallback)
             : upgradeLegacyFloorProgram(storedDraft.programs?.[level], fallback)),
-        });
+        }));
       } else {
-        setDraft(hydration.value);
+        setDraft(constrainArchitectureChoices(hydration.value));
       }
       setStepIndex(Math.max(0, Math.min(STEPS.length - 1, hydration.stepIndex)));
       setError(null);
     } catch {
       // Local progress is an enhancement; malformed storage is ignored.
-      setDraft(initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT);
+      setDraft(constrainArchitectureChoices(initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT));
       setStepIndex(0);
     }
     setHydrated(true);
@@ -275,7 +278,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   }, [stepIndex]);
 
   function patch(next: Partial<IntakeDraft>) {
-    setDraft((current) => ({ ...current, ...next }));
+    setDraft((current) => constrainArchitectureChoices({ ...current, ...next }));
     setError(null);
   }
 
@@ -355,7 +358,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   }
 
   function reset() {
-    setDraft(DEFAULT_INTAKE_DRAFT);
+    setDraft(constrainArchitectureChoices(DEFAULT_INTAKE_DRAFT));
     setStepIndex(0);
     setError(null);
     try { clearDraft(window.localStorage, draftId); } catch {
@@ -438,7 +441,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           </div> : null}
 
           {step.id === "architecture" ? <div className="space-y-10">
-            {regionalResolution.warning ? <p className="border border-[#8e5a31]/65 bg-[#171512] p-4 text-base leading-7 text-[#b5a697]" role="status">{regionalResolution.warning.message} Every reference remains editable.</p> : null}
+            {regionalResolution.warning ? <p className="border border-[#8e5a31]/65 bg-[#171512] p-4 text-base leading-7 text-[#b5a697]" role="status">{regionalResolution.warning.message} Selectable references are marked as available below.</p> : null}
             <ArchitectureReferencePicker description="This is a design constraint, not a decorative label. It controls elevation vocabulary, shade, roof expression and the visualization brief." legend="Choose the villa language" name="architectural-style" onChange={(architecturalStyle) => patch({ architecturalStyle })} options={ARCHITECTURAL_STYLE_PREVIEWS} suggestedValue={regionalResolution.pack.intakeStyle} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.architecturalStyle} />
             <ArchitectureReferencePicker description="Choose the volumetric rule that organizes rooms, courts and terraces. The plate is a strategy preview, not a generated façade." legend="Choose the built-form strategy" name="form-strategy" onChange={(formStrategy) => patch(formStrategyPatch(formStrategy))} options={FORM_STRATEGY_PREVIEWS} suggestedValue={regionalResolution.pack.defaultFormStrategy} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.formStrategy} />
             <div className="max-w-2xl"><Field label="Material direction"><select className={CONTROL} onChange={(event) => patch({ materialDirection: event.target.value as IntakeDraft["materialDirection"] })} value={draft.materialDirection}><option value="warm_natural">Warm natural · timber + stone + mineral plaster</option><option value="earthy_textured">Earthy textured · brick + lime + local stone</option><option value="light_mineral">Light mineral · pale plaster + restrained timber</option><option value="monochrome">Monochrome · concrete + dark metal + clear glazing</option></select></Field></div>
