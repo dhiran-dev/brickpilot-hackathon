@@ -6,7 +6,6 @@ import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, La
 
 import { CadWorkspace } from "@/components/cad-workspace";
 import { GuidedIntake } from "@/components/guided-intake";
-import { NaturalLanguageIntake } from "@/components/guided-intake/NaturalLanguageIntake";
 import { capabilitiesForWorkspace, ProjectCapabilityNotice, projectCapabilityPresentation, PROJECT_VIEW_ONLY_EXPLANATION, type ProjectCapabilityPresentation } from "@/components/project-capability-ui";
 import { ProjectDeletionControl } from "@/components/project-deletion-control";
 import { RelaxationNoticeBadge } from "@/components/RelaxationNoticeBadge";
@@ -30,7 +29,7 @@ import type { LegacyBuildingRequirements, ReadableBuildingRequirements } from "@
 import type { ReadableBuilding } from "@/lib/building/schema";
 import { formatEstimateRange } from "@/lib/cost/format";
 import { deriveQuantityTakeoff } from "@/lib/cost/quantity";
-import { clientRequestIdForDraft, consumeDraft, createDraftId, listResumableDrafts, loadDraft, resolveWorkspaceDraft, type DraftIndexEntry } from "@/lib/design/draft-storage";
+import { clientRequestIdForDraft, consumeDraft, createDraftId, resolveWorkspaceDraft } from "@/lib/design/draft-storage";
 import { readableStudyToDesignResult, type ReadableDesignResult, type ReadableRecentStudy } from "@/lib/design/study-result";
 
 // T8 intentionally keeps the comparison rack dark until the deterministic property bank proves
@@ -50,10 +49,6 @@ function syncDesignParam(designId: string | null, step: WorkspaceStep | null = n
 
 function syncDraftParam(draftId: string) {
   window.history.replaceState(null, "", `/workspace?draft=${encodeURIComponent(draftId)}`);
-}
-
-function readResumableDrafts() {
-  try { return listResumableDrafts(window.localStorage); } catch { return []; }
 }
 
 function describeRequirementDelta(delta: RequirementDelta) {
@@ -98,7 +93,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
   const [error, setError] = useState<WorkspaceError | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [highlightedObjectIds, setHighlightedObjectIds] = useState<string[]>([]);
-  const [prefill, setPrefill] = useState<{ requirements: ReadableBuildingRequirements; assumptions: string[] } | null>(null);
   const [pendingSchemeId, setPendingSchemeId] = useState<string | null>(null);
   const [isSelectingScheme, setIsSelectingScheme] = useState(false);
   const [schemeSelectionStatus, setSchemeSelectionStatus] = useState("");
@@ -107,7 +101,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [step, setStep] = useState<WorkspaceStep>(() => parseWorkspaceStep(initialStep) ?? "directions");
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [resumableDrafts, setResumableDrafts] = useState<DraftIndexEntry[]>([]);
   // True while a ?design= restore is in flight, so the questionnaire never flashes
   // for a user who actually has a saved study to reopen.
   const [isRestoring, setIsRestoring] = useState(() => Boolean(initialDesignId));
@@ -128,7 +121,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
     const { draftId: nextDraftId } = resolveWorkspaceDraft(window.localStorage, requestedDraftId);
     activeDraftIdRef.current = nextDraftId;
     setDraftId(nextDraftId);
-    setResumableDrafts(readResumableDrafts());
     if (!initialDesignId) syncDraftParam(nextDraftId);
   }, [initialDesignId]);
 
@@ -277,7 +269,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
       }
       try {
         consumeDraft(window.localStorage, draftId);
-        setResumableDrafts(readResumableDrafts());
       } catch {
         // A completed server project remains authoritative if local draft cleanup is unavailable.
       }
@@ -299,11 +290,9 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
 
   function startNewProject() {
     const nextDraftId = createDraftId();
-    setResumableDrafts(readResumableDrafts());
     activeDraftIdRef.current = nextDraftId;
     setDraftId(nextDraftId);
     setResult(null);
-    setPrefill(null);
     setError(null);
     setHighlightedObjectIds([]);
     setStep("directions");
@@ -317,18 +306,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
     setBlockedProjectAccess(null);
     setError(null);
     window.location.assign("/dashboard");
-  }
-
-  function resumeDraft(entry: DraftIndexEntry) {
-    if (!loadDraft(window.localStorage, entry.draftId)) {
-      setResumableDrafts(readResumableDrafts());
-      return;
-    }
-    activeDraftIdRef.current = entry.draftId;
-    setDraftId(entry.draftId);
-    setPrefill(null);
-    setError(null);
-    syncDraftParam(entry.draftId);
   }
 
   async function selectPendingScheme(force = false) {
@@ -404,21 +381,10 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
           {result && normalProjectAccess && error ? <div className="mb-5 border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button">Dismiss</button></div></div> : null}
           {!result && !blockedProjectAccess && !isGenerating && !isRestoring && draftId ? <div className="mx-auto w-full max-w-[92rem] space-y-5">
             {error ? <div className="border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.actions.length ? <div className="mt-4"><p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#9f9183]">Recommended changes</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#b5a697]">{error.actions.map((action) => <li key={action}>{action}</li>)}</ul></div> : null}{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button"><RotateCcw className="h-3.5 w-3.5" /> Adjust questionnaire</button></div></div> : null}
-            <section className="flex flex-wrap items-center justify-between gap-4 border border-[#8e5a31]/45 bg-[#0d0c0a] p-4" aria-label="Project draft actions">
-              <div><p className="text-[0.62rem] font-extrabold uppercase tracking-[0.13em] text-[#c97940]">Current draft · {draftId.slice(0, 8)}</p><p className="mt-1 text-xs leading-5 text-[#9f9183]">This questionnaire is isolated from every other project draft.</p></div>
+            <section className="flex flex-wrap items-center justify-end gap-4 border border-[#8e5a31]/45 bg-[#0d0c0a] p-4" aria-label="Project draft actions">
               <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea] hover:bg-[#171512]" onClick={startNewProject} type="button"><Plus className="h-3.5 w-3.5" /> New blank project</button>
             </section>
-            {resumableDrafts.some((entry) => entry.draftId !== draftId) ? <details className="border border-[#8e5a31]/35 bg-[#0b0a09] p-4"><summary className="cursor-pointer text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#c97940]">Resume another draft</summary><p className="mt-3 text-xs leading-5 text-[#8f8275]">A draft is restored only after you choose it. Starting a new project never loads these answers.</p><div className="mt-3">{resumableDrafts.filter((entry) => entry.draftId !== draftId).map((entry) => <button className="flex min-h-11 w-full items-center justify-between gap-4 border-t border-[#8e5a31]/25 py-3 text-left text-sm text-[#b5a697] hover:text-[#fff6ea]" key={entry.draftId} onClick={() => resumeDraft(entry)} type="button"><span><span className="block font-semibold">{entry.title}</span><span className="mt-1 block text-[0.58rem] uppercase tracking-[0.08em] text-[#756a60]">Updated {new Date(entry.updatedAt).toLocaleString()}</span></span><span className="shrink-0 text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[#c97940]">Resume</span></button>)}</div></details> : null}
-            <NaturalLanguageIntake
-              disabled={isGenerating}
-              onParsed={(requirements, assumptions) => setPrefill({ requirements, assumptions })}
-              onUseFixture={(requirements) => setPrefill({ requirements, assumptions: ["Loaded from a tuned demo fixture."] })}
-            />
-            {prefill ? <div className="border border-[#38765a]/55 bg-[#0d0c0a] p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#7bc79e]">Parsed — review below, then generate</p>
-              {prefill.assumptions.length > 0 ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#b5a697]">{prefill.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul> : null}
-            </div> : null}
-            <GuidedIntake draftId={draftId} initialValue={prefill?.requirements} isSubmitting={isGenerating} key={draftId} onSubmit={generate} submitLabel="Generate verified concept" />
+            <GuidedIntake draftId={draftId} isSubmitting={isGenerating} key={draftId} onSubmit={generate} submitLabel="Generate verified concept" />
           </div> : null}
 
           {!result && !isGenerating && isRestoring ? <div aria-busy="true" className="grid min-h-[32rem] place-items-center border border-[#8e5a31]/45 bg-[#0d0c0a] p-8 text-center" role="status"><div><LoaderCircle className="mx-auto h-8 w-8 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-5 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Reopening your saved study</p><p className="mt-3 text-sm leading-6 text-[#9f9183]">Restoring the plan, its evidence and render state from the server.</p></div></div> : null}
@@ -530,7 +496,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
 
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5">
                     <button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea]" onClick={() => goToStep("directions")} type="button"><ArrowLeft className="h-4 w-4" /> Directions</button>
-                    {schemeConfirmed ? <Link className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea] motion-reduce:transform-none" href={`/workspace/designs/${result.designId}/massing`}><Box className="h-4 w-4" /> Continue to 3D massing <ArrowRight className="h-4 w-4" /></Link> : <span className="inline-flex min-h-11 items-center border border-[#8e5a31]/45 px-4 text-[0.7rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Select a scheme to explore 3D</span>}
+                    {schemeConfirmed ? <Link className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea] motion-reduce:transform-none" href={`/workspace/designs/${result.designId}/massing`}><Box className="h-4 w-4" /> 3D &amp; Renders <ArrowRight className="h-4 w-4" /></Link> : <span className="inline-flex min-h-11 items-center border border-[#8e5a31]/45 px-4 text-[0.7rem] font-bold uppercase tracking-[0.1em] text-[#b5a697]">Select a scheme to explore 3D</span>}
                   </div>
                 </div>}
               </div>

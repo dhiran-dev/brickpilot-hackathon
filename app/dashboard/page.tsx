@@ -4,10 +4,12 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { DashboardProjectDeletion } from "@/components/dashboard-project-deletion";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generatedAssets, layoutVersions, projects } from "@/lib/db/schema";
 import { deriveProjectStage, type DashboardStage } from "@/lib/design/dashboard-stage";
+import { resolveProjectCapabilities } from "@/lib/server/project-capabilities";
 
 type DashboardProject = {
   projectId: string;
@@ -15,6 +17,7 @@ type DashboardProject = {
   createdAt: Date;
   design: { id: string; version: number; status: string; createdAt: Date } | null;
   completedRenderCount: number;
+  canDelete: boolean;
 };
 
 const stageBadgeClass: Record<DashboardStage, string> = {
@@ -59,6 +62,7 @@ function ProjectCard({ project }: { project: DashboardProject }) {
             {stage.stage === "failed" ? "Start fresh" : "Start project"} <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         ) : null}
+        <DashboardProjectDeletion canDelete={project.canDelete} projectId={project.projectId} projectTitle={project.title} />
       </div>
     </article>
   );
@@ -69,7 +73,7 @@ export default async function DashboardPage() {
   if (!session) redirect("/login");
 
   const ownedProjects = await db
-    .select({ id: projects.id, title: projects.title, createdAt: projects.createdAt })
+    .select({ id: projects.id, title: projects.title, createdAt: projects.createdAt, status: projects.status, capabilityProfile: projects.capabilityProfile })
     .from(projects)
     .where(eq(projects.ownerId, session.user.id))
     .orderBy(desc(projects.createdAt));
@@ -102,6 +106,7 @@ export default async function DashboardPage() {
       createdAt: project.createdAt,
       design,
       completedRenderCount: design ? renderCountByVersion.get(design.id) ?? 0 : 0,
+      canDelete: resolveProjectCapabilities(project.capabilityProfile, project.status).canDelete,
     };
   });
 
