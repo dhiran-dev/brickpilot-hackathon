@@ -228,12 +228,7 @@ function parapetPrimitive(building: Building, floor: Floor, wall: WallSegment, b
 const CARPORT_COLUMN_SIZE_MM = 250;
 
 /** Two square columns flanking a vehicle opening, spanning the full floor height. */
-function carportColumnPrimitives(building: Building, floor: Floor, opening: Opening, baseYM: number): MassingPrimitive[] {
-  const wall = floor.walls.find((candidate) => candidate.id === opening.wallId);
-  if (!wall) {
-    console.warn(`[massing] Vehicle opening ${opening.id} references missing wall ${opening.wallId}; skipping carport columns.`);
-    return [];
-  }
+function carportColumnPrimitives(building: Building, floor: Floor, wall: WallSegment, opening: Opening, baseYM: number): MassingPrimitive[] {
   const dx = wall.end.x - wall.start.x;
   const dz = wall.end.y - wall.start.y;
   const lengthMm = Math.hypot(dx, dz);
@@ -331,7 +326,7 @@ export function buildMassingModel(building: Building, options: MassingOptions = 
         .forEach((panel, index) => primitives.push(wallPrimitive(building, floor, wall, panel, baseYM, index, kindOverride)));
       for (const opening of openingsByWall.get(wall.id) ?? []) {
         if (opening.usage === "vehicle") {
-          if (includeColumns) primitives.push(...carportColumnPrimitives(building, floor, opening, baseYM));
+          if (includeColumns) primitives.push(...carportColumnPrimitives(building, floor, wall, opening, baseYM));
           continue;
         }
         if (opening.kind === "open_connection") continue; // intentional pass-throughs stay open

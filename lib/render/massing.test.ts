@@ -336,7 +336,7 @@ describe("deterministic massing model", () => {
     expect(columnsOff.primitives.some((primitive) => primitive.sourceId === "vehicle-0")).toBe(false);
   });
 
-  test("skips carport columns when a vehicle opening references a missing wall", () => {
+  test("drops vehicle openings that reference a missing wall without emitting columns", () => {
     const dangling = structuredClone(building);
     dangling.floors[0].openings.push({
       id: "vehicle-dangling", floorId: "F0", wallId: "no-such-wall", kind: "open_connection", usage: "vehicle",
