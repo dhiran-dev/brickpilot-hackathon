@@ -114,6 +114,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   const [showRoof, setShowRoof] = useState(true);
   const [showSite, setShowSite] = useState(true);
   const [showScaleReferences, setShowScaleReferences] = useState(true);
+  const [presentationMode, setPresentationMode] = useState(false);
   const [selectedInteriorSpaceId, setSelectedInteriorSpaceId] = useState("");
   const [references, setReferences] = useState<PreparedReference[] | null>(null);
   const [referenceKey, setReferenceKey] = useState<string | null>(null);
@@ -179,6 +180,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     { label: "Roof", checked: showRoof, setChecked: setShowRoof, Icon: Box },
     { label: "Site + grid", checked: showSite, setChecked: setShowSite, Icon: Ruler },
     { label: "Scale figures", checked: showScaleReferences, setChecked: setShowScaleReferences, Icon: PersonStanding },
+    { label: "Presentation", checked: presentationMode, setChecked: setPresentationMode, Icon: Presentation },
   ];
 
   function toggleFloor(floorId: string) {
@@ -189,7 +191,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     if (!study) return;
     setPreparing(true);
     setActionError(null);
-    const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showColumns, showSlabs, showRoof, showSite, showScaleReferences };
+    const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showColumns, showSlabs, showRoof, showSite, showScaleReferences, presentationMode };
     try {
       if (!viewerReady || !viewerRef.current) throw new Error("The 3D viewer is required to prepare the camera-locked render sources.");
       flushSync(() => {
@@ -201,6 +203,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         setShowRoof(MASSING_CAPTURE_LAYER_STATE.showRoof);
         setShowSite(MASSING_CAPTURE_LAYER_STATE.showSite);
         setShowScaleReferences(MASSING_CAPTURE_LAYER_STATE.showScaleReferences);
+        setPresentationMode(MASSING_CAPTURE_LAYER_STATE.presentationMode);
       });
       await nextFrame();
       await nextFrame();
@@ -221,6 +224,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         setShowRoof(prior.showRoof);
         setShowSite(prior.showSite);
         setShowScaleReferences(prior.showScaleReferences);
+        setPresentationMode(prior.presentationMode);
       });
       setPreparing(false);
     }
@@ -296,7 +300,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
           </aside>
 
           <div className="relative min-h-[44rem] overflow-hidden bg-[#080807]">
-            <MassingViewer building={study.building} explodeM={explodeM} onError={setViewerError} onReadyChange={setViewerReady} ref={viewerRef} showColumns={showColumns} showInteriorWalls={showInteriorWalls} showRoof={showRoof} showScaleReferences={showScaleReferences} showSite={showSite} showSlabs={showSlabs} visibleFloorIds={visibleFloorIds} />
+            <MassingViewer building={study.building} explodeM={explodeM} onError={setViewerError} onReadyChange={setViewerReady} presentationMode={presentationMode} ref={viewerRef} showColumns={showColumns} showInteriorWalls={showInteriorWalls} showRoof={showRoof} showScaleReferences={showScaleReferences} showSite={showSite} showSlabs={showSlabs} visibleFloorIds={visibleFloorIds} />
             <div className="absolute right-4 top-4 z-10 border border-[#8e5a31]/60 bg-[#0b0a09]/95 shadow-[4px_5px_0_rgba(0,0,0,0.4)]">
               <div className="grid grid-cols-4 border-b border-[#8e5a31]/45 text-[#cdbdab]">{[[Rotate3d, "Rotate"], [Move3d, "Pan"], [ZoomIn, "Zoom"], [Scan, "Fit"]].map(([Icon, label], index) => <button className="grid min-h-14 min-w-14 place-items-center border-r border-[#8e5a31]/35 px-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711]" key={label as string} onClick={() => index === 3 && viewerRef.current?.fit()} type="button"><Icon className="h-4 w-4" /><span>{label as string}</span></button>)}</div>
               <div className="grid grid-cols-6 text-[#a99a8d]">{(["front", "rear", "left", "right", "iso", "top"] as MassingView[]).map((view) => <button className="border-r border-[#8e5a31]/35 px-2 py-2 text-[0.48rem] font-bold uppercase tracking-[0.08em] last:border-r-0 hover:bg-[#211711] hover:text-[#fff6ea]" key={view} onClick={() => viewerRef.current?.setView(view)} type="button">{view}</button>)}</div>

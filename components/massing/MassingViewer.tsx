@@ -65,6 +65,7 @@ export const MASSING_CAPTURE_LAYER_STATE = {
   showRoof: true,
   showSite: true,
   showScaleReferences: false,
+  presentationMode: false,
 } as const;
 
 export type MassingViewerHandle = {
@@ -83,6 +84,7 @@ type MassingViewerProps = {
   showRoof: boolean;
   showSite: boolean;
   showScaleReferences: boolean;
+  presentationMode: boolean;
   onReadyChange?: (ready: boolean) => void;
   onError?: (message: string) => void;
 };
@@ -298,6 +300,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
   showRoof,
   showSite,
   showScaleReferences,
+  presentationMode,
   onReadyChange,
   onError,
 }, forwardedRef) {
@@ -525,7 +528,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       mesh.castShadow = primitive.kind !== "site";
       mesh.receiveShadow = true;
       runtime.root.add(mesh);
-      if (primitive.kind !== "site") {
+      if (primitive.kind !== "site" && !presentationMode) {
         const edgeStyle = massingEdgeStyle(primitive.kind);
         const edges = new THREE.LineSegments(
           new THREE.EdgesGeometry(geometry, 25),
@@ -542,7 +545,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
         runtime.root.add(edges);
       }
     }
-    if (showSite) {
+    if (showSite && !presentationMode) {
       const grid = new THREE.GridHelper(Math.max(model.widthM, model.depthM) * 1.2, 24, 0x8e5a31, 0x2c241d);
       grid.position.y = MASSING_GRID_Y_M;
       (grid.material as THREE.Material).transparent = true;
@@ -588,7 +591,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       runtime.hasFramedModel = true;
       setView("iso", false);
     }
-  }, [building, explodeM, showColumns, showInteriorWalls, showRoof, showScaleReferences, showSite, showSlabs, visibleFloorIds.join("|")]);
+  }, [building, explodeM, presentationMode, showColumns, showInteriorWalls, showRoof, showScaleReferences, showSite, showSlabs, visibleFloorIds.join("|")]);
 
   return <div className={MASSING_VIEWER_CLASS_NAME} ref={containerRef} role="img" aria-label="Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." />;
 });

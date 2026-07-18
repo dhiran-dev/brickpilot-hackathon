@@ -166,5 +166,6 @@ describe("fixed render source cameras", () => {
     expect(MASSING_CAPTURE_LAYER_STATE.showSlabs).toBe(true);
     expect(MASSING_CAPTURE_LAYER_STATE.showRoof).toBe(true);
     expect(MASSING_CAPTURE_LAYER_STATE.showSite).toBe(true);
+    expect(MASSING_CAPTURE_LAYER_STATE.presentationMode).toBe(false); // prompt expects edge lines + grid in sources
   });
 });
