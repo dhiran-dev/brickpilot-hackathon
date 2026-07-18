@@ -177,7 +177,12 @@ describe("architectural-intent v3 reference rules", () => {
   test("SCHEME_NOT_DISTINCT uses the shared scheme-topology-v1 comparison", () => {
     const first = building();
     const duplicate = structuredClone(first);
-    duplicate.candidate.geometryHash = "duplicate-hash";
+    duplicate.candidate = {
+      ...duplicate.candidate,
+      generatorId: "t_hub",
+      index: duplicate.candidate.index + 1,
+      geometryHash: "duplicate-hash",
+    };
     const result = validateSchemeSet([{ schemeId: "A", building: first }, { schemeId: "B", building: duplicate }]);
     expect(result.valid).toBe(false);
     expect(result.findings[0]).toMatchObject({ ruleId: "SCHEME_NOT_DISTINCT", severity: "error", sourceKind: "scheme_set" });

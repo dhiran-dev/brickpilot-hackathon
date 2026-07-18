@@ -6,6 +6,7 @@ import {
   legacyBuildingRequirementsSchema,
   readableBuildingRequirementsSchema,
 } from "@/lib/building/requirements";
+import { v3PhysicalGeometryFingerprint } from "@/lib/building/generate-v3-physical";
 import { buildingContractVersion, currentBuildingSchema, legacyBuildingSchema, readableBuildingSchema } from "@/lib/building/schema";
 import { costEstimateSchema } from "@/lib/cost/schema";
 import {
@@ -194,9 +195,23 @@ export function classifyReadablePersistedStudy(row: PersistedStudyRow) {
     compatible: false as const,
     study: { projectId: row.projectId, designId: row.designId, version: row.version, title: row.title, status: row.status, createdAt: row.createdAt, compatibility: "legacy_incompatible" as const, reason: "INVALID_SCHEMES" as const },
   };
+  const readableSchemes = buildingVersion === "v3" && selectedScheme.building.buildingSchemaVersion === 3
+    ? (() => {
+        const selectedPhysicalFingerprint = v3PhysicalGeometryFingerprint(selectedScheme.building);
+        const seenPhysicalFingerprints = new Set([selectedPhysicalFingerprint]);
+        return schemes.data.filter((scheme) => {
+          if (scheme.schemeId === selectedSchemeId) return true;
+          if (scheme.building.buildingSchemaVersion !== 3) return true;
+          const physicalFingerprint = v3PhysicalGeometryFingerprint(scheme.building);
+          if (seenPhysicalFingerprints.has(physicalFingerprint)) return false;
+          seenPhysicalFingerprints.add(physicalFingerprint);
+          return true;
+        });
+      })()
+    : schemes.data;
   return {
     compatible: true as const,
-    study: { ...row, intent: intent.data, requirements: requirements.data, building: building.data, validation: validation.data, costEstimate: costEstimate.data, aiReview: aiReview.data, schemes: schemes.data, selectedSchemeId },
+    study: { ...row, intent: intent.data, requirements: requirements.data, building: building.data, validation: validation.data, costEstimate: costEstimate.data, aiReview: aiReview.data, schemes: readableSchemes, selectedSchemeId },
   };
 }
 

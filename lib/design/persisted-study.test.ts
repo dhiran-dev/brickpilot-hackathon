@@ -61,6 +61,30 @@ describe("persisted study compatibility", () => {
     };
 
     expect(classifyReadablePersistedStudy(currentRow)).toMatchObject({ compatible: true, study: { selectedSchemeId: validated.selectedSchemeId } });
+    const duplicate = structuredClone(validated.schemes[0]);
+    duplicate.schemeId = "legacy-physical-duplicate";
+    duplicate.partiId = duplicate.partiId === "compact_bar" ? "t_hub" : "compact_bar";
+    duplicate.name = "Legacy duplicate direction";
+    duplicate.building.candidate = {
+      ...duplicate.building.candidate,
+      generatorId: duplicate.partiId,
+      index: duplicate.building.candidate.index + 1,
+      geometryHash: "legacy-metadata-dependent-hash",
+    };
+    const deduplicated = classifyReadablePersistedStudy({
+      ...currentRow,
+      schemes: [validated.schemes[0], duplicate],
+    });
+    expect(deduplicated).toMatchObject({ compatible: true });
+    if (deduplicated.compatible) expect(deduplicated.study.schemes).toHaveLength(1);
+    const selectedDuplicate = classifyReadablePersistedStudy({
+      ...currentRow,
+      building: duplicate.building,
+      schemes: [validated.schemes[0], duplicate],
+      selectedSchemeId: duplicate.schemeId,
+    });
+    expect(selectedDuplicate).toMatchObject({ compatible: true, study: { selectedSchemeId: duplicate.schemeId } });
+    if (selectedDuplicate.compatible) expect(selectedDuplicate.study.schemes.map((scheme) => scheme.schemeId)).toEqual([duplicate.schemeId]);
     expect(classifyReadablePersistedStudy({ ...currentRow, aiReview: null })).toMatchObject({ compatible: false, study: { reason: "INVALID_AI_REVIEW" } });
     expect(classifyReadablePersistedStudy({
       ...currentRow,

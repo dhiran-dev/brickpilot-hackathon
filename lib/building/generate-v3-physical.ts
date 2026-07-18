@@ -22,6 +22,19 @@ export type V3PhysicalStageResult = {
   diagnostics: V3PhysicalDiagnostics;
 };
 
+type V3PhysicalGeometrySource = Pick<
+  CurrentBuilding,
+  | "site"
+  | "floors"
+  | "verticalConnectors"
+  | "structuralConcept"
+  | "roofSystems"
+  | "secondaryRoofSupports"
+  | "roofSupportReferences"
+  | "edgeProtections"
+  | "facadeZones"
+>;
+
 function stableHash(value: string) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
@@ -29,6 +42,34 @@ function stableHash(value: string) {
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
+    .join(",")}}`;
+  return JSON.stringify(value);
+}
+
+/** Physical identity excludes candidate labels, scores and candidate indices. */
+export function v3PhysicalGeometryFingerprint(building: V3PhysicalGeometrySource) {
+  return stableJson({
+    site: building.site,
+    floors: building.floors,
+    verticalConnectors: building.verticalConnectors,
+    structuralConcept: building.structuralConcept,
+    roofSystems: building.roofSystems,
+    secondaryRoofSupports: building.secondaryRoofSupports,
+    roofSupportReferences: building.roofSupportReferences,
+    edgeProtections: building.edgeProtections,
+    facadeZones: building.facadeZones,
+  });
+}
+
+export function v3PhysicalGeometryHash(building: V3PhysicalGeometrySource) {
+  return stableHash(v3PhysicalGeometryFingerprint(building));
 }
 
 function currentFloors(scheme: V3CirculatedScheme): CurrentFloor[] {
@@ -237,7 +278,7 @@ export function realizeV3PhysicalScheme(requirements: CurrentBuildingRequirement
     facadeZones: facadeZones(requirements, floors, scheme),
   };
   const intent = intentRealizations(requirements, scheme, withoutIntent);
-  const geometryHash = stableHash(JSON.stringify({ ...withoutIntent, candidate: { ...withoutIntent.candidate, geometryHash: undefined }, intent }));
+  const geometryHash = v3PhysicalGeometryHash(withoutIntent);
   return currentBuildingSchema.parse({ ...withoutIntent, candidate: { ...withoutIntent.candidate, geometryHash }, intentRealizations: intent });
 }
 

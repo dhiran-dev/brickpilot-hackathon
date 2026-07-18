@@ -1,4 +1,5 @@
 import { resolveRoomAreaPolicy } from "@/lib/building/area-policy-v3";
+import { v3PhysicalGeometryFingerprint } from "@/lib/building/generate-v3-physical";
 import type { CardinalDirection, CurrentBuildingRequirements } from "@/lib/building/requirements";
 import {
   compareSchemeTopologyFingerprints,
@@ -668,17 +669,21 @@ function topologyFingerprint(building: CurrentBuilding): SchemeTopologyFingerpri
 export function validateSchemeSet(schemes: readonly V3SchemeSetMember[]): V3SchemeSetValidation {
   const findings: ValidationFindingV3[] = [];
   const fingerprints = Object.fromEntries(schemes.map((scheme) => [scheme.schemeId, topologyFingerprint(scheme.building)]));
+  const physicalFingerprints = Object.fromEntries(schemes.map((scheme) => [scheme.schemeId, v3PhysicalGeometryFingerprint(scheme.building)]));
   for (let left = 0; left < schemes.length; left += 1) for (let right = left + 1; right < schemes.length; right += 1) {
     const comparison = compareSchemeTopologyFingerprints(fingerprints[schemes[left].schemeId], fingerprints[schemes[right].schemeId]);
-    if (!comparison.nearDuplicate) continue;
+    const physicallyIdentical = physicalFingerprints[schemes[left].schemeId] === physicalFingerprints[schemes[right].schemeId];
+    if (!physicallyIdentical && !comparison.nearDuplicate) continue;
     findings.push(findingV3(
       RULES.schemeNotDistinct,
       "error",
       "scheme_set",
-      `Schemes ${schemes[left].schemeId} and ${schemes[right].schemeId} are near-duplicates.`,
+      physicallyIdentical
+        ? `Schemes ${schemes[left].schemeId} and ${schemes[right].schemeId} have identical physical geometry.`
+        : `Schemes ${schemes[left].schemeId} and ${schemes[right].schemeId} are near-duplicates.`,
       {
         objectIds: [schemes[left].schemeId, schemes[right].schemeId],
-        measured: { value: Math.min(comparison.adjacencyJaccard, comparison.footprintIoU), unit: "similarity" },
+        measured: { value: physicallyIdentical ? 1 : Math.min(comparison.adjacencyJaccard, comparison.footprintIoU), unit: "similarity" },
         required: { max: 0.849999, unit: "similarity" },
       },
       "scheme_set",
