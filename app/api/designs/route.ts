@@ -148,6 +148,7 @@ export async function POST(request: Request) {
     capabilityProfile: typeof projects.$inferSelect.capabilityProfile;
     generatorContractVersion: number;
     responsePayload: Record<string, unknown> | null;
+    requirements: Record<string, unknown> | null;
   };
   try {
     queued = await db.transaction(async (transaction) => {
@@ -162,9 +163,11 @@ export async function POST(request: Request) {
           capabilityProfile: projects.capabilityProfile,
           generatorContractVersion: projects.generatorContractVersion,
           responsePayload: generationJobs.responsePayload,
+          requirements: projectRequirements.inputJson,
         })
         .from(projects)
         .leftJoin(layoutVersions, eq(layoutVersions.projectId, projects.id))
+        .leftJoin(projectRequirements, eq(layoutVersions.requirementVersionId, projectRequirements.id))
         .leftJoin(generationJobs, and(eq(generationJobs.layoutVersionId, layoutVersions.id), eq(generationJobs.kind, "design")))
         .where(and(eq(projects.ownerId, user.id), eq(projects.clientRequestId, clientRequestId)))
         .orderBy(desc(layoutVersions.version))
@@ -242,6 +245,7 @@ export async function POST(request: Request) {
       capabilityProfile: queued.capabilityProfile,
       generatorContractVersion: queued.generatorContractVersion,
       responsePayload: queued.responsePayload,
+      requirements: queued.requirements,
     });
     return NextResponse.json(replay.body, { status: replay.status });
   }

@@ -185,4 +185,12 @@ describe("GuidedIntake architecture option cards", () => {
     expect(source).not.toContain('["Roof + shade"');
     expect(source).toContain('["Shade structures"');
   });
+
+  test("returns every questionnaire step change to the top of the intake", () => {
+    const source = readFileSync("components/guided-intake/GuidedIntake.tsx", "utf8");
+
+    expect(source).toContain('intakeRef.current?.scrollIntoView({ behavior: "auto", block: "start" })');
+    expect(source).toContain("onClick={() => showStep(index)}");
+    expect(source).toContain("const goToNextStep = () => showStep(stepIndex + 1)");
+  });
 });

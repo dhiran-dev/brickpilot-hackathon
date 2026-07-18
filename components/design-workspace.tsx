@@ -52,6 +52,41 @@ function syncDraftParam(draftId: string) {
   window.history.replaceState(null, "", `/workspace?draft=${encodeURIComponent(draftId)}`);
 }
 
+function isCompleteDesignResult(value: unknown): value is ReadableDesignResult {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ReadableDesignResult>;
+  return typeof candidate.projectId === "string"
+    && typeof candidate.designId === "string"
+    && Boolean(candidate.building)
+    && Boolean(candidate.validation)
+    && Boolean(candidate.costEstimate);
+}
+
+function queuedDesignId(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const designId = (value as { designId?: unknown }).designId;
+  return typeof designId === "string" && designId ? designId : null;
+}
+
+async function waitForQueuedDesign(designId: string): Promise<ReadableDesignResult> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await fetch(`/api/designs/${designId}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => null) as (ReadableRecentStudy & { error?: string; code?: string; projectStatus?: string }) | null;
+    if (response.ok && payload) {
+      const restored = readableStudyToDesignResult(payload);
+      if (restored) return restored;
+    }
+    if (payload?.projectStatus === "failed") {
+      throw new Error(payload.error ?? "The queued study could not be completed.");
+    }
+    if (payload?.code && payload.code !== "STUDY_NOT_COMPLETED") {
+      throw new Error(payload.error ?? "The queued study could not be loaded.");
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+  }
+  throw new Error("The study is still processing. Open it from the dashboard when generation completes.");
+}
+
 function describeRequirementDelta(delta: RequirementDelta) {
   if (delta.op === "add_room") return `Add ${delta.newRoom.name} (${delta.newRoom.type}) on ${delta.newRoom.floorId}`;
   if (delta.op === "remove_room") return `Remove room ${delta.roomId} and its relationships`;
@@ -214,11 +249,11 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
   // locks the 2D plan, massing and render steps until "Select this scheme" succeeds.
   const schemeConfirmed = !showSchemeRack || (result?.selectedSchemeId != null && pendingSchemeId === result?.selectedSchemeId);
   const findingInputs = useMemo(() => displayedValidation?.findings.map(({ ruleId, severity, message, floorId, objectIds }) => ({ ruleId, severity, message, floorId, objectIds })) ?? [], [displayedValidation]);
-  const targetAreaByRoomId = useMemo(() => Object.fromEntries(result?.requirements.rooms.map((room) => [room.id, room.targetAreaMm2]) ?? []), [result]);
+  const targetAreaByRoomId = useMemo(() => Object.fromEntries(result?.requirements?.rooms?.map((room) => [room.id, room.targetAreaMm2]) ?? []), [result]);
   const drawingScheme = useMemo(() => displayedScheme && result ? {
     name: displayedScheme.name,
     partiId: displayedScheme.partiId,
-    style: result.requirements.architecture.style,
+    style: result.requirements?.architecture?.style ?? "unspecified",
   } : undefined, [displayedScheme, result]);
   const displayedEvidence = schemeEvidenceLabels({
     previewIsCanonical,
@@ -264,9 +299,20 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requirements, legacyRequirements, clientRequestId: clientRequestIdForDraft(draftId) }),
       });
-      const data = (await response.json()) as ReadableDesignResult | { error?: string; code?: string; details?: GenerationConflict[] | GenerationDiagnosticsSummary };
-      if (!response.ok || !("projectId" in data)) {
-        setError(explainGenerationFailure("error" in data || "code" in data || "details" in data ? data : {}));
+      let data: unknown = await response.json().catch(() => null);
+      if (response.status === 202) {
+        const queuedId = queuedDesignId(data);
+        if (!queuedId) {
+          setError({ title: "Study is still processing", message: "The server accepted this brief but did not return a study identifier.", actions: ["Open the dashboard shortly to check its progress."] });
+          return;
+        }
+        data = await waitForQueuedDesign(queuedId);
+      }
+      if (!response.ok || !isCompleteDesignResult(data)) {
+        const failure = data && typeof data === "object"
+          ? data as { error?: string; code?: string; details?: GenerationConflict[] | GenerationDiagnosticsSummary }
+          : {};
+        setError(explainGenerationFailure(failure));
         window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
         return;
       }
@@ -275,9 +321,14 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
       } catch {
         // A completed server project remains authoritative if local draft cleanup is unavailable.
       }
-      setResult(data);
+      // A replay produced by an older generation job can have the pre-requirements
+      // response shape. The submitted brief is the authoritative fallback, so opening
+      // the completed workspace never depends on that historical payload detail.
+      const submittedRequirements = data.building.buildingSchemaVersion === 2 ? legacyRequirements : requirements;
+      const completedResult = { ...data, requirements: data.requirements ?? submittedRequirements } as ReadableDesignResult;
+      setResult(completedResult);
       setStep("directions");
-      syncDesignParam(data.designId, "directions");
+      syncDesignParam(completedResult.designId, "directions");
     } catch (generationError) {
       setError({ title: "Connection interrupted", message: generationError instanceof Error ? generationError.message : "Unable to generate this study.", actions: ["Check the connection and try again. Your questionnaire remains saved."] });
     } finally {
@@ -351,7 +402,10 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
         setError({ title: "Could not apply that suggestion", message: failure.error ?? "Try again.", code: failure.code, actions: [] });
         return;
       }
-      setResult(data);
+      setResult((current) => ({
+        ...data,
+        requirements: data.requirements ?? current?.requirements,
+      }) as ReadableDesignResult);
       syncDesignParam(data.designId, step);
       setHighlightedObjectIds([]);
     } catch (suggestionError) {

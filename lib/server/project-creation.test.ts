@@ -18,6 +18,7 @@ describe("project creation idempotency contract", () => {
       capabilityProfile: "current_v2" as const,
       generatorContractVersion: 2,
       responsePayload: { projectId: "project-1", designId: "layout-1", seed: 41 },
+      requirements: { requirementSchemaVersion: 2, rooms: [] },
     };
     expect(projectCreationReplay(input)).toEqual(projectCreationReplay(input));
     expect(projectCreationReplay(input)).toMatchObject({
@@ -26,6 +27,7 @@ describe("project creation idempotency contract", () => {
         projectId: "project-1",
         designId: "layout-1",
         seed: 41,
+        requirements: { requirementSchemaVersion: 2, rooms: [] },
         projectStatus: "ready",
         capabilityProfile: "current_v2",
         replayed: true,

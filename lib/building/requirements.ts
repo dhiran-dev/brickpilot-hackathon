@@ -3,6 +3,10 @@ import { z } from "zod";
 const positiveMm = z.number().int().positive();
 const nonNegativeMm = z.number().int().nonnegative();
 
+export const MIN_SITE_DIMENSION_MM = 5_000;
+export const MAX_SITE_DIMENSION_MM = 200_000;
+export const MAX_REQUIREMENT_ROOMS = 80;
+
 export const BUILDING_TYPE_OPTIONS = [
   { value: "detached_house", label: "Villa / bungalow", available: true },
   { value: "apartment", label: "Apartments", available: false, note: "Coming soon" },
@@ -156,8 +160,8 @@ export const legacyBuildingRequirementsSchema = z
     }),
     displayUnit: displayUnitSchema.default("metric"),
     site: z.object({
-      widthMm: positiveMm.min(5000).max(200_000),
-      depthMm: positiveMm.min(5000).max(200_000),
+      widthMm: positiveMm.min(MIN_SITE_DIMENSION_MM).max(MAX_SITE_DIMENSION_MM),
+      depthMm: positiveMm.min(MIN_SITE_DIMENSION_MM).max(MAX_SITE_DIMENSION_MM),
       facing: cardinalDirectionSchema,
       roadEdges: z.array(cardinalDirectionSchema).min(1).max(4),
       irregular: z.boolean().default(false),
@@ -169,7 +173,7 @@ export const legacyBuildingRequirementsSchema = z
       }),
     }),
     floors: z.array(floorRequirementSchema).min(1).max(4),
-    rooms: z.array(roomRequirementSchema).min(1).max(80),
+    rooms: z.array(roomRequirementSchema).min(1).max(MAX_REQUIREMENT_ROOMS),
     relationships: z.array(relationshipSchema).max(160).default([]),
     household: z.object({
       occupants: z.number().int().min(1).max(30),

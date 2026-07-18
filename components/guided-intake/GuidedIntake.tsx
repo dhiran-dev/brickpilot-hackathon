@@ -3,9 +3,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Briefcase, Building2, Check, CircleDollarSign, Home, LoaderCircle, RotateCcw, Ruler, Sparkles, type LucideIcon } from "lucide-react";
 
-import { BUILDING_TYPE_OPTIONS, currentBuildingRequirementsSchema, legacyBuildingRequirementsSchema, type CurrentBuildingRequirements, type LegacyBuildingRequirements, type ReadableBuildingRequirements, type ShadeStructureRequirement } from "@/lib/building/requirements";
+import { BUILDING_TYPE_OPTIONS, currentBuildingRequirementsSchema, legacyBuildingRequirementsSchema, MAX_SITE_DIMENSION_MM, MIN_SITE_DIMENSION_MM, type CurrentBuildingRequirements, type LegacyBuildingRequirements, type ReadableBuildingRequirements, type ShadeStructureRequirement } from "@/lib/building/requirements";
 import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS, constrainArchitectureChoices, formStrategyPatch, type ArchitecturePreviewOption } from "@/components/guided-intake/architecture-options";
-import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
+import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, MAX_BATHROOMS_PER_FLOOR, MAX_BEDROOMS_PER_FLOOR, MAX_STUDIES_PER_FLOOR, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
 import { adminAreaForRegion, CURRENCY_OPTIONS, LOCALE_OPTIONS, REGION_OPTIONS, regionForCountry } from "@/components/guided-intake/region-options";
 import { clearDraft, loadDraft, resolveDraftHydration, saveDraft } from "@/lib/design/draft-storage";
 import { resolveRegionalPack } from "@/lib/design/regional-packs";
@@ -48,6 +48,16 @@ const STAIR_WIDTH_OPTIONS = [
 const INTAKE_STORAGE_VERSION = 4;
 
 type StepId = (typeof STEPS)[number]["id"];
+
+function siteDimensionBounds(unit: IntakeDraft["displayUnit"]) {
+  const millimetresPerUnit = unit === "metric" ? 1000 : 304.8;
+  return {
+    // Round inward so converting either displayed boundary back to integer
+    // millimetres remains valid under the canonical schema.
+    min: Math.ceil((MIN_SITE_DIMENSION_MM / millimetresPerUnit) * 100) / 100,
+    max: Math.floor((MAX_SITE_DIMENSION_MM / millimetresPerUnit) * 100) / 100,
+  };
+}
 
 export type GuidedIntakeProps = {
   initialValue?: ReadableBuildingRequirements;
@@ -194,7 +204,17 @@ function Toggle({ checked, label, detail, onChange }: { checked: boolean; label:
 function stepReady(step: StepId, draft: IntakeDraft) {
   if (step === "project") return draft.projectName.trim().length > 0;
   if (step === "region") return /^[A-Za-z]{2}$/.test(draft.countryCode) && draft.adminArea.trim().length > 0 && /^[A-Za-z]{3}$/.test(draft.currency) && draft.locale.trim().length >= 2;
-  if (step === "site") return draft.siteWidth > 0 && draft.siteDepth > 0 && draft.roadEdges.length > 0 && Object.values(draft.setbacks).every((value) => value >= 0);
+  if (step === "site") {
+    const bounds = siteDimensionBounds(draft.displayUnit);
+    return draft.siteWidth >= bounds.min
+      && draft.siteWidth <= bounds.max
+      && draft.siteDepth >= bounds.min
+      && draft.siteDepth <= bounds.max
+      && draft.roadEdges.length > 0
+      && Object.values(draft.setbacks).every((value) => value >= 0 && value <= bounds.max)
+      && draft.setbacks.east + draft.setbacks.west < draft.siteWidth
+      && draft.setbacks.north + draft.setbacks.south < draft.siteDepth;
+  }
   if (step === "building") return draft.floorCount >= 1 && draft.floorCount <= 4 && draft.floorHeightM >= 2.4 && (draft.floorCount === 1 || draft.stairWidthMm >= 900);
   if (step === "rooms") return draft.occupants > 0 && draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bedrooms, 0) >= 1 && draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bathrooms, 0) >= 1;
   if (step === "architecture") return Boolean(draft.architecturalStyle && draft.formStrategy && draft.roofCharacter && draft.materialDirection);
@@ -209,6 +229,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   const [error, setError] = useState<string | null>(null);
   const step = STEPS[stepIndex];
   const unitLabel = draft.displayUnit === "metric" ? "m" : "ft";
+  const siteBounds = siteDimensionBounds(draft.displayUnit);
   const currentRegion = regionForCountry(draft.countryCode);
   const currentAdminArea = adminAreaForRegion(currentRegion, draft.adminArea);
   const regionalResolution = resolveRegionalPack(draft.countryCode, draft.adminArea);
@@ -266,6 +287,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   }, [onChange, requirements]);
 
   const stepperRef = useRef<HTMLOListElement>(null);
+  const intakeRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const list = stepperRef.current;
@@ -276,6 +298,11 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     list.scrollTo({ left: list.scrollLeft + (stepRect.left - listRect.left) - (list.clientWidth - stepRect.width) / 2, behavior: reducedMotion ? "auto" : "smooth" });
   }, [stepIndex]);
+
+  function showStep(nextIndex: number) {
+    setStepIndex(Math.max(0, Math.min(STEPS.length - 1, nextIndex)));
+    window.requestAnimationFrame(() => intakeRef.current?.scrollIntoView({ behavior: "auto", block: "start" }));
+  }
 
   function patch(next: Partial<IntakeDraft>) {
     setDraft((current) => constrainArchitectureChoices({ ...current, ...next }));
@@ -343,7 +370,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   async function submit() {
     const incompleteStepIndex = STEPS.findIndex((candidate) => !stepReady(candidate.id, draft));
     if (incompleteStepIndex >= 0) {
-      setStepIndex(incompleteStepIndex);
+      showStep(incompleteStepIndex);
       setError(`Complete the ${STEPS[incompleteStepIndex].label.toLowerCase()} step before generating.`);
       return;
     }
@@ -359,15 +386,15 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
 
   function reset() {
     setDraft(constrainArchitectureChoices(DEFAULT_INTAKE_DRAFT));
-    setStepIndex(0);
+    showStep(0);
     setError(null);
     try { clearDraft(window.localStorage, draftId); } catch {
       // Resetting the visible form must still work when browser storage is unavailable.
     }
   }
 
-  const goToPreviousStep = () => setStepIndex((index) => Math.max(0, index - 1));
-  const goToNextStep = () => setStepIndex((index) => Math.min(STEPS.length - 1, index + 1));
+  const goToPreviousStep = () => showStep(stepIndex - 1);
+  const goToNextStep = () => showStep(stepIndex + 1);
   const sharedActionBarProps = {
     backDisabled: stepIndex === 0 || isSubmitting,
     blocking: capacity?.blocking,
@@ -382,7 +409,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   };
 
   return (
-    <section className={`guided-intake border border-[#8e5a31]/45 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`}>
+    <section className={`guided-intake border border-[#8e5a31]/45 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`} ref={intakeRef}>
       <div>
         <div className="sticky top-0 z-20 border-b border-[#8e5a31]/30 bg-[#0a0908]">
           <div className="flex items-center gap-2 p-2">
@@ -390,7 +417,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             <BackAction {...sharedActionBarProps} />
             <nav aria-label="Brief steps" className="min-w-0 flex-1">
               <ol className="intake-stepper flex divide-x divide-[#8e5a31]/15 overflow-x-auto" ref={stepperRef}>
-                {STEPS.map((item, index) => { const active = index === stepIndex; const complete = index < stepIndex && stepReady(item.id, draft); return <li className="shrink-0" key={item.id}><button aria-current={active ? "step" : undefined} aria-label={item.label} className={`relative flex items-center justify-center gap-2.5 px-3 py-2.5 transition-colors ${active ? "bg-[#17110c] text-[#fff6ea]" : complete ? "text-[#c5b5a5] hover:text-[#fff6ea]" : "text-[#776a5d] hover:text-[#c5b5a5]"}`} onClick={() => setStepIndex(index)} title={item.label} type="button"><span className={`grid h-6 w-6 shrink-0 place-items-center border text-[0.6rem] font-bold ${complete ? "border-[#4a8d68]/70 text-[#77c497]" : active ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]/70"}`}>{complete ? <Check className="h-3 w-3" /> : String(index + 1).padStart(2, "0")}</span>{active ? <span className="whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.12em]">{item.label}</span> : null}{active ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#ff4e00]" /> : null}</button></li>; })}
+                {STEPS.map((item, index) => { const active = index === stepIndex; const complete = index < stepIndex && stepReady(item.id, draft); return <li className="shrink-0" key={item.id}><button aria-current={active ? "step" : undefined} aria-label={item.label} className={`relative flex items-center justify-center gap-2.5 px-3 py-2.5 transition-colors ${active ? "bg-[#17110c] text-[#fff6ea]" : complete ? "text-[#c5b5a5] hover:text-[#fff6ea]" : "text-[#776a5d] hover:text-[#c5b5a5]"}`} onClick={() => showStep(index)} title={item.label} type="button"><span className={`grid h-6 w-6 shrink-0 place-items-center border text-[0.6rem] font-bold ${complete ? "border-[#4a8d68]/70 text-[#77c497]" : active ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]/70"}`}>{complete ? <Check className="h-3 w-3" /> : String(index + 1).padStart(2, "0")}</span>{active ? <span className="whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.12em]">{item.label}</span> : null}{active ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#ff4e00]" /> : null}</button></li>; })}
               </ol>
             </nav>
             <button aria-label="Reset brief" className="inline-flex min-h-10 shrink-0 items-center gap-2 border border-[#8e5a31]/45 px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#a8998b] transition hover:border-[#c97940] hover:text-[#fff6ea]" onClick={reset} type="button"><RotateCcw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Reset</span></button>
@@ -421,9 +448,9 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           </div> : null}
 
           {step.id === "site" ? <div className="space-y-7">
-            <div className="grid gap-5 sm:grid-cols-2"><Field label={`Plot width (${unitLabel})`}><input className={CONTROL} min="1" onChange={(event) => patch({ siteWidth: Number(event.target.value) })} step="0.1" type="number" value={draft.siteWidth} /></Field><Field label={`Plot depth (${unitLabel})`}><input className={CONTROL} min="1" onChange={(event) => patch({ siteDepth: Number(event.target.value) })} step="0.1" type="number" value={draft.siteDepth} /></Field></div>
+            <div className="grid gap-5 sm:grid-cols-2"><Field hint={`Accepted range: ${siteBounds.min}–${siteBounds.max} ${unitLabel}.`} label={`Plot width (${unitLabel})`}><input className={CONTROL} max={siteBounds.max} min={siteBounds.min} onChange={(event) => patch({ siteWidth: Math.min(siteBounds.max, Number(event.target.value)) })} step="0.1" type="number" value={draft.siteWidth} /></Field><Field hint={`Accepted range: ${siteBounds.min}–${siteBounds.max} ${unitLabel}.`} label={`Plot depth (${unitLabel})`}><input className={CONTROL} max={siteBounds.max} min={siteBounds.min} onChange={(event) => patch({ siteDepth: Math.min(siteBounds.max, Number(event.target.value)) })} step="0.1" type="number" value={draft.siteDepth} /></Field></div>
             <div className="grid gap-5 sm:grid-cols-[1.4fr_1fr]"><div><p className={LABEL}>Road edges · select all that apply</p><div aria-label="Road edges" className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group">{DIRECTIONS.map((direction) => { const checked = draft.roadEdges.includes(direction); return <button aria-pressed={checked} className={`border px-3 py-3 text-[0.65rem] font-extrabold uppercase tracking-[0.1em] transition-colors ${checked ? "border-[#ff4e00] bg-[#25150e] text-[#fff6ea]" : "border-[#8e5a31]/45 bg-[#11100e] text-[#8f8275] hover:border-[#c97940]"}`} key={direction} onClick={() => toggleRoadEdge(direction)} type="button">{direction}</button>; })}</div><p className="mt-1.5 text-[0.68rem] leading-5 text-[#8f8275]">At least one road edge is required. Main facing is preferred for the entrance when it also has road access.</p></div><Field label="Main facing"><select className={CONTROL} onChange={(event) => patch({ facing: event.target.value as IntakeDraft["facing"] })} value={draft.facing}>{DIRECTIONS.map((direction) => <option key={direction} value={direction}>{direction[0].toUpperCase() + direction.slice(1)}</option>)}</select></Field></div>
-            <div><p className={LABEL}>Setbacks ({unitLabel})</p><div className="mt-2 grid gap-3 bg-[#11100e] p-4 sm:grid-cols-4">{(["north", "east", "south", "west"] as const).map((direction) => <Field key={direction} label={direction}><input className={CONTROL} min="0" onChange={(event) => patch({ setbacks: { ...draft.setbacks, [direction]: Number(event.target.value) } })} step="0.1" type="number" value={draft.setbacks[direction]} /></Field>)}</div></div>
+            <div><p className={LABEL}>Setbacks ({unitLabel})</p><div className="mt-2 grid gap-3 bg-[#11100e] p-4 sm:grid-cols-4">{(["north", "east", "south", "west"] as const).map((direction) => { const maximum = direction === "north" || direction === "south" ? draft.siteDepth : draft.siteWidth; return <Field key={direction} label={direction}><input className={CONTROL} max={maximum} min="0" onChange={(event) => patch({ setbacks: { ...draft.setbacks, [direction]: Math.min(maximum, Number(event.target.value)) } })} step="0.1" type="number" value={draft.setbacks[direction]} /></Field>; })}</div></div>
             <div><p className={LABEL}>Plot geometry</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Choice checked detail="Supported for verified topology, setbacks and drawing output." onClick={() => undefined} title="Rectangular plot" /><Choice badge="Coming soon" checked={false} detail="Irregular boundaries are not yet accepted for generation." disabled onClick={() => undefined} title="Irregular plot" /></div></div>
           </div> : null}
 
@@ -436,7 +463,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           {step.id === "rooms" ? <div className="space-y-7">
             <div className="grid gap-5 sm:grid-cols-2"><div className="bg-[#11100e] px-4"><NumberControl label="Household occupants" max={30} min={1} onChange={(occupants) => patch({ occupants })} value={draft.occupants} /></div><Toggle checked={draft.accessibilityRequired} detail="Prioritises a ground-floor bedroom, bathroom, route and clearances." label="Step-free / mobility access needed" onChange={(accessibilityRequired) => patch({ accessibilityRequired })} /></div>
             <div><p className={LABEL}>Ground-floor living and dining</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Choice checked={draft.socialSpaceMode === "separate"} detail="Two distinct rooms with a required direct opening between living and dining." onClick={() => patch({ socialSpaceMode: "separate" })} title="Separate living + dining" /><Choice checked={draft.socialSpaceMode === "combined"} detail="One larger shared hall sized for both living and dining functions." onClick={() => patch({ socialSpaceMode: "combined" })} title="Combined living / dining hall" /></div></div>
-            <div><p className={LABEL}>Room programme by floor</p><div className="mt-2 grid gap-3 xl:grid-cols-2">{draft.programs.slice(0, draft.floorCount).map((program, level) => { const brief = floorProgramBrief(program); return <section className="bg-[#11100e]" key={level}><header className="flex items-center justify-between border-b border-[#8e5a31]/25 px-4 py-3"><div><p className="text-sm font-bold">{level === 0 ? "Ground floor" : `Floor ${level}`}</p><p className="mt-0.5 text-[0.62rem] uppercase tracking-[0.09em] text-[#74685d]">F{level}</p></div><span className="font-[family-name:var(--font-display)] text-2xl text-[#c97940]">{program.bedrooms}B · {program.bathrooms}W</span></header><div className="px-4"><NumberControl label="Bedrooms with attached bathroom" max={Math.min(8 - brief.bedroomsWithoutAttachedBathroom, 8 - brief.sharedBathrooms)} min={0} onChange={(attachedBedrooms) => updateProgramBrief(level, { attachedBedrooms })} value={brief.attachedBedrooms} /><p className="pb-2 text-[0.68rem] leading-5 text-[#8f8275]">Each creates a private bathroom with a required direct door from its bedroom.</p><NumberControl label="Bedrooms without attached bathroom" max={8 - brief.attachedBedrooms} min={0} onChange={(bedroomsWithoutAttachedBathroom) => updateProgramBrief(level, { bedroomsWithoutAttachedBathroom })} value={brief.bedroomsWithoutAttachedBathroom} /><NumberControl label="Additional / shared bathrooms" max={8 - brief.attachedBedrooms} min={0} onChange={(sharedBathrooms) => updateProgramBrief(level, { sharedBathrooms })} value={brief.sharedBathrooms} /><NumberControl label="Studies / offices" max={3} min={0} onChange={(studies) => updateProgram(level, { studies })} value={program.studies} /></div>{level > 0 ? <div className="p-3"><Toggle checked={program.balcony} label="Balcony on this floor" onChange={(balcony) => updateProgram(level, { balcony })} /></div> : null}</section>; })}</div></div>
+            <div><p className={LABEL}>Room programme by floor</p><p className="mt-1.5 text-[0.68rem] leading-5 text-[#8f8275]">Generous per-floor limits: up to {MAX_BEDROOMS_PER_FLOOR} bedrooms, {MAX_BATHROOMS_PER_FLOOR} bathrooms and {MAX_STUDIES_PER_FLOOR} studies. This keeps every G+3 combination within the supported planning programme.</p><div className="mt-2 grid gap-3 xl:grid-cols-2">{draft.programs.slice(0, draft.floorCount).map((program, level) => { const brief = floorProgramBrief(program); return <section className="bg-[#11100e]" key={level}><header className="flex items-center justify-between border-b border-[#8e5a31]/25 px-4 py-3"><div><p className="text-sm font-bold">{level === 0 ? "Ground floor" : `Floor ${level}`}</p><p className="mt-0.5 text-[0.62rem] uppercase tracking-[0.09em] text-[#74685d]">F{level}</p></div><span className="font-[family-name:var(--font-display)] text-2xl text-[#c97940]">{program.bedrooms}B · {program.bathrooms}W</span></header><div className="px-4"><NumberControl label="Bedrooms with attached bathroom" max={Math.min(MAX_BEDROOMS_PER_FLOOR - brief.bedroomsWithoutAttachedBathroom, MAX_BATHROOMS_PER_FLOOR - brief.sharedBathrooms)} min={0} onChange={(attachedBedrooms) => updateProgramBrief(level, { attachedBedrooms })} value={brief.attachedBedrooms} /><p className="pb-2 text-[0.68rem] leading-5 text-[#8f8275]">Each creates a private bathroom with a required direct door from its bedroom.</p><NumberControl label="Bedrooms without attached bathroom" max={MAX_BEDROOMS_PER_FLOOR - brief.attachedBedrooms} min={0} onChange={(bedroomsWithoutAttachedBathroom) => updateProgramBrief(level, { bedroomsWithoutAttachedBathroom })} value={brief.bedroomsWithoutAttachedBathroom} /><NumberControl label="Additional / shared bathrooms" max={MAX_BATHROOMS_PER_FLOOR - brief.attachedBedrooms} min={0} onChange={(sharedBathrooms) => updateProgramBrief(level, { sharedBathrooms })} value={brief.sharedBathrooms} /><NumberControl label="Studies / offices" max={MAX_STUDIES_PER_FLOOR} min={0} onChange={(studies) => updateProgram(level, { studies })} value={program.studies} /></div>{level > 0 ? <div className="p-3"><Toggle checked={program.balcony} label="Balcony on this floor" onChange={(balcony) => updateProgram(level, { balcony })} /></div> : null}</section>; })}</div></div>
             <div><p className={LABEL}>Ground-floor priorities</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.includeParking} label="Covered parking" onChange={(includeParking) => patch({ includeParking, ...(includeParking ? {} : { shadeStructures: draft.shadeStructures.filter((shade) => shade.location !== "parking"), aboveParkingUse: { value: "auto", source: "default" } as const }) })} /><Toggle checked={draft.includeVerandah} label="Covered verandah" onChange={(includeVerandah) => patch({ includeVerandah, ...(includeVerandah ? {} : { shadeStructures: draft.shadeStructures.filter((shade) => shade.location !== "verandah") }) })} /><Toggle checked={draft.includeUtility} label="Utility / laundry" onChange={(includeUtility) => patch({ includeUtility })} /><Toggle checked={draft.includePooja} label="Pooja / sacred room" onChange={(includePooja) => patch({ includePooja })} /><Toggle checked={draft.includeCourtyard} detail="Creates an exterior planning void, not leftover gap." label="Central courtyard" onChange={(includeCourtyard) => patch({ includeCourtyard })} /></div></div>
           </div> : null}
 

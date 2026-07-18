@@ -12,12 +12,18 @@ export function projectCreationReplay(input: {
   capabilityProfile: ProjectCapabilityProfile;
   generatorContractVersion: number;
   responsePayload: Record<string, unknown> | null;
+  requirements?: Record<string, unknown> | null;
 }) {
   const metadata = projectCapabilityMetadata(input.capabilityProfile, input.projectStatus, input.generatorContractVersion);
-  if (input.responsePayload) return {
-    status: 200 as const,
-    body: { ...input.responsePayload, ...metadata, replayed: true as const },
-  };
+  if (input.responsePayload) {
+    const payload = input.requirements && !input.responsePayload.requirements
+      ? { ...input.responsePayload, requirements: input.requirements }
+      : input.responsePayload;
+    return {
+      status: 200 as const,
+      body: { ...payload, ...metadata, replayed: true as const },
+    };
+  }
   return {
     status: 202 as const,
     body: {

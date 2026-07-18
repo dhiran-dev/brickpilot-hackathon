@@ -94,6 +94,7 @@ export function studyToDesignResult(study: RecentStudy): DesignResult | null {
 /** Versioned read adapter for v3-aware consumers. Existing UI remains pinned to the v2 adapter. */
 export function readableStudyToDesignResult(study: ReadableRecentStudy): ReadableDesignResult | null {
   if (!study.building || !study.validation || !study.costEstimate) return null;
+  if (!study.requirements) return null;
   if (study.requirements.requirementSchemaVersion !== study.building.buildingSchemaVersion) return null;
   if (study.building.buildingSchemaVersion === 2 && !("schemaVersion" in study.validation)) {
     return studyToDesignResult(study as RecentStudy);

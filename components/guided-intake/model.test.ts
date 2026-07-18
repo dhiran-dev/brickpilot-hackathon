@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildingRequirementsSchema } from "@/lib/building/requirements";
+import { buildingRequirementsSchema, MAX_REQUIREMENT_ROOMS } from "@/lib/building/requirements";
 import { generateBuilding } from "@/lib/building/generate";
 import { MAIN_ENTRY_CLEAR_WIDTH_MM } from "@/lib/building/openings";
 import { partiStairAnchor } from "@/lib/building/partis";
 import { analyzeCoverage } from "@/lib/building/topology";
-import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
+import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, MAX_BATHROOMS_PER_FLOOR, MAX_BEDROOMS_PER_FLOOR, MAX_STUDIES_PER_FLOOR, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
 
 describe("guided intake mapping", () => {
   test("turns the open-pergola selector into one provenance-aware requirement and removes it when cleared", () => {
@@ -363,7 +363,42 @@ describe("guided intake mapping", () => {
     });
 
     const bounded = updateFloorProgramBrief(moreAttached, { bedroomsWithoutAttachedBathroom: 99, sharedBathrooms: 99 });
-    expect(bounded).toMatchObject({ bedrooms: 8, bathrooms: 8, attachedBathrooms: 2 });
+    expect(bounded).toMatchObject({
+      bedrooms: MAX_BEDROOMS_PER_FLOOR,
+      bathrooms: MAX_BATHROOMS_PER_FLOOR,
+      attachedBathrooms: 2,
+    });
+  });
+
+  test("keeps even the largest questionnaire room programme within the supported contract", () => {
+    const maximumProgram = {
+      bedrooms: MAX_BEDROOMS_PER_FLOOR,
+      bathrooms: MAX_BATHROOMS_PER_FLOOR,
+      attachedBathrooms: MAX_BEDROOMS_PER_FLOOR,
+      studies: MAX_STUDIES_PER_FLOOR,
+      balcony: true,
+    };
+    const requirements = createRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      floorCount: 4,
+      programs: DEFAULT_INTAKE_DRAFT.programs.map(() => maximumProgram),
+      includeUtility: true,
+      includePooja: true,
+      includeCourtyard: true,
+      includeParking: true,
+      includeVerandah: true,
+      socialSpaceMode: "separate",
+    });
+
+    expect(requirements.rooms.length).toBeLessThanOrEqual(MAX_REQUIREMENT_ROOMS);
+    expect(requirements.rooms.filter((room) => room.type === "bedroom")).toHaveLength(24);
+  });
+
+  test("rejects plot dimensions beyond the generous 200 metre questionnaire limit", () => {
+    expect(() => createRequirements({ ...DEFAULT_INTAKE_DRAFT, siteWidth: 200 })).not.toThrow();
+    expect(() => createRequirements({ ...DEFAULT_INTAKE_DRAFT, siteWidth: 200.1 })).toThrow();
+    expect(() => createRequirements({ ...DEFAULT_INTAKE_DRAFT, displayUnit: "imperial", siteWidth: 656.16, siteDepth: 60 })).not.toThrow();
+    expect(() => createRequirements({ ...DEFAULT_INTAKE_DRAFT, displayUnit: "imperial", siteWidth: 656.17, siteDepth: 60 })).toThrow();
   });
 
   test("maps separate or combined social spaces without inventing a second room", () => {

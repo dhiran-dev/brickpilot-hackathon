@@ -1,6 +1,7 @@
 import {
   buildingRequirementsSchema,
   currentBuildingRequirementsSchema,
+  MAX_REQUIREMENT_ROOMS,
   squareMetresToMm2,
   type BuildingRequirements,
   type CurrentBuildingRequirements,
@@ -13,6 +14,13 @@ import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
 import { regionalIntakePrefill } from "@/lib/design/regional-packs";
 
 export type FloorProgram = { bedrooms: number; bathrooms: number; attachedBathrooms: number; studies: number; balcony: boolean };
+
+// These per-floor caps still allow a very large G+3 villa (up to 24 bedrooms),
+// while ensuring every combination of optional rooms remains inside the canonical
+// 80-room requirements contract.
+export const MAX_BEDROOMS_PER_FLOOR = 6;
+export const MAX_BATHROOMS_PER_FLOOR = 6;
+export const MAX_STUDIES_PER_FLOOR = 2;
 
 export type IntakeDraft = {
   projectName: string;
@@ -127,8 +135,8 @@ function inputUnitToMm(value: number, unit: IntakeDraft["displayUnit"]) {
 }
 
 export function normalizeFloorProgram(program: Partial<FloorProgram> | undefined, fallback: FloorProgram): FloorProgram {
-  const bedrooms = Math.max(0, Math.min(8, Math.round(program?.bedrooms ?? fallback.bedrooms)));
-  const bathrooms = Math.max(0, Math.min(8, Math.round(program?.bathrooms ?? fallback.bathrooms)));
+  const bedrooms = Math.max(0, Math.min(MAX_BEDROOMS_PER_FLOOR, Math.round(program?.bedrooms ?? fallback.bedrooms)));
+  const bathrooms = Math.max(0, Math.min(MAX_BATHROOMS_PER_FLOOR, Math.round(program?.bathrooms ?? fallback.bathrooms)));
   const attachedBathrooms = Math.max(0, Math.min(
     bedrooms,
     bathrooms,
@@ -138,7 +146,7 @@ export function normalizeFloorProgram(program: Partial<FloorProgram> | undefined
     bedrooms,
     bathrooms,
     attachedBathrooms,
-    studies: Math.max(0, Math.min(3, Math.round(program?.studies ?? fallback.studies))),
+    studies: Math.max(0, Math.min(MAX_STUDIES_PER_FLOOR, Math.round(program?.studies ?? fallback.studies))),
     balcony: program?.balcony ?? fallback.balcony,
   };
 }
@@ -168,13 +176,17 @@ export function floorProgramBrief(program: FloorProgram): FloorProgramBrief {
 
 export function updateFloorProgramBrief(program: FloorProgram, next: Partial<FloorProgramBrief>): FloorProgram {
   const current = floorProgramBrief(program);
-  const attachedBedrooms = Math.max(0, Math.min(8, Math.round(next.attachedBedrooms ?? current.attachedBedrooms)));
+  const attachedBedrooms = Math.max(0, Math.min(
+    MAX_BEDROOMS_PER_FLOOR,
+    MAX_BATHROOMS_PER_FLOOR,
+    Math.round(next.attachedBedrooms ?? current.attachedBedrooms),
+  ));
   const bedroomsWithoutAttachedBathroom = Math.max(0, Math.min(
-    8 - attachedBedrooms,
+    MAX_BEDROOMS_PER_FLOOR - attachedBedrooms,
     Math.round(next.bedroomsWithoutAttachedBathroom ?? current.bedroomsWithoutAttachedBathroom),
   ));
   const sharedBathrooms = Math.max(0, Math.min(
-    8 - attachedBedrooms,
+    MAX_BATHROOMS_PER_FLOOR - attachedBedrooms,
     Math.round(next.sharedBathrooms ?? current.sharedBathrooms),
   ));
   return normalizeFloorProgram({
@@ -315,6 +327,12 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
     },
     seed: draft.seed,
   };
+  // This assertion documents the invariant guaranteed by the per-floor UI/model caps.
+  // Keep it close to construction so future optional-room additions cannot silently
+  // push a valid questionnaire beyond the public requirements contract.
+  if (rooms.length > MAX_REQUIREMENT_ROOMS) {
+    throw new Error(`Room programme cannot exceed ${MAX_REQUIREMENT_ROOMS} rooms.`);
+  }
   return buildingRequirementsSchema.parse(raw);
 }
 

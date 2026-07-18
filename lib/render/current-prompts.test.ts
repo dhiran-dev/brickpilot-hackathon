@@ -61,6 +61,12 @@ describe("v3 semantic render camera and prompt", () => {
     for (const support of building.secondaryRoofSupports) expect(image2.prompt).toContain(support.id);
     expect(image2.prompt).toContain(building.edgeProtections.length ? building.edgeProtections[0].id : "none required at this geometry");
     expect(image2.prompt).toContain("door.main-entry.warm-wood");
+    const collage = first.find((spec) => spec.purpose === "exterior_collage")!;
+    expect(collage.sourceRole).toBe("massing_collage");
+    expect(collage.prompt).toContain("SOURCE B · COLLAGE · FOUR FITTED VIEWS");
+    expect(collage.prompt).toContain("Preserve the exact 2-by-2 panel grid");
+    expect(collage.prompt).toContain("do not reproduce a floor plan");
+    expect(collage.prompt).toContain("One polished 2-by-2 architectural presentation board");
     expect(currentRenderSpecPreservesGeometry(image2, building)).toBe(true);
   });
 

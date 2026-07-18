@@ -14,6 +14,7 @@ import {
   MASSING_EDGE_DEPTH_STYLE,
   MASSING_VIEWER_CLASS_NAME,
   massingCanvasSizeChanged,
+  fitMassingCameraToBounds,
   massingEdgeStyle,
   massingSurfaceStyle,
   massingPrimitiveMaterialStyle,
@@ -130,7 +131,39 @@ describe("fixed render source cameras", () => {
     expect(MASSING_CAPTURE_LABELS.collage).toContain("FOUR LOCKED VIEWS");
     expect(MASSING_CAPTURE_LABELS.top).toContain("HIGH 3/4");
     expect(CURRENT_MASSING_CAPTURE_LABELS.front).toContain("PRIMARY ROAD / MAIN ENTRY");
-    expect(CURRENT_MASSING_CAPTURE_LABELS.secondary).toContain("SECONDARY CONTEXT");
+    expect(CURRENT_MASSING_CAPTURE_LABELS.collage).toContain("COLLAGE");
+    expect(CURRENT_MASSING_CAPTURE_LABELS.collage).toContain("FOUR FITTED VIEWS");
+  });
+
+  test("fits every building corner inside the 3:2 capture frame with padding", () => {
+    const bounds = new THREE.Box3(
+      new THREE.Vector3(-11, 0, -5),
+      new THREE.Vector3(9, 12, 7),
+    );
+    const pose = fitMassingCameraToBounds({
+      position: new THREE.Vector3(0, 5, -10),
+      target: new THREE.Vector3(-7, 1.2, 0),
+      bounds,
+      verticalFovDegrees: 50,
+      aspect: MASSING_CAPTURE_SIZE.width / MASSING_CAPTURE_SIZE.height,
+    });
+    const camera = new THREE.PerspectiveCamera(50, MASSING_CAPTURE_SIZE.width / MASSING_CAPTURE_SIZE.height, 0.05, 250);
+    camera.position.copy(pose.position);
+    camera.lookAt(pose.target);
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const projected = new THREE.Vector3(x, y, z).project(camera);
+          expect(Math.abs(projected.x)).toBeLessThanOrEqual(0.84);
+          expect(Math.abs(projected.y)).toBeLessThanOrEqual(0.84);
+          expect(projected.z).toBeGreaterThanOrEqual(-1);
+          expect(projected.z).toBeLessThanOrEqual(1);
+        }
+      }
+    }
   });
 
   test("maps v3 canonical semantic millimetre cameras to exact scene coordinates", () => {

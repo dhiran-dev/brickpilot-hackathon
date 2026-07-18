@@ -20,7 +20,7 @@ export const MASSING_CAPTURE_LABELS = {
 } as const;
 export const CURRENT_MASSING_CAPTURE_LABELS = {
   front: "SOURCE A · PRIMARY ROAD / MAIN ENTRY · CAMERA LOCK",
-  secondary: "SOURCE B · SECONDARY CONTEXT · CAMERA LOCK",
+  collage: "SOURCE B · COLLAGE · FOUR FITTED VIEWS",
   top: "SOURCE C · AERIAL · CAMERA LOCK",
 } as const;
 
@@ -102,6 +102,7 @@ type Runtime = {
   animationFrame: number;
   viewAnimationFrame: number | null;
   modelRadius: number;
+  modelBounds: THREE.Box3;
   hasFramedModel: boolean;
 };
 
@@ -217,6 +218,45 @@ export function semanticMassingScenePose(building: ReadableBuilding, view: Massi
   return { semanticView: semantic.view, position: toScene(semantic.positionMm), target: toScene(semantic.targetMm) };
 }
 
+export function fitMassingCameraToBounds(input: {
+  position: THREE.Vector3;
+  target: THREE.Vector3;
+  bounds: THREE.Box3;
+  verticalFovDegrees: number;
+  aspect: number;
+  padding?: number;
+}) {
+  if (input.bounds.isEmpty()) return { position: input.position.clone(), target: input.target.clone() };
+  const centre = input.bounds.getCenter(new THREE.Vector3());
+  const outward = input.position.clone().sub(input.target);
+  if (outward.lengthSq() < 1e-8) outward.set(1, 0.65, 1);
+  outward.normalize();
+  const forward = outward.clone().multiplyScalar(-1);
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+  if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const padding = input.padding ?? 1.2;
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(input.verticalFovDegrees) / 2);
+  const horizontalTangent = verticalTangent * Math.max(0.01, input.aspect);
+  let distance = 0.1;
+  for (const x of [input.bounds.min.x, input.bounds.max.x]) {
+    for (const y of [input.bounds.min.y, input.bounds.max.y]) {
+      for (const z of [input.bounds.min.z, input.bounds.max.z]) {
+        const relative = new THREE.Vector3(x, y, z).sub(centre);
+        const depthOffset = relative.dot(forward);
+        distance = Math.max(
+          distance,
+          Math.abs(relative.dot(right)) * padding / horizontalTangent - depthOffset,
+          Math.abs(relative.dot(up)) * padding / verticalTangent - depthOffset,
+          0.1 - depthOffset,
+        );
+      }
+    }
+  }
+  return { position: centre.clone().addScaledVector(outward, distance), target: centre };
+}
+
 const CAPTURE_WIDTH = MASSING_CAPTURE_SIZE.width;
 const CAPTURE_HEIGHT = MASSING_CAPTURE_SIZE.height;
 
@@ -248,7 +288,7 @@ function labeledDataUri(source: HTMLCanvasElement, label: string) {
   return dataUri;
 }
 
-function collageDataUri(panels: Array<{ source: HTMLCanvasElement; label: string }>) {
+function collageDataUri(panels: Array<{ source: HTMLCanvasElement; label: string }>, sourceLabel: string = MASSING_CAPTURE_LABELS.collage) {
   const canvas = document.createElement("canvas");
   canvas.width = CAPTURE_WIDTH;
   canvas.height = CAPTURE_HEIGHT;
@@ -270,7 +310,7 @@ function collageDataUri(panels: Array<{ source: HTMLCanvasElement; label: string
     context.lineWidth = 2;
     context.strokeRect(x + 1, y + 1, cellWidth - 2, cellHeight - 2);
   });
-  drawSourceLabel(context, MASSING_CAPTURE_LABELS.collage, canvas.width);
+  drawSourceLabel(context, sourceLabel, canvas.width);
   let dataUri = canvas.toDataURL("image/webp", 0.82);
   if (dataUri.length > 1_250_000) dataUri = canvas.toDataURL("image/webp", 0.68);
   if (dataUri.length > 1_350_000) throw new Error("Collage reference is still too large after compression.");
@@ -323,9 +363,18 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     if (!runtime) return;
     runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
     const semanticPose = semanticMassingScenePose(building, view);
-    const target = semanticPose?.target ?? runtime.controls.target.clone();
+    const baseTarget = semanticPose?.target ?? runtime.controls.target.clone();
     const distance = Math.max(8, runtime.modelRadius * 2.25);
-    const destination = semanticPose?.position ?? target.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
+    const basePosition = semanticPose?.position ?? baseTarget.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
+    const fitted = fitMassingCameraToBounds({
+      position: basePosition,
+      target: baseTarget,
+      bounds: runtime.modelBounds,
+      verticalFovDegrees: runtime.camera.fov,
+      aspect: runtime.camera.aspect,
+    });
+    const target = fitted.target;
+    const destination = fitted.position;
     if (!animate) {
       runtime.camera.position.copy(destination);
       runtime.controls.target.copy(target);
@@ -386,7 +435,12 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
         const top = snapshots.get("top")!;
         if (building.buildingSchemaVersion === 3) return [
           { role: "massing_front", dataUri: labeledDataUri(front, CURRENT_MASSING_CAPTURE_LABELS.front) },
-          { role: "massing_collage", dataUri: labeledDataUri(snapshots.get("rear")!, CURRENT_MASSING_CAPTURE_LABELS.secondary) },
+          { role: "massing_collage", dataUri: collageDataUri([
+            { source: front, label: "PRIMARY ROAD / ENTRY" },
+            { source: snapshots.get("rear")!, label: "SECONDARY CONTEXT" },
+            { source: snapshots.get("right")!, label: "RIGHT SIDE" },
+            { source: top, label: "AERIAL" },
+          ], CURRENT_MASSING_CAPTURE_LABELS.collage) },
           { role: "massing_top", dataUri: labeledDataUri(top, CURRENT_MASSING_CAPTURE_LABELS.top) },
         ];
         return [
@@ -465,7 +519,18 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
 
     const root = new THREE.Group();
     scene.add(root);
-    const runtime: Runtime = { scene, camera, renderer, controls, root, animationFrame: 0, viewAnimationFrame: null, modelRadius: 12, hasFramedModel: false };
+    const runtime: Runtime = {
+      scene,
+      camera,
+      renderer,
+      controls,
+      root,
+      animationFrame: 0,
+      viewAnimationFrame: null,
+      modelRadius: 12,
+      modelBounds: new THREE.Box3(new THREE.Vector3(-6, 0, -6), new THREE.Vector3(6, 8, 6)),
+      hasFramedModel: false,
+    };
     runtimeRef.current = runtime;
 
     let lastWidth = 0;
@@ -584,9 +649,14 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       const size = max.clone().sub(min);
       const centre = min.clone().add(max).multiplyScalar(0.5);
       runtime.modelRadius = Math.max(4, size.length() / 2);
+      runtime.modelBounds.set(min, max);
       runtime.controls.target.set(centre.x, min.y + size.y * 0.45, centre.z);
     } else {
       runtime.modelRadius = Math.max(6, Math.hypot(model.widthM, model.depthM, model.heightM) / 2);
+      runtime.modelBounds.setFromCenterAndSize(
+        new THREE.Vector3(...model.centre),
+        new THREE.Vector3(model.widthM, model.heightM, model.depthM),
+      );
       runtime.controls.target.set(...model.centre);
     }
     runtime.controls.minDistance = Math.max(3, runtime.modelRadius * 0.42);

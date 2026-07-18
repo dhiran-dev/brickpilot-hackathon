@@ -91,11 +91,15 @@ function exteriorPrompt(input: {
   sourceLabel: string;
   purposeText: string;
   primaryDesignerElevation?: boolean;
+  collage?: boolean;
 }) {
   const primary = input.building.facadeZones.find((zone) => zone.role === "primary_road_elevation" && zone.containsMainEntry)!;
   const secondaryTokens = input.building.facadeZones.filter((zone) => zone.role !== "primary_road_elevation")
     .flatMap((zone) => zone.allowedMaterialArticulation);
-  return `EDIT THE SUPPLIED CANONICAL MASSING SOURCE "${input.sourceLabel}". The source and semantic camera are authoritative; do not invent another camera or reinterpret the house.
+  const compositionLock = input.collage
+    ? "Preserve the exact 2-by-2 panel grid, the fitted camera and crop inside every panel, and the relationship between all four views. Keep one consistent material schedule across every panel. Retain small clean panel captions, but remove all SOURCE annotations, clay edge lines and the site grid. Do not collapse the board into one view and do not reproduce a floor plan."
+    : "Preserve the fitted source camera direction, crop, focal length, horizon and pixel-space composition. Remove only source annotations, clay edge lines and the site grid.";
+  return `EDIT THE SUPPLIED CANONICAL MASSING SOURCE "${input.sourceLabel}". The fitted source composition and semantic camera direction are authoritative; do not invent another camera or reinterpret the house.
 
 SEMANTIC CAMERA
 View ${input.camera.view}; facade side ${input.camera.facadeSide}; canonical camera position mm (${input.camera.positionMm.x}, ${input.camera.positionMm.y}, ${input.camera.positionMm.z}); canonical target mm (${input.camera.targetMm.x}, ${input.camera.targetMm.y}, ${input.camera.targetMm.z}); target wall IDs ${input.camera.targetWallIds.join(", ")}; target opening ${input.camera.targetOpeningId ?? "none"}; geometry hash ${input.camera.geometryHash}. ${input.camera.mainEntryMustBeVisible ? "The complete main entry must remain plainly visible, unobstructed and visually distinct in the final frame." : "Retain the supplied contextual composition."} ${input.primaryDesignerElevation ? "This is GPT IMAGE 2, the primary designer-elevation deliverable: the road-facing entrance facade is the visual subject." : "Use this as a supporting context view."}
@@ -104,7 +108,7 @@ CANONICAL PHYSICAL FACTS
 ${conciseFacts(input.building, input.lock)}.
 
 PRESERVATION CONTRACT
-${geometryLockInstructions(input.lock)} Preserve the source camera position, crop, focal length, horizon and pixel-space composition. Remove only source annotations, clay edge lines and the site grid.
+${geometryLockInstructions(input.lock)} ${compositionLock}
 
 MATERIAL-ONLY DESIGNER ELEVATION
 Apply a sophisticated, buildable ${input.requirements.architecture.style.replaceAll("_", " ")} finish schedule: ${currentMaterialSchedule(input.requirements)}. Concentrate premium articulation on the canonical ${primary.side} primary road facade only, using its allowed tokens: ${primary.allowedMaterialArticulation.join(", ")}. Keep secondary facades quieter and subordinate using only restrained base finishes${secondaryTokens.length ? ` (${[...new Set(secondaryTokens)].join(", ")})` : ""}. Make the ${input.building.floors.flatMap((floor) => floor.openings).find((opening) => opening.role === "main_entry")!.materialToken} main door warmer and more prominent than interior/service doors without changing its dimensions.
@@ -137,7 +141,7 @@ export function buildCurrentRenderSpecs(input: {
     {
       purpose: "exterior_collage", sourceRole: "massing_collage", requestedOutputCount: 1,
       promptVersion: CURRENT_PROMPT_VERSION, semanticView: "secondary_context", semanticCamera: cameras.secondary_context, geometryLock: lock,
-      prompt: exteriorPrompt({ building: input.building, requirements: input.requirements, camera: cameras.secondary_context, lock, sourceLabel: "SOURCE B · SECONDARY CONTEXT · CAMERA LOCK", purposeText: "One restrained context view preserving the supplied composition." }),
+      prompt: exteriorPrompt({ building: input.building, requirements: input.requirements, camera: cameras.secondary_context, lock, sourceLabel: "SOURCE B · COLLAGE · FOUR FITTED VIEWS", purposeText: "One polished 2-by-2 architectural presentation board matching all four supplied massing panels.", collage: true }),
     },
     {
       purpose: "exterior_top", sourceRole: "massing_top", requestedOutputCount: 1,
