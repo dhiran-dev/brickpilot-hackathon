@@ -5,12 +5,16 @@ import { z } from "zod";
 import { reviewBuilding } from "@/lib/ai/architectural-review";
 import type { ArchitecturalReviewResult } from "@/lib/ai/schema";
 import { requireUser } from "@/lib/auth";
-import { buildingRequirementsSchema } from "@/lib/building/requirements";
+import { readableBuildingRequirementsSchema, type CurrentBuildingRequirements, type LegacyBuildingRequirements } from "@/lib/building/requirements";
+import type { CurrentBuilding, LegacyBuilding } from "@/lib/building/schema";
 import { estimateBuildingCost } from "@/lib/cost";
 import type { CostEstimate } from "@/lib/cost/schema";
 import { db } from "@/lib/db";
 import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
-import { persistedSchemeSchema, type PersistedScheme } from "@/lib/design/persisted-study";
+import { currentPersistedSchemeSchema, persistedSchemeSchema, readablePersistedSchemeSchema, type CurrentPersistedScheme, type PersistedScheme, type ReadablePersistedScheme } from "@/lib/design/persisted-study";
+import type { ValidationReport, ValidationReportV3 } from "@/lib/validation";
+import { emitProjectMutationDenial, projectMutationDenial } from "@/lib/server/project-capabilities";
+import { isActiveGenerationStatus, lockProjectLifecycle } from "@/lib/server/project-lifecycle";
 
 const requestSchema = z.object({ schemeId: z.string().min(1).max(200) });
 
@@ -29,10 +33,11 @@ function renderContractLockKey(layoutVersionId: string) {
 export function resolveSchemeSelection(schemes: unknown, selectedSchemeId: string | null, requestedSchemeId: string):
   | { status: "invalid-payload" }
   | { status: "not-found" }
-  | { status: "unchanged"; scheme: PersistedScheme }
-  | { status: "changed"; scheme: PersistedScheme } {
-  const parsed = z.array(persistedSchemeSchema).min(1).max(3).safeParse(schemes);
+  | { status: "unchanged"; scheme: ReadablePersistedScheme }
+  | { status: "changed"; scheme: ReadablePersistedScheme } {
+  const parsed = z.array(readablePersistedSchemeSchema).min(1).max(3).safeParse(schemes);
   if (!parsed.success) return { status: "invalid-payload" };
+  if (new Set(parsed.data.map((scheme) => scheme.building.buildingSchemaVersion)).size !== 1) return { status: "invalid-payload" };
   const scheme = parsed.data.find((candidate) => candidate.schemeId === requestedSchemeId);
   if (!scheme) return { status: "not-found" };
   return { status: selectedSchemeId === requestedSchemeId ? "unchanged" : "changed", scheme };
@@ -49,7 +54,7 @@ export function evaluateRenderSelection(jobs: readonly RenderSelectionJob[], cur
     job.requestPayload.schemeDisposition !== "previous"
     && job.requestPayload.schemeId === currentSchemeId
   ));
-  const active = current.filter((job) => job.status === "queued" || job.status === "processing");
+  const active = current.filter((job) => isActiveGenerationStatus(job.status));
   const completed = current.filter((job) => job.status === "completed");
   return {
     active,
@@ -63,7 +68,7 @@ export function evaluateRenderSelection(jobs: readonly RenderSelectionJob[], cur
 }
 
 export function buildCanonicalSchemeMirror(
-  scheme: PersistedScheme,
+  scheme: ReadablePersistedScheme,
   costEstimate: CostEstimate,
   aiReview: ArchitecturalReviewResult,
   priorIntent: Record<string, unknown> | null,
@@ -81,6 +86,26 @@ export function buildCanonicalSchemeMirror(
     aiReview,
     intent,
   };
+}
+
+type ReadableReviewInput =
+  | { requirements: LegacyBuildingRequirements; building: LegacyBuilding; validation: ValidationReport }
+  | { requirements: CurrentBuildingRequirements; building: CurrentBuilding; validation: ValidationReportV3 };
+type ReadableReview = (input: ReadableReviewInput) => Promise<ArchitecturalReviewResult>;
+
+async function reviewSelectedScheme(
+  requirements: LegacyBuildingRequirements | CurrentBuildingRequirements,
+  scheme: PersistedScheme | CurrentPersistedScheme,
+  review: ReadableReview,
+) {
+  if (requirements.requirementSchemaVersion === 2) {
+    const parsedScheme = persistedSchemeSchema.safeParse(scheme);
+    if (!parsedScheme.success) throw new Error("SCHEME_CONTRACT_MISMATCH");
+    return review({ requirements, building: parsedScheme.data.building, validation: parsedScheme.data.validation });
+  }
+  const parsedScheme = currentPersistedSchemeSchema.safeParse(scheme);
+  if (!parsedScheme.success) throw new Error("SCHEME_CONTRACT_MISMATCH");
+  return review({ requirements, building: parsedScheme.data.building, validation: parsedScheme.data.validation });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ layoutVersionId: string }> }) {
@@ -108,6 +133,8 @@ export async function selectSchemeForOwner(
 
   const [row] = await db.select({
     projectId: projects.id,
+    projectStatus: projects.status,
+    capabilityProfile: projects.capabilityProfile,
     title: projects.title,
     version: layoutVersions.version,
     status: layoutVersions.status,
@@ -122,17 +149,37 @@ export async function selectSchemeForOwner(
     .where(and(eq(layoutVersions.id, layoutVersionId), eq(projects.ownerId, ownerId)))
     .limit(1);
   if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
+  const preflightDenial = projectMutationDenial(row.capabilityProfile, row.projectStatus, "canSelectScheme");
+  if (preflightDenial) {
+    emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canSelectScheme", profile: row.capabilityProfile, status: row.projectStatus, phase: "preflight", code: preflightDenial.code });
+    return errorResponse(preflightDenial.message, 409, preflightDenial.code);
+  }
   if (row.status !== "completed") return errorResponse("This study is not completed yet.", 409, "STUDY_NOT_COMPLETED");
 
   const selection = resolveSchemeSelection(row.schemes, row.selectedSchemeId, parsedRequest.data.schemeId);
   if (selection.status === "invalid-payload") return errorResponse("This study does not contain selectable schemes.", 409, "SCHEMES_UNAVAILABLE");
   if (selection.status === "not-found") return errorResponse("Scheme not found.", 404, "SCHEME_NOT_FOUND");
-  if (selection.status === "unchanged") return NextResponse.json({ changed: false, selectedSchemeId: selection.scheme.schemeId });
 
-  const requirements = buildingRequirementsSchema.safeParse(row.requirements);
+  const requirements = readableBuildingRequirementsSchema.safeParse(row.requirements);
   if (!requirements.success) return errorResponse("The source requirements are incompatible with this application version.", 409, "INCOMPATIBLE_REQUIREMENTS");
+  if (selection.scheme.building.buildingSchemaVersion !== requirements.data.requirementSchemaVersion) {
+    return errorResponse("The selectable schemes do not match the source requirement contract.", 409, "INCOMPATIBLE_REQUIREMENTS");
+  }
+  if (selection.status === "unchanged") return NextResponse.json({ changed: false, selectedSchemeId: selection.scheme.schemeId });
   const result = await db.transaction(async (transaction) => {
+    await lockProjectLifecycle(transaction, row.projectId);
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${renderContractLockKey(layoutVersionId)}, 0))`);
+    const [projectState] = await transaction
+      .select({ status: projects.status, capabilityProfile: projects.capabilityProfile })
+      .from(projects)
+      .where(and(eq(projects.id, row.projectId), eq(projects.ownerId, ownerId)))
+      .limit(1);
+    if (!projectState) return { status: "stale" as const };
+    const denial = projectMutationDenial(projectState.capabilityProfile, projectState.status, "canSelectScheme");
+    if (denial) {
+      emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canSelectScheme", profile: projectState.capabilityProfile, status: projectState.status, phase: "transaction_recheck", code: denial.code });
+      return { status: "denied" as const, denial };
+    }
     const [current] = await transaction.select({
       selectedSchemeId: layoutVersions.selectedSchemeId,
       schemes: layoutVersions.schemes,
@@ -146,7 +193,7 @@ export async function selectSchemeForOwner(
       .where(and(
         eq(generationJobs.layoutVersionId, layoutVersionId),
         eq(generationJobs.kind, "render"),
-        inArray(generationJobs.status, ["queued", "processing", "completed"]),
+        inArray(generationJobs.status, ["queued", "processing", "finalizing", "completed"]),
       ));
     const renderDecision = evaluateRenderSelection(renderJobs, current?.selectedSchemeId ?? null, force);
     if (renderDecision.decision !== "proceed") return { status: renderDecision.decision };
@@ -155,7 +202,7 @@ export async function selectSchemeForOwner(
     // call; any cost/review failure rolls the entire selection back to the prior canonical row.
     const selectedScheme = currentSelection.scheme;
     const costEstimate = estimateBuildingCost(selectedScheme.building, requirements.data);
-    const aiReview = await (options.review ?? reviewBuilding)({ requirements: requirements.data, building: selectedScheme.building, validation: selectedScheme.validation });
+    const aiReview = await reviewSelectedScheme(requirements.data, selectedScheme, options.review ?? reviewBuilding);
     const now = new Date();
     const mirror = buildCanonicalSchemeMirror(selectedScheme, costEstimate, aiReview, current?.intent ?? null);
     if (renderDecision.completed.length > 0) {
@@ -180,6 +227,7 @@ export async function selectSchemeForOwner(
   });
 
   if (result.status === "render-conflict") return errorResponse("Completed renders belong to the current scheme. Confirm the switch to keep them as previous-scheme evidence.", 409, "FINALIZED_RENDERS_EXIST");
+  if (result.status === "denied") return errorResponse(result.denial.message, 409, result.denial.code);
   if (result.status === "active-render-conflict") return errorResponse("A render package is still processing for the current scheme. Wait for it to finish before switching schemes.", 409, "ACTIVE_RENDERS_EXIST");
   if (result.status === "stale") return errorResponse("The available schemes changed while selecting. Reload this study.", 409, "STALE_SCHEME_SELECTION");
   if (result.status === "unchanged") return NextResponse.json({ changed: false, selectedSchemeId: selection.scheme.schemeId });

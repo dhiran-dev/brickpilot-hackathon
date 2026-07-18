@@ -1,13 +1,20 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { applyRequirementDelta, InvalidRequirementDeltaError } from "@/lib/ai/apply-delta";
+import { InvalidRequirementDeltaError } from "@/lib/ai/apply-delta";
 import { architecturalReviewResultSchema } from "@/lib/ai/schema";
 import { requireUser } from "@/lib/auth";
-import { buildingRequirementsSchema } from "@/lib/building/requirements";
 import { db } from "@/lib/db";
 import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
-import { runDesignPipeline } from "@/lib/server/design-pipeline";
+import {
+  AiSuggestionContractError,
+  parseAiSuggestionSource,
+  prepareAiSuggestionRevision,
+  runPreparedAiSuggestionRevision,
+} from "@/lib/server/ai-suggestion-contract";
+import { DesignPipelineContractError } from "@/lib/server/design-pipeline";
+import { emitProjectMutationDenial, projectMutationDenial } from "@/lib/server/project-capabilities";
+import { isActiveGenerationStatus, lockProjectLifecycle } from "@/lib/server/project-lifecycle";
 
 const MAX_AI_DELTA_VERSIONS = 3;
 
@@ -55,6 +62,9 @@ export async function POST(request: Request, context: { params: Promise<{ layout
       version: layoutVersions.version,
       aiReview: layoutVersions.aiReview,
       projectId: projects.id,
+      projectStatus: projects.status,
+      capabilityProfile: projects.capabilityProfile,
+      generatorContractVersion: projects.generatorContractVersion,
       title: projects.title,
       requirements: projectRequirements.inputJson,
     })
@@ -63,6 +73,11 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     .innerJoin(projectRequirements, eq(layoutVersions.requirementVersionId, projectRequirements.id))
     .where(and(eq(layoutVersions.id, layoutVersionId), eq(projects.ownerId, user.id)));
   if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
+  const preflightDenial = projectMutationDenial(row.capabilityProfile, row.projectStatus, "canApplyAiSuggestion");
+  if (preflightDenial) {
+    emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canApplyAiSuggestion", profile: row.capabilityProfile, status: row.projectStatus, phase: "preflight", code: preflightDenial.code });
+    return errorResponse(preflightDenial.message, 409, preflightDenial.code);
+  }
   if (row.status !== "completed") return errorResponse("This study version is not completed yet.", 409, "STUDY_NOT_COMPLETED");
 
   const [{ latestVersion: latestVersionBeforePipeline }] = await db
@@ -79,19 +94,17 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     : undefined;
   if (!delta) return errorResponse("No AI suggestion exists at that index for this study.", 404, "SUGGESTION_NOT_FOUND");
 
-  const priorRequirements = buildingRequirementsSchema.safeParse(row.requirements);
-  if (!priorRequirements.success) return errorResponse("The source requirements are incompatible with this application version.", 409, "INCOMPATIBLE_REQUIREMENTS");
-
-  let nextRequirements;
+  let preparedRevision;
   try {
-    nextRequirements = {
-      ...applyRequirementDelta(priorRequirements.data, delta),
-      seed: serverSeed(),
-    };
+    preparedRevision = prepareAiSuggestionRevision(parseAiSuggestionSource(row), delta, serverSeed());
   } catch (error) {
     if (error instanceof InvalidRequirementDeltaError) return errorResponse(error.message, 422, "INVALID_SUGGESTION");
+    if (error instanceof AiSuggestionContractError || error instanceof DesignPipelineContractError) {
+      return errorResponse(error.message, 409, "REQUIREMENTS_CONTRACT_MISMATCH");
+    }
     throw error;
   }
+  const nextRequirements = preparedRevision.requirements;
 
   const [{ existingAiDeltaCount }] = await db
     .select({ existingAiDeltaCount: sql<number>`count(*)::integer` })
@@ -101,15 +114,43 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     return errorResponse("This study has reached its limit of AI-informed revisions.", 409, "AI_DELTA_LIMIT_REACHED");
   }
 
-  const pipelineResult = await runDesignPipeline(nextRequirements);
+  let pipelineResult;
+  try {
+    pipelineResult = (await runPreparedAiSuggestionRevision(preparedRevision)).pipelineResult;
+  } catch (error) {
+    if (error instanceof DesignPipelineContractError) {
+      return errorResponse(error.message, 409, "REQUIREMENTS_CONTRACT_MISMATCH");
+    }
+    throw error;
+  }
   if (pipelineResult.status === "failed") return errorResponse(pipelineResult.message, 422, pipelineResult.code);
 
   const now = new Date();
   let transactionResult;
   try {
     transactionResult = await db.transaction(async (transaction) => {
+      await lockProjectLifecycle(transaction, row.projectId);
       await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:render-contract:${layoutVersionId}`}, 0))`);
       await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:ai-delta:${row.projectId}`}, 0))`);
+      const [projectState] = await transaction
+        .select({
+          status: projects.status,
+          capabilityProfile: projects.capabilityProfile,
+          generatorContractVersion: projects.generatorContractVersion,
+        })
+        .from(projects)
+        .where(and(eq(projects.id, row.projectId), eq(projects.ownerId, user.id)))
+        .limit(1);
+      if (!projectState) return { status: "stale" as const };
+      const denial = projectMutationDenial(projectState.capabilityProfile, projectState.status, "canApplyAiSuggestion");
+      if (denial) {
+        emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canApplyAiSuggestion", profile: projectState.capabilityProfile, status: projectState.status, phase: "transaction_recheck", code: denial.code });
+        return { status: "denied" as const, denial };
+      }
+      if (
+        projectState.capabilityProfile !== row.capabilityProfile
+        || projectState.generatorContractVersion !== row.generatorContractVersion
+      ) return { status: "contract_mismatch" as const };
       const [{ latestVersion }] = await transaction
         .select({ latestVersion: sql<number>`coalesce(max(${layoutVersions.version}), 0)::integer` })
         .from(layoutVersions)
@@ -122,7 +163,7 @@ export async function POST(request: Request, context: { params: Promise<{ layout
       if (Number(aiDeltaCount) >= MAX_AI_DELTA_VERSIONS) return { status: "limit" as const };
       const priorRenderJobs = await transaction.select().from(generationJobs)
         .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")));
-      if (priorRenderJobs.some((job) => job.status === "queued" || job.status === "processing")) return { status: "render_conflict" as const };
+      if (priorRenderJobs.some((job) => isActiveGenerationStatus(job.status))) return { status: "render_conflict" as const };
 
       const nextVersion = Number(latestVersion) + 1;
       const [requirement] = await transaction.insert(projectRequirements).values({
@@ -162,6 +203,8 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     return errorResponse("Unable to save this revision safely.", 500, "REVISION_SAVE_FAILED");
   }
   if (transactionResult.status === "stale") return errorResponse("This suggestion was already applied or belongs to an older study version.", 409, "STALE_STUDY_VERSION");
+  if (transactionResult.status === "denied") return errorResponse(transactionResult.denial.message, 409, transactionResult.denial.code);
+  if (transactionResult.status === "contract_mismatch") return errorResponse("The project generation contract changed while applying this suggestion.", 409, "REQUIREMENTS_CONTRACT_MISMATCH");
   if (transactionResult.status === "limit") return errorResponse("This study has reached its limit of AI-informed revisions.", 409, "AI_DELTA_LIMIT_REACHED");
   if (transactionResult.status === "render_conflict") return errorResponse("Wait for the active render package to finish before creating a revised scheme set.", 409, "ACTIVE_RENDER_CONFLICT");
 

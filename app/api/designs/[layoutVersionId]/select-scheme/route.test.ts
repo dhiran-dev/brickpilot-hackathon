@@ -41,6 +41,7 @@ describe("POST /api/designs/[layoutVersionId]/select-scheme", () => {
     expect(evaluateRenderSelection([completedA], "scheme-a", false).decision).toBe("render-conflict");
     expect(evaluateRenderSelection([completedA], "scheme-a", true).decision).toBe("proceed");
     expect(evaluateRenderSelection([{ status: "processing", requestPayload: { schemeId: "scheme-a" } }], "scheme-a", true).decision).toBe("active-render-conflict");
+    expect(evaluateRenderSelection([{ status: "finalizing", requestPayload: { schemeId: "scheme-a" } }], "scheme-a", true).decision).toBe("active-render-conflict");
     expect(evaluateRenderSelection([previousA, completedB], "scheme-b", false)).toMatchObject({ decision: "render-conflict", completed: [completedB] });
     expect(evaluateRenderSelection([previousA], "scheme-b", false)).toMatchObject({ decision: "proceed", completed: [] });
     const mirror = buildCanonicalSchemeMirror(

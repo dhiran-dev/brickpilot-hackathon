@@ -1,0 +1,149 @@
+- generic [active] [ref=f3e1]:
+  - main [ref=f3e2]:
+    - generic [ref=f3e16]:
+      - generic [ref=f3e17]:
+        - generic [ref=f3e18]:
+          - link "BrickPilot" [ref=f3e19] [cursor=pointer]:
+            - /url: /workspace
+          - paragraph [ref=f3e21]: My family home 3 · immutable v1
+        - paragraph [ref=f3e22]: Signed in as BrickPilot Owner
+      - navigation "Design workflow" [ref=f3e24]:
+        - list [ref=f3e25]:
+          - listitem [ref=f3e26]:
+            - link "Directions" [ref=f3e27] [cursor=pointer]:
+              - /url: /workspace?design=617daf61-da74-47d1-b816-a95f604cb611&step=directions
+          - listitem [ref=f3e32]:
+            - link "2D plan" [ref=f3e33] [cursor=pointer]:
+              - /url: /workspace?design=617daf61-da74-47d1-b816-a95f604cb611&step=plan
+          - listitem [ref=f3e38]:
+            - generic [ref=f3e39]:
+              - generic [ref=f3e40]: "03"
+              - generic [ref=f3e41]: 3D massing
+          - listitem [ref=f3e43]:
+            - generic [ref=f3e44]:
+              - generic [ref=f3e45]: "04"
+              - generic [ref=f3e46]: Render
+    - generic [ref=f3e48]:
+      - generic [ref=f3e49]:
+        - generic [ref=f3e50]:
+          - paragraph [ref=f3e51]: Step 3 · 3D massing · deterministic
+          - heading "My family home 3" [level=1] [ref=f3e52]
+        - generic [ref=f3e53]:
+          - generic [ref=f3e54]: Geometry verified
+          - link "Back to 2D plan" [ref=f3e58] [cursor=pointer]:
+            - /url: /workspace?design=617daf61-da74-47d1-b816-a95f604cb611&step=plan
+      - generic [ref=f3e61]:
+        - complementary [ref=f3e62]:
+          - paragraph [ref=f3e63]: Floors
+          - generic [ref=f3e64]:
+            - button [ref=f3e65]
+            - button "Ground floor +0.00 m" [ref=f3e69]:
+              - generic [ref=f3e74]:
+                - generic [ref=f3e75]: Ground floor
+                - generic [ref=f3e76]: +0.00 m
+            - button "Floor 1 +3.10 m" [ref=f3e77]:
+              - generic [ref=f3e82]:
+                - generic [ref=f3e83]: Floor 1
+                - generic [ref=f3e84]: +3.10 m
+            - button "Floor 2 +6.20 m" [ref=f3e85]:
+              - generic [ref=f3e90]:
+                - generic [ref=f3e91]: Floor 2
+                - generic [ref=f3e92]: +6.20 m
+          - generic [ref=f3e93]:
+            - generic [ref=f3e94]:
+              - generic [ref=f3e95]: Explode
+              - generic [ref=f3e96]: 0%
+            - slider "Explode floor stack" [ref=f3e97]: "0"
+          - generic [ref=f3e98]:
+            - button [pressed] [ref=f3e99]
+            - button [pressed] [ref=f3e106]
+            - button [pressed] [ref=f3e111]
+            - button [pressed] [ref=f3e117]
+            - button [pressed] [ref=f3e123]
+            - button [pressed] [ref=f3e132]
+            - button [ref=f3e139]
+          - generic [ref=f3e145]:
+            - paragraph [ref=f3e146]: Drag to rotate
+            - paragraph [ref=f3e151]: Wheel or pinch to zoom
+            - paragraph [ref=f3e155]: Right-drag to pan
+        - generic [ref=f3e161]:
+          - img "Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." [ref=f3e162]
+          - generic [ref=f3e164]:
+            - generic [ref=f3e165]:
+              - button "Rotate" [ref=f3e166]
+              - button "Pan" [ref=f3e172]
+              - button "Zoom" [ref=f3e179]
+              - button "Fit" [ref=f3e184]
+            - generic [ref=f3e191]:
+              - button "front" [ref=f3e192]
+              - button "rear" [ref=f3e193]
+              - button "left" [ref=f3e194]
+              - button "right" [ref=f3e195]
+              - button "iso" [ref=f3e196]
+              - button "top" [ref=f3e197]
+          - generic [ref=f3e198]:
+            - generic [ref=f3e199]:
+              - generic [ref=f3e200]: TOP
+              - generic [ref=f3e201]: FRONT
+              - generic [ref=f3e202]: RIGHT
+            - generic [ref=f3e203]: Canonical mm → scene metres
+        - complementary [ref=f3e204]:
+          - paragraph [ref=f3e205]: Model evidence
+          - paragraph [ref=f3e206]: Geometry verified
+          - generic [ref=f3e210]:
+            - generic [ref=f3e211]:
+              - definition [ref=f3e216]: "3"
+              - term [ref=f3e217]: storeys
+            - generic [ref=f3e218]:
+              - definition [ref=f3e225]: 9.3 m
+              - term [ref=f3e226]: height
+            - generic [ref=f3e227]:
+              - definition [ref=f3e234]: 577.5 m²
+              - term [ref=f3e235]: built area
+            - generic [ref=f3e236]:
+              - definition [ref=f3e240]: "56"
+              - term [ref=f3e241]: openings
+            - generic [ref=f3e242]:
+              - definition [ref=f3e246]: Aligned
+              - term [ref=f3e247]: stair core
+          - generic [ref=f3e248]:
+            - paragraph [ref=f3e250]: Reference captures
+            - generic [ref=f3e251]:
+              - generic [ref=f3e252]: front
+              - generic [ref=f3e258]: collage
+              - generic [ref=f3e264]: top
+            - button "Prepare reference set" [ref=f3e270]
+          - generic [ref=f3e274]:
+            - text: Interior source
+            - combobox "Interior source" [ref=f3e275]:
+              - option "Attached bathroom 1 · Ground floor"
+              - option "Bedroom 1 · Ground floor" [selected]
+              - option "Kitchen · Ground floor"
+              - option "Utility · Ground floor"
+              - option "Pooja · Ground floor"
+              - option "Entry foyer · Ground floor"
+              - option "Living / dining hall · Ground floor"
+              - option "L1 Attached bathroom 1 · Floor 1"
+              - option "L1 Bedroom 1 · Floor 1"
+              - option "L1 Bedroom 2 · Floor 1"
+              - option "L1 Bathroom 2 · Floor 1"
+              - option "L1 Bathroom 3 · Floor 1"
+              - option "L1 Bedroom 3 · Floor 1"
+              - option "Family lounge · Floor 1"
+              - option "L2 Attached bathroom 1 · Floor 2"
+              - option "L2 Bedroom 1 · Floor 2"
+              - option "L2 Bedroom 2 · Floor 2"
+              - option "Study / office · Floor 2"
+              - option "L2 Bathroom 2 · Floor 2"
+              - option "Sky family lounge · Floor 2"
+          - paragraph [ref=f3e276]: The marked interior plan and three fixed 3:2 camera sources ground four separate image-edit jobs. References remain in this browser until confirmation.
+      - generic [ref=f3e277]:
+        - generic [ref=f3e284]:
+          - paragraph [ref=f3e285]: Nothing has been sent to GPT Image 2.
+          - paragraph [ref=f3e286]: Prepare and review the local reference set, then confirm explicitly.
+        - generic [ref=f3e287]:
+          - paragraph [ref=f3e288]: Front + collage + top + interior
+          - paragraph [ref=f3e292]: Four camera-locked async edits
+        - button "Confirm & generate 4 renders" [disabled] [ref=f3e296]
+  - button "Open Next.js Dev Tools" [ref=f3e11] [cursor=pointer]
+  - alert [ref=f3e15]

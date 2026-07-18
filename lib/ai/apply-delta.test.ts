@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { applyRequirementDelta, InvalidRequirementDeltaError } from "@/lib/ai/apply-delta";
 import { BUILDING_FIXTURES } from "@/lib/building/fixtures";
+import { createCurrentRequirements, DEFAULT_INTAKE_DRAFT } from "@/components/guided-intake/model";
 
 const requirements = BUILDING_FIXTURES[1].requirements;
 
@@ -41,5 +42,68 @@ describe("applyRequirementDelta", () => {
     const roomIds = new Set(rooms.map((room) => room.id));
     const oneBedroom = { ...requirements, rooms, relationships: requirements.relationships.filter((relation) => roomIds.has(relation.fromRoomId) && roomIds.has(relation.toRoomId)) };
     expect(() => applyRequirementDelta(oneBedroom, { op: "remove_room", roomId: bedroom.id, summary: "Remove the bedroom" })).toThrow("at least one bedroom and one bathroom");
+  });
+
+  test("applies a v3 delta without changing additive intent or provenance", () => {
+    const current = createCurrentRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      roofCharacter: "sloped",
+      includeCourtyard: true,
+      includeVerandah: true,
+      currentEntry: {
+        primarySide: { value: "south", source: "user" },
+        secondaryEntry: { value: "rear", source: "user" },
+        primaryDoorClearWidthMm: 1400,
+      },
+      shadeStructures: [
+        { id: "front-open-pergola", type: "open_pergola", location: "front_entry", targetAreaM2: 12, source: "user" },
+        { id: "parking-canopy", type: "solid_canopy", location: "parking", targetAreaM2: 28, source: "inferred" },
+      ],
+      aboveParkingUse: { value: "occupied_rooms", source: "user" },
+      maxExteriorPedestrianEntryCount: 1,
+    });
+    const immutableV3Intent = {
+      entry: current.entry,
+      parking: current.parking,
+      outdoorAreas: current.outdoorAreas,
+      courtyard: current.courtyard,
+      roof: current.roof,
+      shadeStructures: current.shadeStructures,
+      aboveParkingUse: current.aboveParkingUse,
+      maxExteriorPedestrianEntryCount: current.maxExteriorPedestrianEntryCount,
+    };
+    const kitchen = current.rooms.find((room) => room.type === "kitchen")!;
+
+    const next = applyRequirementDelta(current, {
+      op: "resize_room",
+      roomId: kitchen.id,
+      resizeDirection: "increase",
+      summary: "Increase kitchen area",
+    });
+
+    expect(next.requirementSchemaVersion).toBe(3);
+    expect({
+      entry: next.entry,
+      parking: next.parking,
+      outdoorAreas: next.outdoorAreas,
+      courtyard: next.courtyard,
+      roof: next.roof,
+      shadeStructures: next.shadeStructures,
+      aboveParkingUse: next.aboveParkingUse,
+      maxExteriorPedestrianEntryCount: next.maxExteriorPedestrianEntryCount,
+    }).toEqual(immutableV3Intent);
+    expect(next.rooms.find((room) => room.id === kitchen.id)?.targetAreaMm2).toBe(Math.round(kitchen.targetAreaMm2 * 1.2));
+  });
+
+  test("rejects a v3 room removal that conflicts with immutable parking intent", () => {
+    const current = createCurrentRequirements(DEFAULT_INTAKE_DRAFT);
+    const parking = current.rooms.find((room) => room.type === "parking")!;
+
+    expect(() => applyRequirementDelta(current, {
+      op: "remove_room",
+      roomId: parking.id,
+      summary: "Remove parking",
+    })).toThrow(InvalidRequirementDeltaError);
+    expect(current.parking.vehicleCount).toBe(1);
   });
 });

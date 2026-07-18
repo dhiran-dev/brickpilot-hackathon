@@ -57,6 +57,48 @@
       "when": 1784232924535,
       "tag": "0007_multi_scheme_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784376000000,
+      "tag": "0008_project_capability_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784379600000,
+      "tag": "0009_durable_project_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784383200000,
+      "tag": "0010_render_release_evaluation",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784386800000,
+      "tag": "0011_durable_render_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784390400000,
+      "tag": "0012_drainable_render_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784395583126,
+      "tag": "0013_v3_project_defaults",
+      "breakpoints": true
     }
   ]
 }

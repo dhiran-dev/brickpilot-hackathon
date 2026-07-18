@@ -37,6 +37,11 @@ export type PlanPrimitives = {
   envelope: PlanRect;
   roads: Array<{ bounds: PlanRect; label: string; vertical: boolean; labelX: number; labelY: number }>;
   roomFills: Array<{ points: string; fill: string; openEdge: boolean }>;
+  intentionalUnbuilt: Array<{ points: string }>;
+  roofLines: Array<PlanLine & { dashed: boolean }>;
+  supportPoints: Point[];
+  supportLines: PlanLine[];
+  guardLines: PlanLine[];
   walls: Array<PlanLine & { thicknessMm: number; stroke: string }>;
   columns: PlanRect[];
   openings: Array<{
@@ -160,6 +165,17 @@ export function planPrimitives(artifact: DrawingFloorArtifact): PlanPrimitives {
     fill: PLAN_COLORS.zone[room.zone],
     openEdge: room.edgeTreatment === "open",
   }));
+  const intentionalUnbuilt = (artifact.intentionalUnbuiltRegions ?? []).map((region) => ({ points: polygonPoints(region.polygon) }));
+  const roofLines = (artifact.roofOverlay ?? []).flatMap((roof) => [
+    ...roof.footprint.map((start, index) => {
+      const end = roof.footprint[(index + 1) % roof.footprint.length];
+      return { x1: start.x, y1: start.y, x2: end.x, y2: end.y, dashed: roof.kind === "open_pergola" };
+    }),
+    ...roof.ridges.map((ridge) => ({ x1: ridge.start.x, y1: ridge.start.y, x2: ridge.end.x, y2: ridge.end.y, dashed: true })),
+  ]);
+  const supportPoints = (artifact.supports ?? []).flatMap((support) => "start" in support.geometry ? [] : [support.geometry]);
+  const supportLines = (artifact.supports ?? []).flatMap((support) => "start" in support.geometry ? [{ x1: support.geometry.start.x, y1: support.geometry.start.y, x2: support.geometry.end.x, y2: support.geometry.end.y }] : []);
+  const guardLines = (artifact.guards ?? []).map((guard) => ({ x1: guard.edge.start.x, y1: guard.edge.start.y, x2: guard.edge.end.x, y2: guard.edge.end.y }));
 
   const walls = artifact.walls.map((wall) => ({
     x1: wall.start.x,
@@ -254,6 +270,11 @@ export function planPrimitives(artifact: DrawingFloorArtifact): PlanPrimitives {
     envelope: { x: artifact.envelope.x, y: artifact.envelope.y, width: artifact.envelope.width, depth: artifact.envelope.depth },
     roads,
     roomFills,
+    intentionalUnbuilt,
+    roofLines,
+    supportPoints,
+    supportLines,
+    guardLines,
     walls,
     columns,
     openings: artifact.openings.map(openingPrimitives),

@@ -1,0 +1,102 @@
+- generic [ref=f8e1]:
+  - main [ref=f8e2]:
+    - generic [ref=f8e3]:
+      - generic [ref=f8e4]:
+        - generic [ref=f8e5]:
+          - generic [ref=f8e6]:
+            - paragraph [ref=f8e7]: BrickPilot
+            - paragraph [ref=f8e8]: Residential concept engineering
+          - generic [ref=f8e9]: Topology · validation · cost · drawing
+        - generic [ref=f8e10]:
+          - generic [ref=f8e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f8e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f8e18]
+      - generic [ref=f8e23]:
+        - generic [ref=f8e24]:
+          - paragraph [ref=f8e28]: Describe it in one sentence
+          - generic [ref=f8e29]:
+            - textbox "Home design description" [ref=f8e30]:
+              - /placeholder: 3BHK east-facing Vastu home for a family of 4 on a 30×50 plot
+            - button "Parse sentence" [disabled] [ref=f8e31]
+        - generic [ref=f8e32]:
+          - generic [ref=f8e34]:
+            - generic [ref=f8e35]:
+              - paragraph [ref=f8e36]: Guided residential brief
+              - heading "Questions before coordinates." [level=1] [ref=f8e37]
+              - paragraph [ref=f8e38]: Every answer becomes a measurable planning constraint. No room geometry or cost is invented from a sentence.
+            - button "Reset" [ref=f8e39]
+          - generic [ref=f8e43]:
+            - navigation "Brief steps" [ref=f8e44]:
+              - list [ref=f8e45]:
+                - listitem [ref=f8e46]:
+                  - button "01 Project" [ref=f8e47]:
+                    - generic [ref=f8e48]: "01"
+                    - generic [ref=f8e49]: Project
+                - listitem [ref=f8e51]:
+                  - button "02 Region" [ref=f8e52]:
+                    - generic [ref=f8e53]: "02"
+                    - generic [ref=f8e54]: Region
+                - listitem [ref=f8e55]:
+                  - button "03 Site" [ref=f8e56]:
+                    - generic [ref=f8e57]: "03"
+                    - generic [ref=f8e58]: Site
+                - listitem [ref=f8e59]:
+                  - button "04 Levels" [ref=f8e60]:
+                    - generic [ref=f8e61]: "04"
+                    - generic [ref=f8e62]: Levels
+                - listitem [ref=f8e63]:
+                  - button "05 Rooms" [ref=f8e64]:
+                    - generic [ref=f8e65]: "05"
+                    - generic [ref=f8e66]: Rooms
+                - listitem [ref=f8e67]:
+                  - button "06 Style" [ref=f8e68]:
+                    - generic [ref=f8e69]: "06"
+                    - generic [ref=f8e70]: Style
+                - listitem [ref=f8e71]:
+                  - button "07 Budget" [ref=f8e72]:
+                    - generic [ref=f8e73]: "07"
+                    - generic [ref=f8e74]: Budget
+                - listitem [ref=f8e75]:
+                  - button "08 Review" [ref=f8e76]:
+                    - generic [ref=f8e77]: "08"
+                    - generic [ref=f8e78]: Review
+            - generic [ref=f8e80]:
+              - paragraph [ref=f8e82]: Step 1 of 8 · Project
+              - button "Back" [disabled] [ref=f8e83]
+              - button "Confirm & continue" [ref=f8e86]
+            - generic [ref=f8e89]:
+              - generic [ref=f8e90]:
+                - paragraph [ref=f8e91]: Step 1 of 8
+                - heading "What are we planning?" [level=2] [ref=f8e92]
+              - generic [ref=f8e93]:
+                - generic [ref=f8e94]:
+                  - text: Project name
+                  - textbox "Project name" [active] [ref=f8e95]:
+                    - /placeholder: The Nair family home
+                    - text: My family home
+                - generic [ref=f8e96]:
+                  - paragraph [ref=f8e97]: Building type
+                  - generic [ref=f8e98]:
+                    - button "Selected Villa / bungalow A single-family bungalow or multi-level villa, from ground-only through G+3." [pressed] [ref=f8e99]:
+                      - generic [ref=f8e100]: Selected
+                      - generic [ref=f8e109]:
+                        - paragraph [ref=f8e110]: Villa / bungalow
+                        - paragraph [ref=f8e111]: A single-family bungalow or multi-level villa, from ground-only through G+3.
+                    - button "Coming soon Apartments Multi-unit residential planning is not enabled yet." [disabled] [ref=f8e112]:
+                      - generic [ref=f8e113]: Coming soon
+                      - generic [ref=f8e120]:
+                        - paragraph [ref=f8e121]: Apartments
+                        - paragraph [ref=f8e122]: Multi-unit residential planning is not enabled yet.
+                    - button "Coming soon Corporate / commercial Office, retail and institutional rule packs are coming later." [disabled] [ref=f8e123]:
+                      - generic [ref=f8e124]: Coming soon
+                      - generic [ref=f8e130]:
+                        - paragraph [ref=f8e131]: Corporate / commercial
+                        - paragraph [ref=f8e132]: Office, retail and institutional rule packs are coming later.
+                - generic [ref=f8e133]:
+                  - strong [ref=f8e134]: "Scope:"
+                  - text: BrickPilot produces a residential concept and feasibility package. A licensed architect and engineers must verify it before permits or construction.
+              - generic [ref=f8e135]:
+                - button "Back" [disabled] [ref=f8e136]
+                - button "Confirm & continue" [ref=f8e139]
+  - button "Open Next.js Dev Tools" [ref=f8e147] [cursor=pointer]

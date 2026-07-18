@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
+import { createCurrentRequirements, DEFAULT_INTAKE_DRAFT } from "@/components/guided-intake/model";
+import { generateV3PhysicalStage } from "@/lib/building/generate-v3-physical";
+import { buildSemanticRenderCameras } from "@/lib/render/camera";
 
 import {
   cancelMassingViewAnimation,
   configureMassingCanvas,
   MASSING_CAPTURE_LABELS,
+  CURRENT_MASSING_CAPTURE_LABELS,
   MASSING_CAPTURE_LAYER_STATE,
   MASSING_CAPTURE_SIZE,
   MASSING_EDGE_DEPTH_STYLE,
@@ -12,9 +16,11 @@ import {
   massingCanvasSizeChanged,
   massingEdgeStyle,
   massingSurfaceStyle,
+  massingPrimitiveMaterialStyle,
   massingVisibilityOptions,
   massingViewVector,
   retargetMassingCamera,
+  semanticMassingScenePose,
 } from "@/components/massing/MassingViewer";
 import { entranceRoadSide } from "@/lib/building/topology";
 
@@ -123,6 +129,26 @@ describe("fixed render source cameras", () => {
     expect(MASSING_CAPTURE_LABELS.front).toContain("FRONT / ROAD");
     expect(MASSING_CAPTURE_LABELS.collage).toContain("FOUR LOCKED VIEWS");
     expect(MASSING_CAPTURE_LABELS.top).toContain("HIGH 3/4");
+    expect(CURRENT_MASSING_CAPTURE_LABELS.front).toContain("PRIMARY ROAD / MAIN ENTRY");
+    expect(CURRENT_MASSING_CAPTURE_LABELS.secondary).toContain("SECONDARY CONTEXT");
+  });
+
+  test("maps v3 canonical semantic millimetre cameras to exact scene coordinates", () => {
+    const requirements = createCurrentRequirements({ ...DEFAULT_INTAKE_DRAFT, roofCharacter: "sloped" });
+    const building = generateV3PhysicalStage(requirements).schemes[0].building;
+    const camera = buildSemanticRenderCameras(building).primary_road_elevation;
+    const pose = semanticMassingScenePose(building, "front")!;
+    expect(pose.semanticView).toBe("primary_road_elevation");
+    expect(pose.position.toArray()).toEqual([
+      (camera.positionMm.x - building.site.widthMm / 2) / 1000,
+      camera.positionMm.z / 1000,
+      (camera.positionMm.y - building.site.depthMm / 2) / 1000,
+    ]);
+    expect(pose.target.toArray()).toEqual([
+      (camera.targetMm.x - building.site.widthMm / 2) / 1000,
+      camera.targetMm.z / 1000,
+      (camera.targetMm.y - building.site.depthMm / 2) / 1000,
+    ]);
   });
 
   test("keeps front and top cameras road-relative for every facing", () => {
@@ -157,6 +183,13 @@ describe("fixed render source cameras", () => {
     const parapet = massingSurfaceStyle("parapet");
     expect(parapet.transparent).toBe(true);
     expect(parapet.depthWrite).toBe(false);
+  });
+
+  test("gives the semantic main-entry material a distinct viewer palette", () => {
+    const main = massingPrimitiveMaterialStyle({ kind: "door_leaf", materialToken: "door.main-entry.warm-wood" });
+    const interior = massingPrimitiveMaterialStyle({ kind: "door_leaf", materialToken: "door.interior.standard" });
+    expect(main.color).not.toBe(interior.color);
+    expect(main.edge).not.toBe(interior.edge);
   });
 
   test("capture layer contract keeps GPT sources structural", () => {

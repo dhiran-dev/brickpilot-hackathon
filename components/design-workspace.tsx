@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, Clock3, LayoutDashboard, LoaderCircle, LogOut, Plus, RotateCcw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, Box, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, Plus, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { CadWorkspace } from "@/components/cad-workspace";
 import { GuidedIntake } from "@/components/guided-intake";
 import { NaturalLanguageIntake } from "@/components/guided-intake/NaturalLanguageIntake";
+import { capabilitiesForWorkspace, ProjectCapabilityNotice, projectCapabilityPresentation, PROJECT_VIEW_ONLY_EXPLANATION, type ProjectCapabilityPresentation } from "@/components/project-capability-ui";
+import { ProjectDeletionControl } from "@/components/project-deletion-control";
 import { RelaxationNoticeBadge } from "@/components/RelaxationNoticeBadge";
 import { SchemeEvidenceSummary } from "@/components/SchemeEvidenceSummary";
 import { SchemeRack, shouldShowSchemeRack } from "@/components/scheme-rack";
@@ -24,17 +26,18 @@ import {
 import { authClient } from "@/lib/auth-client";
 import type { RequirementDelta } from "@/lib/ai/schema";
 import type { GenerationDiagnostics as PersistedGenerationDiagnostics } from "@/lib/building/generate";
-import type { BuildingRequirements } from "@/lib/building/requirements";
-import type { Building } from "@/lib/building/schema";
+import type { LegacyBuildingRequirements, ReadableBuildingRequirements } from "@/lib/building/requirements";
+import type { ReadableBuilding } from "@/lib/building/schema";
 import { formatEstimateRange } from "@/lib/cost/format";
 import { deriveQuantityTakeoff } from "@/lib/cost/quantity";
-import { studyToDesignResult, type DesignResult, type RecentStudy } from "@/lib/design/study-result";
+import { clientRequestIdForDraft, consumeDraft, createDraftId, listResumableDrafts, loadDraft, resolveWorkspaceDraft, type DraftIndexEntry } from "@/lib/design/draft-storage";
+import { readableStudyToDesignResult, type ReadableDesignResult, type ReadableRecentStudy } from "@/lib/design/study-result";
 
 // T8 intentionally keeps the comparison rack dark until the deterministic property bank proves
 // that at least two distinct schemes are available on more than 80% of supported fixtures.
 export const MULTI_SCHEME_UI_ENABLED = process.env.NEXT_PUBLIC_MULTI_SCHEME_UI_ENABLED === "true";
 
-function builtAreaSquareMetres(building: Building) {
+function builtAreaSquareMetres(building: ReadableBuilding) {
   return deriveQuantityTakeoff(building).grossFloorAreaMm2 / 1_000_000;
 }
 
@@ -43,6 +46,14 @@ function builtAreaSquareMetres(building: Building) {
 // carried alongside the design so deep links reopen the exact point in the flow.
 function syncDesignParam(designId: string | null, step: WorkspaceStep | null = null) {
   window.history.replaceState(null, "", designId ? `/workspace?design=${designId}${step ? `&step=${step}` : ""}` : "/workspace");
+}
+
+function syncDraftParam(draftId: string) {
+  window.history.replaceState(null, "", `/workspace?draft=${encodeURIComponent(draftId)}`);
+}
+
+function readResumableDrafts() {
+  try { return listResumableDrafts(window.localStorage); } catch { return []; }
 }
 
 function describeRequirementDelta(delta: RequirementDelta) {
@@ -83,13 +94,11 @@ function GenerationReport({ diagnostics }: { diagnostics: PersistedGenerationDia
 }
 
 export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = null, initialStep = null, userName }: { hasProjects: boolean; initialDesignId?: string | null; initialStep?: string | null; userName: string }) {
-  const [result, setResult] = useState<DesignResult | null>(null);
-  const [recent, setRecent] = useState<RecentStudy[]>([]);
-  const [failedRecent, setFailedRecent] = useState<RecentStudy[]>([]);
+  const [result, setResult] = useState<ReadableDesignResult | null>(null);
   const [error, setError] = useState<WorkspaceError | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [highlightedObjectIds, setHighlightedObjectIds] = useState<string[]>([]);
-  const [prefill, setPrefill] = useState<{ requirements: BuildingRequirements; assumptions: string[] } | null>(null);
+  const [prefill, setPrefill] = useState<{ requirements: ReadableBuildingRequirements; assumptions: string[] } | null>(null);
   const [pendingSchemeId, setPendingSchemeId] = useState<string | null>(null);
   const [isSelectingScheme, setIsSelectingScheme] = useState(false);
   const [schemeSelectionStatus, setSchemeSelectionStatus] = useState("");
@@ -97,40 +106,70 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
   const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0);
   const [step, setStep] = useState<WorkspaceStep>(() => parseWorkspaceStep(initialStep) ?? "directions");
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [resumableDrafts, setResumableDrafts] = useState<DraftIndexEntry[]>([]);
+  // True while a ?design= restore is in flight, so the questionnaire never flashes
+  // for a user who actually has a saved study to reopen.
+  const [isRestoring, setIsRestoring] = useState(() => Boolean(initialDesignId));
+  const [blockedProjectAccess, setBlockedProjectAccess] = useState<ProjectCapabilityPresentation | null>(null);
   const resultRef = useRef<HTMLElement>(null);
-  // Ids already restored (or attempted) from the URL this mount. Without this guard,
-  // "New study" clearing `result` would retrigger the effect and resurrect the old study.
-  const attemptedRestoreRef = useRef<string | null>(null);
+  // Ids whose restore has committed (or terminally failed) this mount. Set only when a
+  // fetch settles — never before it — so React strict-mode's mount/cleanup/remount cycle
+  // (which kills the first fetch via `active = false`) simply retries instead of being
+  // locked out. Also stops "New study" clearing `result` from resurrecting the old study.
+  const settledRestoreRef = useRef<string | null>(null);
+  const initializedDraftRef = useRef(false);
+  const activeDraftIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    fetch("/api/designs")
-      .then(async (response) => {
-        if (!response.ok) return { studies: [], failedStudies: [] };
-        return (await response.json()) as { studies: RecentStudy[]; failedStudies?: RecentStudy[] };
-      })
-      .then((data) => { if (active) { setRecent(data.studies); setFailedRecent(data.failedStudies ?? []); } })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
+    if (initializedDraftRef.current) return;
+    initializedDraftRef.current = true;
+    const requestedDraftId = initialDesignId ? null : new URLSearchParams(window.location.search).get("draft");
+    const { draftId: nextDraftId } = resolveWorkspaceDraft(window.localStorage, requestedDraftId);
+    activeDraftIdRef.current = nextDraftId;
+    setDraftId(nextDraftId);
+    setResumableDrafts(readResumableDrafts());
+    if (!initialDesignId) syncDraftParam(nextDraftId);
+  }, [initialDesignId]);
 
   // Restore a study from the ?design= param so a refresh reopens the exact saved state,
   // landing on the deep-linked step (or the sensible default for a returning user).
   useEffect(() => {
-    if (!initialDesignId || attemptedRestoreRef.current === initialDesignId || result?.designId === initialDesignId) return;
-    attemptedRestoreRef.current = initialDesignId;
+    if (!initialDesignId || settledRestoreRef.current === initialDesignId || result?.designId === initialDesignId) {
+      setIsRestoring(false);
+      return;
+    }
     let active = true;
+    setIsRestoring(true);
     fetch(`/api/designs/${initialDesignId}`)
       .then(async (response) => {
-        const payload = await response.json().catch(() => null) as (RecentStudy & { error?: string; code?: string }) | null;
-        if (!response.ok || !payload) throw { message: payload?.error ?? "The saved study could not be loaded.", code: payload?.code };
+        const payload = await response.json().catch(() => null) as (ReadableRecentStudy & { error?: string; code?: string }) | null;
+        if (!response.ok || !payload) {
+          let presentation: ProjectCapabilityPresentation | null = null;
+          if (payload?.code === "STUDY_NOT_COMPLETED") {
+            const listing = await fetch("/api/designs", { cache: "no-store" }).then((listResponse) => listResponse.ok
+              ? listResponse.json() as Promise<{ studies?: ReadableRecentStudy[]; failedStudies?: ReadableRecentStudy[] }>
+              : null).catch(() => null);
+            const listedStudy = [...(listing?.failedStudies ?? []), ...(listing?.studies ?? [])]
+              .find((candidate) => candidate.designId === initialDesignId);
+            presentation = projectCapabilityPresentation({
+              capabilityProfile: listedStudy?.capabilityProfile,
+              projectStatus: listedStudy?.projectStatus ?? "generating",
+              capabilities: listedStudy?.capabilities,
+            });
+          }
+          throw { message: payload?.error ?? "The saved study could not be loaded.", code: payload?.code, presentation };
+        }
         return payload;
       })
       .then((study) => {
         if (!active) return;
-        const restored = studyToDesignResult(study);
+        settledRestoreRef.current = initialDesignId;
+        const restored = readableStudyToDesignResult(study);
         if (!restored) {
-          setError({ title: "That study is not ready yet", message: "The saved study has no completed plan to reopen.", actions: ["Pick a completed study from the list below, or start a new one."] });
+          setIsRestoring(false);
+          if (activeDraftIdRef.current) syncDraftParam(activeDraftIdRef.current);
+          setError({ title: "That study is not ready yet", message: "The saved study has no completed plan to reopen.", actions: ["Open the dashboard to pick a completed project, or start a new one."] });
           return;
         }
         const nextStep = restoredWorkspaceStep({
@@ -139,19 +178,36 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
           schemeSelected: restored.selectedSchemeId != null,
         });
         setResult(restored);
+        setBlockedProjectAccess(null);
         setStep(nextStep);
         syncDesignParam(restored.designId, nextStep);
         setError(null);
         setHighlightedObjectIds([]);
+        setIsRestoring(false);
       })
-      .catch((restoreError: { message?: string; code?: string }) => {
+      .catch((restoreError: { message?: string; code?: string; presentation?: ProjectCapabilityPresentation | null }) => {
         if (!active) return;
-        setError({ title: "Could not reopen that study", message: restoreError.message ?? "The saved study could not be loaded.", code: restoreError.code, actions: ["Pick a study from the list below, or start a new one."] });
+        settledRestoreRef.current = initialDesignId;
+        setIsRestoring(false);
+        if (restoreError.presentation) {
+          setBlockedProjectAccess(restoreError.presentation);
+          setError(null);
+          return;
+        }
+        if (activeDraftIdRef.current) syncDraftParam(activeDraftIdRef.current);
+        setError({ title: "Could not reopen that study", message: restoreError.message ?? "The saved study could not be loaded.", code: restoreError.code, actions: ["Open the dashboard to pick a project, or start a new one."] });
       });
     return () => { active = false; };
   }, [initialDesignId, initialStep, result?.designId]);
 
   const selectedScheme = useMemo(() => result?.schemes?.find((scheme) => scheme.schemeId === result.selectedSchemeId) ?? result?.schemes?.[0], [result]);
+  const projectCapabilities = capabilitiesForWorkspace(result?.capabilities);
+  const capabilityPresentation = projectCapabilityPresentation({
+    capabilityProfile: result?.capabilityProfile,
+    projectStatus: result?.projectStatus,
+    capabilities: result?.capabilities,
+  });
+  const normalProjectAccess = !capabilityPresentation?.blocksNormalAccess;
   const showSchemeRack = shouldShowSchemeRack(result?.schemes?.length ?? 0, MULTI_SCHEME_UI_ENABLED);
   const displayedScheme = useMemo(() => showSchemeRack
     ? result?.schemes?.find((scheme) => scheme.schemeId === (pendingSchemeId ?? result.selectedSchemeId)) ?? selectedScheme
@@ -200,7 +256,8 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
     window.requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "auto", block: "start" }));
   }
 
-  async function generate(requirements: BuildingRequirements) {
+  async function generate(requirements: Extract<ReadableBuildingRequirements, { requirementSchemaVersion: 3 }>, legacyRequirements: LegacyBuildingRequirements) {
+    if (!draftId) return;
     setError(null);
     setHighlightedObjectIds([]);
     setIsGenerating(true);
@@ -210,33 +267,23 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
       const response = await fetch("/api/designs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirements }),
+        body: JSON.stringify({ requirements, legacyRequirements, clientRequestId: clientRequestIdForDraft(draftId) }),
       });
-      const data = (await response.json()) as DesignResult | { error?: string; code?: string; details?: GenerationConflict[] | GenerationDiagnosticsSummary };
+      const data = (await response.json()) as ReadableDesignResult | { error?: string; code?: string; details?: GenerationConflict[] | GenerationDiagnosticsSummary };
       if (!response.ok || !("projectId" in data)) {
         setError(explainGenerationFailure("error" in data || "code" in data || "details" in data ? data : {}));
         window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
         return;
       }
+      try {
+        consumeDraft(window.localStorage, draftId);
+        setResumableDrafts(readResumableDrafts());
+      } catch {
+        // A completed server project remains authoritative if local draft cleanup is unavailable.
+      }
       setResult(data);
       setStep("directions");
       syncDesignParam(data.designId, "directions");
-      setRecent((current) => [{
-        projectId: data.projectId,
-        designId: data.designId,
-        version: data.version,
-        title: data.title,
-        status: "completed",
-        createdAt: new Date().toISOString(),
-        requirements: data.requirements,
-        building: data.building,
-        validation: data.validation,
-        costEstimate: data.costEstimate,
-        aiReview: data.aiReview,
-        schemes: data.schemes,
-        selectedSchemeId: data.selectedSchemeId,
-        intent: data.intent,
-      }, ...current.filter((study) => study.designId !== data.designId)].slice(0, 12));
     } catch (generationError) {
       setError({ title: "Connection interrupted", message: generationError instanceof Error ? generationError.message : "Unable to generate this study.", actions: ["Check the connection and try again. Your questionnaire remains saved."] });
     } finally {
@@ -245,28 +292,47 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
     }
   }
 
-  function openStudy(study: RecentStudy) {
-    const restored = studyToDesignResult(study);
-    if (!restored) return;
-    const nextStep = restoredWorkspaceStep({
-      requestedStep: null,
-      rackVisible: shouldShowSchemeRack(restored.schemes?.length ?? 0, MULTI_SCHEME_UI_ENABLED),
-      schemeSelected: restored.selectedSchemeId != null,
-    });
-    setResult(restored);
-    setStep(nextStep);
-    syncDesignParam(study.designId, nextStep);
-    setError(null);
-    setHighlightedObjectIds([]);
-  }
-
   async function signOut() {
     await authClient.signOut();
     window.location.assign("/");
   }
 
+  function startNewProject() {
+    const nextDraftId = createDraftId();
+    setResumableDrafts(readResumableDrafts());
+    activeDraftIdRef.current = nextDraftId;
+    setDraftId(nextDraftId);
+    setResult(null);
+    setPrefill(null);
+    setError(null);
+    setHighlightedObjectIds([]);
+    setStep("directions");
+    setIsRestoring(false);
+    setBlockedProjectAccess(null);
+    syncDraftParam(nextDraftId);
+  }
+
+  function finishProjectDeletion() {
+    setResult(null);
+    setBlockedProjectAccess(null);
+    setError(null);
+    window.location.assign("/dashboard");
+  }
+
+  function resumeDraft(entry: DraftIndexEntry) {
+    if (!loadDraft(window.localStorage, entry.draftId)) {
+      setResumableDrafts(readResumableDrafts());
+      return;
+    }
+    activeDraftIdRef.current = entry.draftId;
+    setDraftId(entry.draftId);
+    setPrefill(null);
+    setError(null);
+    syncDraftParam(entry.draftId);
+  }
+
   async function selectPendingScheme(force = false) {
-    if (!result || !pendingSchemeId || pendingSchemeId === result.selectedSchemeId || isSelectingScheme) return;
+    if (!result || !projectCapabilities.canSelectScheme || !pendingSchemeId || pendingSchemeId === result.selectedSchemeId || isSelectingScheme) return;
     setIsSelectingScheme(true);
     setSchemeSelectionError(null);
     setSchemeSelectionStatus("Updating the canonical plan and its evidence.");
@@ -276,14 +342,14 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ schemeId: pendingSchemeId }),
       });
-      const payload = await response.json() as Partial<DesignResult> & { error?: string; code?: string; changed?: boolean };
+      const payload = await response.json() as Partial<ReadableDesignResult> & { error?: string; code?: string; changed?: boolean };
       if (!response.ok) {
         const requiresForce = payload.code === "FINALIZED_RENDERS_EXIST";
         setSchemeSelectionError({ message: payload.error ?? "The scheme could not be selected.", requiresForce });
         setSchemeSelectionStatus(requiresForce ? "Confirmation is required because completed renders will become previous-scheme evidence." : payload.error ?? "Scheme selection failed.");
         return;
       }
-      setResult((current) => current ? { ...current, ...payload } as DesignResult : current);
+      setResult((current) => current ? { ...current, ...payload } as ReadableDesignResult : current);
       setSchemeSelectionStatus("Scheme selected. Plan, validation, cost, review, drawings and render provenance are now synchronized.");
     } catch (selectionError) {
       const message = selectionError instanceof Error ? selectionError.message : "The scheme selection request was interrupted.";
@@ -295,7 +361,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
   }
 
   async function applySuggestion(deltaIndex: number) {
-    if (!result || isGenerating) return;
+    if (!result || !projectCapabilities.canApplyAiSuggestion || isGenerating) return;
     setError(null);
     setIsGenerating(true);
     setGenerationStartedAt(Date.now());
@@ -306,7 +372,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deltaIndex }),
       });
-      const data = await response.json() as DesignResult | { error?: string; code?: string };
+      const data = await response.json() as ReadableDesignResult | { error?: string; code?: string };
       if (!response.ok || !("designId" in data)) {
         const failure = data as { error?: string; code?: string };
         setError({ title: "Could not apply that suggestion", message: failure.error ?? "Try again.", code: failure.code, actions: [] });
@@ -315,22 +381,6 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
       setResult(data);
       syncDesignParam(data.designId, step);
       setHighlightedObjectIds([]);
-      setRecent((current) => [{
-        projectId: data.projectId,
-        designId: data.designId,
-        version: data.version,
-        title: data.title,
-        status: "completed",
-        createdAt: new Date().toISOString(),
-        requirements: data.requirements,
-        building: data.building,
-        validation: data.validation,
-        costEstimate: data.costEstimate,
-        aiReview: data.aiReview,
-        schemes: data.schemes,
-        selectedSchemeId: data.selectedSchemeId,
-        intent: data.intent,
-      }, ...current].slice(0, 12));
     } catch (suggestionError) {
       setError({ title: "Connection interrupted", message: suggestionError instanceof Error ? suggestionError.message : "Unable to apply that suggestion.", actions: [] });
     } finally {
@@ -351,9 +401,14 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
         </header>
 
         <div className="py-5">
-          {result && error ? <div className="mb-5 border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button">Dismiss</button></div></div> : null}
-          {!result && !isGenerating ? <div className="mx-auto w-full max-w-[92rem] space-y-5">
+          {result && normalProjectAccess && error ? <div className="mb-5 border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button">Dismiss</button></div></div> : null}
+          {!result && !blockedProjectAccess && !isGenerating && !isRestoring && draftId ? <div className="mx-auto w-full max-w-[92rem] space-y-5">
             {error ? <div className="border border-[#ff5b45]/70 bg-[#180d09] p-5" role="alert"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex max-w-3xl items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#ff806f]" /><div><p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#ff806f]">{error.title}</p><p className="mt-2 text-sm leading-6 text-[#d8c9bc]">{error.message}</p>{error.actions.length ? <div className="mt-4"><p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#9f9183]">Recommended changes</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#b5a697]">{error.actions.map((action) => <li key={action}>{action}</li>)}</ul></div> : null}{error.code ? <p className="mt-3 text-[0.58rem] uppercase tracking-[0.08em] text-[#6f6359]">Reference: {error.code}</p> : null}</div></div><button className="inline-flex items-center gap-2 border border-[#8e5a31]/60 px-3 py-2 text-[0.65rem] font-bold uppercase tracking-[0.1em]" onClick={() => setError(null)} type="button"><RotateCcw className="h-3.5 w-3.5" /> Adjust questionnaire</button></div></div> : null}
+            <section className="flex flex-wrap items-center justify-between gap-4 border border-[#8e5a31]/45 bg-[#0d0c0a] p-4" aria-label="Project draft actions">
+              <div><p className="text-[0.62rem] font-extrabold uppercase tracking-[0.13em] text-[#c97940]">Current draft · {draftId.slice(0, 8)}</p><p className="mt-1 text-xs leading-5 text-[#9f9183]">This questionnaire is isolated from every other project draft.</p></div>
+              <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#fff6ea] hover:bg-[#171512]" onClick={startNewProject} type="button"><Plus className="h-3.5 w-3.5" /> New blank project</button>
+            </section>
+            {resumableDrafts.some((entry) => entry.draftId !== draftId) ? <details className="border border-[#8e5a31]/35 bg-[#0b0a09] p-4"><summary className="cursor-pointer text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#c97940]">Resume another draft</summary><p className="mt-3 text-xs leading-5 text-[#8f8275]">A draft is restored only after you choose it. Starting a new project never loads these answers.</p><div className="mt-3">{resumableDrafts.filter((entry) => entry.draftId !== draftId).map((entry) => <button className="flex min-h-11 w-full items-center justify-between gap-4 border-t border-[#8e5a31]/25 py-3 text-left text-sm text-[#b5a697] hover:text-[#fff6ea]" key={entry.draftId} onClick={() => resumeDraft(entry)} type="button"><span><span className="block font-semibold">{entry.title}</span><span className="mt-1 block text-[0.58rem] uppercase tracking-[0.08em] text-[#756a60]">Updated {new Date(entry.updatedAt).toLocaleString()}</span></span><span className="shrink-0 text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[#c97940]">Resume</span></button>)}</div></details> : null}
             <NaturalLanguageIntake
               disabled={isGenerating}
               onParsed={(requirements, assumptions) => setPrefill({ requirements, assumptions })}
@@ -363,35 +418,41 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
               <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#7bc79e]">Parsed — review below, then generate</p>
               {prefill.assumptions.length > 0 ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#b5a697]">{prefill.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul> : null}
             </div> : null}
-            <GuidedIntake initialValue={prefill?.requirements} isSubmitting={isGenerating} onSubmit={generate} storageKey="active-residential-study" submitLabel="Generate verified concept" />
-            {recent.length > 0 ? <section className="border border-[#8e5a31]/45 bg-[#0d0c0a] p-4"><div className="flex items-center justify-between"><p className="text-[0.8125rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Recent studies</p><span className="text-[0.8125rem] uppercase tracking-[0.1em] text-[#9f9183]">Saved</span></div><div className="mt-3 space-y-1">{recent.slice(0, 5).map((study) => <button className="flex w-full items-center justify-between gap-3 border-t border-[#8e5a31]/25 py-3 text-left text-base text-[#b5a697] transition hover:text-[#fff6ea] disabled:cursor-not-allowed disabled:opacity-40" disabled={!study.building} key={study.designId} onClick={() => openStudy(study)} type="button"><span className="min-w-0"><span className="block truncate font-semibold">{study.title}</span><span className="mt-1 flex items-center gap-1 text-[0.8125rem] uppercase tracking-[0.08em] text-[#9f9183]"><Clock3 className="h-3 w-3" /> {new Date(study.createdAt).toLocaleDateString()}</span></span><ChevronRight className="h-4 w-4 shrink-0 text-[#c97940]" /></button>)}</div></section> : null}
-            {failedRecent.length > 0 ? <details className="border border-[#8e5a31]/35 bg-[#0b0a09] p-4"><summary className="cursor-pointer text-[0.62rem] font-bold uppercase tracking-[0.12em] text-[#9f9183]">Failed attempts · {failedRecent.length}</summary><p className="mt-3 text-xs leading-5 text-[#756a60]">These attempts never became usable plans and no longer crowd the saved-study list. Load the brief, adjust it, then generate again.</p><div className="mt-2">{failedRecent.slice(0, 5).map((study) => <button className="flex w-full items-center justify-between border-t border-[#8e5a31]/20 py-3 text-left text-xs text-[#9f9183] hover:text-[#fff6ea]" key={study.designId} onClick={() => { setPrefill({ requirements: study.requirements, assumptions: ["Recovered from a failed attempt. Review the capacity and architecture steps before generating."] }); window.scrollTo({ top: 0, behavior: "smooth" }); }} type="button"><span><span className="block font-semibold">{study.title}</span><span className="mt-1 block text-[0.56rem] uppercase tracking-[0.08em] text-[#6f6359]">Failed · {new Date(study.createdAt).toLocaleDateString()}</span></span><RotateCcw className="h-3.5 w-3.5 text-[#c97940]" /></button>)}</div></details> : null}
+            <GuidedIntake draftId={draftId} initialValue={prefill?.requirements} isSubmitting={isGenerating} key={draftId} onSubmit={generate} submitLabel="Generate verified concept" />
           </div> : null}
+
+          {!result && !isGenerating && isRestoring ? <div aria-busy="true" className="grid min-h-[32rem] place-items-center border border-[#8e5a31]/45 bg-[#0d0c0a] p-8 text-center" role="status"><div><LoaderCircle className="mx-auto h-8 w-8 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-5 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Reopening your saved study</p><p className="mt-3 text-sm leading-6 text-[#9f9183]">Restoring the plan, its evidence and render state from the server.</p></div></div> : null}
+
+          {blockedProjectAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={blockedProjectAccess} /><div className="mx-auto mt-5 flex max-w-2xl justify-end"><ProjectDeletionControl canDelete={false} designId={initialDesignId} onCompleted={finishProjectDeletion} /></div></div> : result && capabilityPresentation?.blocksNormalAccess ? <div className="py-12"><ProjectCapabilityNotice presentation={capabilityPresentation} /><div className="mx-auto mt-5 flex max-w-2xl justify-end"><ProjectDeletionControl canDelete={projectCapabilities.canDelete && !isGenerating} designId={result.designId} onCompleted={finishProjectDeletion} projectId={result.projectId} projectTitle={result.title} /></div></div> : null}
 
           <section className="min-w-0 scroll-mt-4 self-start" ref={resultRef}>
             {isGenerating && !result ? <div aria-busy="true" className="grid min-h-[44rem] place-items-center border border-[#8e5a31]/55 bg-[#0d0c0a] p-8 text-center"><div className="max-w-md"><LoaderCircle className="mx-auto h-9 w-9 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><p className="mt-6 text-[0.67rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Evaluating deterministic candidates</p><h1 className="mt-4 font-[family-name:var(--font-display)] text-5xl font-normal leading-[0.95] tracking-[-0.04em]">Building a plan that can explain itself<span className="text-[#ff4e00]">.</span></h1><p className="mt-5 text-base leading-7 text-[#b5a697]">Normalizing shared walls, placing openings and stairs, proving circulation, reconciling regional cost, and composing the drawing sheet.</p><p aria-atomic="true" aria-live="polite" className="mt-4 text-sm text-[#c97940]" role="status">Elapsed {generationElapsedSeconds} seconds · no partial scheme will be saved</p></div></div> : null}
 
-            {result ? <div aria-busy={isGenerating} className="reveal">
+            {result && normalProjectAccess ? <div aria-busy={isGenerating} className="reveal">
               {isGenerating ? <div aria-atomic="true" aria-live="polite" className="mb-5 flex min-h-14 items-center gap-3 border border-[#c97940]/55 bg-[#171512] px-4 py-3 text-sm leading-6 text-[#b5a697]" role="status"><LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-[#ff4e00] motion-reduce:animate-none" /><span><strong className="text-[#fff6ea]">Creating a revised immutable study.</strong> The current successful plan stays visible while geometry and evidence update · {generationElapsedSeconds}s elapsed.</span></div> : null}
+              {capabilityPresentation?.kind === "view_only" ? <div className="mb-5"><ProjectCapabilityNotice compact presentation={capabilityPresentation} /></div> : null}
 
               <div className="border border-[#8e5a31]/45 bg-[#0d0c0a]">
                 <div className="flex flex-wrap items-end justify-between gap-4 px-5 py-4">
                   <div><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.15em] text-[#c97940]">Study {result.designId.slice(0, 8)} · immutable v{result.version ?? 1}</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em]">{result.title}</h1></div>
-                  <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-3 py-2 text-[0.7rem] font-bold uppercase tracking-[0.1em] transition hover:bg-[#171512] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea]" onClick={() => { setResult(null); setPrefill(null); setHighlightedObjectIds([]); setStep("directions"); syncDesignParam(null); }} type="button"><Plus className="h-3.5 w-3.5" /> New study</button>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <ProjectDeletionControl canDelete={projectCapabilities.canDelete && !isGenerating} designId={result.designId} onCompleted={finishProjectDeletion} projectId={result.projectId} projectTitle={result.title} />
+                    <button className="inline-flex min-h-11 items-center gap-2 border border-[#c97940] px-3 py-2 text-[0.7rem] font-bold uppercase tracking-[0.1em] transition hover:bg-[#171512] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea]" onClick={startNewProject} type="button"><Plus className="h-3.5 w-3.5" /> New study</button>
+                  </div>
                 </div>
 
                 <WorkspaceStepper current={step} items={([
                   { id: "directions", complete: schemeConfirmed, onSelect: () => goToStep("directions") },
                   { id: "plan", disabled: !schemeConfirmed, onSelect: () => goToStep("plan") },
                   { id: "massing", disabled: !schemeConfirmed, href: `/workspace/designs/${result.designId}/massing` },
-                  { id: "render", disabled: !schemeConfirmed, href: `/workspace/designs/${result.designId}/massing#render-gallery` },
+                  { id: "render", disabled: !schemeConfirmed || !projectCapabilities.canReadAssets, href: `/workspace/designs/${result.designId}/massing#render-gallery` },
                 ] satisfies WorkspaceStepperItem[])} />
 
                 {step === "directions" ? <div className="p-4 sm:p-6">
                   <div className="mb-6"><p className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#8f8275]">Step 1 of 4 · Directions</p><h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl font-normal tracking-[-0.025em]">Choose the direction to engineer</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-[#9f9183]">{showSchemeRack ? "Every option below is a verified deterministic scheme. Pin one, review its evidence, then confirm it as the canonical plan." : "This deterministic scheme is the canonical answer to the brief. Review its parti, rationale and evidence, then continue to the plan."}</p></div>
 
                   {showSchemeRack && result.schemes && displayedScheme && displayedBuilding && displayedValidation ? <>
-                    <SchemeRack disabled={isSelectingScheme || isGenerating} onChange={(schemeId) => { setPendingSchemeId(schemeId); setSchemeSelectionError(null); setSchemeSelectionStatus(`${result.schemes?.find((scheme) => scheme.schemeId === schemeId)?.name ?? "Scheme"} pinned for review.`); }} pendingSchemeId={pendingSchemeId} schemes={result.schemes} selectedSchemeId={result.selectedSchemeId} />
+                    <SchemeRack disabled={isSelectingScheme || isGenerating || !projectCapabilities.canSelectScheme} onChange={(schemeId) => { setPendingSchemeId(schemeId); setSchemeSelectionError(null); setSchemeSelectionStatus(`${result.schemes?.find((scheme) => scheme.schemeId === schemeId)?.name ?? "Scheme"} pinned for review.`); }} pendingSchemeId={pendingSchemeId} schemes={result.schemes} selectedSchemeId={result.selectedSchemeId} />
                     <div aria-busy={displayedEvidence.busy} aria-label={`Scheme evidence · ${displayedScheme.name}`} className="mt-6 grid gap-6 border-t border-[#8e5a31]/25 pt-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                       <div>
                         <p className="text-[0.65rem] font-extrabold uppercase tracking-[0.13em] text-[#c97940]">Why this works</p>
@@ -404,7 +465,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
                         <SchemeEvidenceSummary evidence={displayedEvidence} validationScore={displayedValidation.score} />
                         {schemeSelectionError ? <p className="mt-4 border border-[#c97940] p-3 text-sm leading-6 text-[#b5a697]" role="alert">{schemeSelectionError.message}</p> : null}
                         <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">{schemeSelectionStatus}</p>
-                        <button className="mt-4 min-h-11 w-full bg-[#ff4e00] px-4 py-3 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[#090908] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea] disabled:cursor-not-allowed disabled:bg-[#171512] disabled:text-[#b5a697]" disabled={isSelectingScheme || displayedScheme.schemeId === result.selectedSchemeId} onClick={() => void selectPendingScheme(Boolean(schemeSelectionError?.requiresForce))} type="button">{isSelectingScheme ? "Updating evidence…" : displayedScheme.schemeId === result.selectedSchemeId ? "Selected scheme" : schemeSelectionError?.requiresForce ? "Confirm switch · preserve renders" : "Select this scheme"}</button>
+                        <button className="mt-4 min-h-11 w-full bg-[#ff4e00] px-4 py-3 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[#090908] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fff6ea] disabled:cursor-not-allowed disabled:bg-[#171512] disabled:text-[#b5a697]" disabled={!projectCapabilities.canSelectScheme || isSelectingScheme || displayedScheme.schemeId === result.selectedSchemeId} onClick={() => void selectPendingScheme(Boolean(schemeSelectionError?.requiresForce))} title={!projectCapabilities.canSelectScheme ? PROJECT_VIEW_ONLY_EXPLANATION : undefined} type="button">{isSelectingScheme ? "Updating evidence…" : displayedScheme.schemeId === result.selectedSchemeId ? "Selected scheme" : schemeSelectionError?.requiresForce ? "Confirm switch · preserve renders" : "Select this scheme"}</button>
                       </div>
                     </div>
                   </> : null}
@@ -450,7 +511,7 @@ export function DesignWorkspace({ hasProjects: _hasProjects, initialDesignId = n
                       {result.aiReview?.status === "reviewed" ? <>
                         <p className="text-sm text-[#cbbbad]">{result.aiReview.review.concurs ? "Concurs with this concept" : "Raises concerns"} · confidence {result.aiReview.review.confidence}</p>
                         {result.aiReview.review.citedConcerns.length > 0 ? <ul className="mt-4 space-y-3">{result.aiReview.review.citedConcerns.map((concern, index) => <li className="border-t border-[#8e5a31]/25 pt-3 text-xs leading-5" key={`${concern.topic}-${concern.objectIds.join("-")}-${index}`}><span className="block font-semibold text-[#fff6ea]">{concern.whyItMatters}</span><span className="mt-1 block text-[#9d8f82]">{concern.recommendation}</span><span className="mt-1 block text-[#7bc79e]">What it saves: {concern.whatItSaves}</span><button className="mt-1 text-[0.58rem] uppercase tracking-[0.08em] text-[#c97940]" onClick={() => setHighlightedObjectIds(concern.objectIds)} type="button">Ref: {[concern.ruleId, concern.floorId, ...concern.evidenceIds, ...concern.objectIds].filter(Boolean).join(" · ")}</button></li>)}</ul> : <p className="mt-4 text-xs text-[#8f8275]">No grounded advisory concerns were returned.</p>}
-                        {result.aiReview.review.requirementDeltas.length > 0 ? <div className="mt-4 border-t border-[#8e5a31]/25 pt-3"><p className="text-[0.58rem] font-bold uppercase tracking-[0.1em] text-[#9f9183]">Suggested requirement changes</p><div className="mt-2 space-y-2">{result.aiReview.review.requirementDeltas.map((delta, index) => <div className="flex items-center justify-between gap-3 border border-[#8e5a31]/25 p-3 text-xs" key={`${delta.op}-${index}`}><span><span className="block font-semibold text-[#fff6ea]">{describeRequirementDelta(delta)}</span><span className="mt-1 block text-[#8f8275]">AI rationale: {delta.summary}</span></span><button className="shrink-0 border border-[#c97940] px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[0.08em] hover:bg-[#171512] disabled:opacity-50" disabled={isGenerating} onClick={() => void applySuggestion(index)} type="button">Apply exact change</button></div>)}</div></div> : null}
+                        {result.aiReview.review.requirementDeltas.length > 0 ? <div className="mt-4 border-t border-[#8e5a31]/25 pt-3"><p className="text-[0.58rem] font-bold uppercase tracking-[0.1em] text-[#9f9183]">Suggested requirement changes</p><div className="mt-2 space-y-2">{result.aiReview.review.requirementDeltas.map((delta, index) => <div className="flex items-center justify-between gap-3 border border-[#8e5a31]/25 p-3 text-xs" key={`${delta.op}-${index}`}><span><span className="block font-semibold text-[#fff6ea]">{describeRequirementDelta(delta)}</span><span className="mt-1 block text-[#8f8275]">AI rationale: {delta.summary}</span></span><button className="shrink-0 border border-[#c97940] px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[0.08em] hover:bg-[#171512] disabled:opacity-50" disabled={isGenerating || !projectCapabilities.canApplyAiSuggestion} onClick={() => void applySuggestion(index)} title={!projectCapabilities.canApplyAiSuggestion ? PROJECT_VIEW_ONLY_EXPLANATION : undefined} type="button">Apply exact change</button></div>)}</div></div> : null}
                       </> : <p className="text-sm text-[#9d8f82]">AI architectural review unavailable{result.aiReview?.status === "unavailable" ? ` (${result.aiReview.reason.replaceAll("_", " ")})` : ""}. The deterministically valid plan remains available.</p>}
                       <p className="mt-4 border-t border-[#8e5a31]/25 pt-3 text-[0.72rem] leading-5 text-[#9f9183]">Advisory concept review only. It is not licensed-architect, permit, structural, MEP, or code-compliance approval.</p>
                     </EvidenceDetails>

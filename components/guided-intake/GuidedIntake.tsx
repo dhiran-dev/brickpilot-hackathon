@@ -3,10 +3,11 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Briefcase, Building2, Check, CircleDollarSign, Home, LoaderCircle, RotateCcw, Ruler, Sparkles, type LucideIcon } from "lucide-react";
 
-import { BUILDING_TYPE_OPTIONS, buildingRequirementsSchema, type BuildingRequirements } from "@/lib/building/requirements";
+import { BUILDING_TYPE_OPTIONS, currentBuildingRequirementsSchema, legacyBuildingRequirementsSchema, type CurrentBuildingRequirements, type LegacyBuildingRequirements, type ReadableBuildingRequirements, type ShadeStructureRequirement } from "@/lib/building/requirements";
 import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS, formStrategyPatch, type ArchitecturePreviewOption } from "@/components/guided-intake/architecture-options";
-import { applyRegionalPrefill, assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
+import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type FloorProgramBrief, type IntakeDraft } from "@/components/guided-intake/model";
 import { adminAreaForRegion, CURRENCY_OPTIONS, LOCALE_OPTIONS, REGION_OPTIONS, regionForCountry } from "@/components/guided-intake/region-options";
+import { clearDraft, loadDraft, resolveDraftHydration, saveDraft } from "@/lib/design/draft-storage";
 import { resolveRegionalPack } from "@/lib/design/regional-packs";
 
 const STEPS = [
@@ -28,6 +29,7 @@ const BUILDING_TYPE_ICONS: Record<(typeof BUILDING_TYPE_OPTIONS)[number]["value"
 
 const CONTROL = "mt-2 min-h-11 w-full border border-[#8e5a31]/60 bg-[#12100e] px-3 py-2.5 text-sm text-[#fff6ea] outline-none transition-colors placeholder:text-[#655d55] focus:border-[#fff6ea] focus:ring-1 focus:ring-[#fff6ea]";
 const LABEL = "text-[0.65rem] font-extrabold uppercase tracking-[0.12em] text-[#c97940]";
+const ACTION_PRIMARY = "inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none";
 const DIRECTIONS = ["north", "east", "south", "west"] as const;
 const FLOOR_HEIGHT_OPTIONS = [
   [2.7, "2.70 m · compact"],
@@ -48,11 +50,11 @@ const INTAKE_STORAGE_VERSION = 4;
 type StepId = (typeof STEPS)[number]["id"];
 
 export type GuidedIntakeProps = {
-  initialValue?: BuildingRequirements;
-  onChange?: (requirements: BuildingRequirements) => void;
-  onSubmit: (requirements: BuildingRequirements) => void | Promise<void>;
+  initialValue?: ReadableBuildingRequirements;
+  onChange?: (requirements: CurrentBuildingRequirements) => void;
+  onSubmit: (requirements: CurrentBuildingRequirements, legacyRequirements: LegacyBuildingRequirements) => void | Promise<void>;
   isSubmitting?: boolean;
-  storageKey?: string;
+  draftId: string;
   submitLabel?: string;
   className?: string;
 };
@@ -84,6 +86,44 @@ function BuildingTypeCard({ icon: Icon, title, description, checked, disabled, b
   );
 }
 
+export function ArchitectureOptionCard<Value extends string>({
+  option,
+  checked,
+  suggested,
+  suggestionLabel,
+  imageFailed = false,
+  radioName,
+  onSelect,
+  onImageError,
+}: {
+  option: ArchitecturePreviewOption<Value>;
+  checked: boolean;
+  suggested?: boolean;
+  suggestionLabel?: string;
+  imageFailed?: boolean;
+  radioName: string;
+  onSelect: (value: Value) => void;
+  onImageError: (source: string) => void;
+}) {
+  return (
+    <label className={`group relative flex cursor-pointer flex-col border transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#fff6ea] ${checked ? "border-[#ff4e00] bg-[#1c130c]" : "border-[#8e5a31]/30 bg-[#11100e] hover:border-[#c97940]/60 hover:bg-[#151310]"}`}>
+      <input checked={checked} className="sr-only" name={radioName} onChange={() => onSelect(option.value)} type="radio" value={option.value} />
+      {!imageFailed ? <span className="block aspect-[16/10] overflow-hidden border-b border-[#8e5a31]/25 bg-[#11100e]"><img alt={option.imageAlt} className="h-full w-full object-cover" draggable={false} onError={() => onImageError(option.imageSrc)} src={option.imageSrc} /></span> : null}
+      <span className="flex flex-1 flex-col p-4">
+        <span className="flex items-start justify-between gap-2">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[0.55rem] font-bold uppercase tracking-[0.14em] text-[#c97940]">{option.plate}</span>
+            {suggested && suggestionLabel ? <span className="whitespace-nowrap border border-[#c97940]/35 px-1.5 py-0.5 text-[0.52rem] font-bold uppercase tracking-[0.08em] text-[#c97940]">Suggested for {suggestionLabel}</span> : null}
+          </span>
+          {checked ? <span className="grid h-5 w-5 shrink-0 place-items-center bg-[#ff4e00] text-[#090908]"><Check aria-hidden="true" className="h-3 w-3" /><span className="sr-only">Selected</span></span> : null}
+        </span>
+        <span className="mt-2 block text-sm font-semibold text-[#fff6ea]">{option.title}</span>
+        <span className="mt-1 block text-xs leading-5 text-[#9f9183]">{option.detail}</span>
+      </span>
+    </label>
+  );
+}
+
 export function ArchitectureReferencePicker<Value extends string>({
   legend,
   description,
@@ -108,51 +148,49 @@ export function ArchitectureReferencePicker<Value extends string>({
   const [failedSources, setFailedSources] = useState<ReadonlySet<string>>(() => new Set());
   const selected = options.find((option) => option.value === value) ?? options[0];
   if (!selected) return null;
-  const imageFailed = failedSources.has(selected.imageSrc);
 
-  return <fieldset aria-describedby={descriptionId} className="intake-reference-fieldset">
-    <legend className="intake-reference-legend">{legend}</legend>
-    <p className="intake-reference-description" id={descriptionId}>{description}</p>
-    <div className="intake-reference-picker" data-layout="pinned-reference-choice-rail">
-      <figure className="intake-reference-sheet">
-        <div className="intake-reference-sheet__media">
-          <div aria-hidden={!imageFailed} aria-label={`${selected.title} reference illustration unavailable`} className="intake-reference-placeholder" role={imageFailed ? "img" : undefined}>
-            <span className="intake-reference-placeholder__frame" />
-            <span className="intake-reference-placeholder__roof" />
-            <span className="intake-reference-placeholder__ground" />
-            <span className="intake-reference-placeholder__copy">{selected.title}<br />reference unavailable</span>
-          </div>
-          {!imageFailed ? <img alt={selected.imageAlt} className="intake-reference-sheet__image" draggable={false} onError={() => setFailedSources((current) => new Set(current).add(selected.imageSrc))} src={selected.imageSrc} /> : null}
-          <span className="intake-reference-plate">{selected.plate}</span>
-          <span className="intake-reference-selected"><Check aria-hidden="true" className="h-3.5 w-3.5" /> Selected reference</span>
-        </div>
-        <figcaption className="intake-reference-sheet__caption">
-          <span className="intake-reference-sheet__eyebrow">Pinned reference</span>
-          <span className="intake-reference-sheet__title">{selected.title}</span>
-          <span className="intake-reference-sheet__detail">{selected.detail}</span>
-        </figcaption>
-      </figure>
-      <div className="intake-choice-rail" role="presentation">
-        {options.map((option) => {
-          const checked = option.value === value;
-          const suggested = option.value === suggestedValue;
-          return <label className="intake-choice-rail__option" key={option.value}>
-            <input checked={checked} className="intake-radio-input" name={radioName} onChange={() => onChange(option.value)} type="radio" value={option.value} />
-            <span className="intake-choice-rail__body">
-              <span aria-hidden="true" className="intake-choice-rail__marker">{checked ? <Check className="h-3.5 w-3.5" /> : null}</span>
-              <span className="intake-choice-rail__copy">
-                <span className="intake-choice-rail__plate">{option.plate}{suggested && suggestionLabel ? <> · <span className="intake-choice-rail__suggestion">Suggested for {suggestionLabel}</span></> : null}</span>
-                <span className="intake-choice-rail__title">{option.title}</span>
-                <span className="intake-choice-rail__detail">{option.detail}</span>
-              </span>
-              <span className="intake-choice-rail__state">{checked ? "Selected" : "Choose"}</span>
-            </span>
-          </label>;
-        })}
+  return (
+    <fieldset aria-describedby={descriptionId} className="min-w-0 border-0 p-0">
+      <legend className="text-sm font-semibold text-[#fff6ea]">{legend}</legend>
+      <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#9f9183]" id={descriptionId}>{description}</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {options.map((option) => <ArchitectureOptionCard checked={option.value === value} imageFailed={failedSources.has(option.imageSrc)} key={option.value} onImageError={(source) => setFailedSources((current) => new Set(current).add(source))} onSelect={onChange} option={option} radioName={radioName} suggested={option.value === suggestedValue} suggestionLabel={suggestionLabel} />)}
       </div>
-    </div>
-    <p aria-live="polite" className="sr-only">Selected {selected.title}. {selected.detail}</p>
-  </fieldset>;
+      <p aria-live="polite" className="sr-only">Selected {selected.title}. {selected.detail}</p>
+    </fieldset>
+  );
+}
+
+function ActionBar({
+  meta,
+  backDisabled,
+  ready,
+  isLast,
+  isSubmitting,
+  blocking,
+  submitDisabled,
+  submitLabel,
+  onBack,
+  onContinue,
+  onSubmit,
+}: {
+  meta?: ReactNode;
+  backDisabled: boolean;
+  ready: boolean;
+  isLast: boolean;
+  isSubmitting: boolean;
+  blocking?: boolean;
+  submitDisabled: boolean;
+  submitLabel: string;
+  onBack: () => void;
+  onContinue: () => void;
+  onSubmit: () => void;
+}) {
+  return <>
+    {meta ? <div className="mr-auto flex min-w-0 items-center">{meta}</div> : null}
+    <button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={backDisabled} onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>
+    {!isLast ? <button className={ACTION_PRIMARY} disabled={!ready} onClick={onContinue} type="button">Confirm & continue <ArrowRight className="h-4 w-4" /></button> : <button className={ACTION_PRIMARY} disabled={submitDisabled} onClick={onSubmit} type="button">{isSubmitting ? "Solving the brief" : blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>}
+  </>;
 }
 
 function Toggle({ checked, label, detail, onChange }: { checked: boolean; label: string; detail?: string; onChange: (checked: boolean) => void }) {
@@ -170,7 +208,7 @@ function stepReady(step: StepId, draft: IntakeDraft) {
   return true;
 }
 
-export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = false, storageKey = "new-project", submitLabel = "Generate feasible plan", className }: GuidedIntakeProps) {
+export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = false, draftId, submitLabel = "Generate feasible plan", className }: GuidedIntakeProps) {
   const [draft, setDraft] = useState<IntakeDraft>(() => initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT);
   const [stepIndex, setStepIndex] = useState(0);
   const [hydrated, setHydrated] = useState(false);
@@ -180,47 +218,54 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
   const currentRegion = regionForCountry(draft.countryCode);
   const currentAdminArea = adminAreaForRegion(currentRegion, draft.adminArea);
   const regionalResolution = resolveRegionalPack(draft.countryCode, draft.adminArea);
-  const requirements = useMemo(() => {
+  const legacyRequirements = useMemo(() => {
     try { return createRequirements(draft); } catch { return null; }
   }, [draft]);
-  const capacity = useMemo(() => requirements ? assessBriefCapacity(requirements) : null, [requirements]);
+  const requirements = useMemo(() => {
+    try { return createCurrentRequirements(draft); } catch { return null; }
+  }, [draft]);
+  const capacity = useMemo(() => legacyRequirements ? assessBriefCapacity(legacyRequirements) : null, [legacyRequirements]);
 
   useEffect(() => {
-    if (initialValue) {
-      setDraft(draftFromRequirements(initialValue));
-      setStepIndex(0);
-      setError(null);
-      setHydrated(true);
-      return;
-    }
     try {
-      const saved = window.localStorage.getItem(`brickpilot:intake:${storageKey}`);
-      if (saved) {
-        const parsed = JSON.parse(saved) as { version?: number; draft?: IntakeDraft & { roadEdge?: IntakeDraft["roadEdges"][number] }; stepIndex?: number };
-        if (parsed.draft) setDraft({
+      const authoritativeValue = initialValue ? draftFromRequirements(initialValue) : undefined;
+      const stored = loadDraft<IntakeDraft & { roadEdge?: IntakeDraft["roadEdges"][number] }>(window.localStorage, draftId);
+      const hydration = resolveDraftHydration({ authoritativeValue, storedDraft: stored, defaultValue: DEFAULT_INTAKE_DRAFT });
+      if (hydration.source === "draft") {
+        const storedDraft = hydration.value as IntakeDraft & { roadEdge?: IntakeDraft["roadEdges"][number] };
+        setDraft({
           ...DEFAULT_INTAKE_DRAFT,
-          ...parsed.draft,
-          roadEdges: parsed.draft.roadEdges?.length ? parsed.draft.roadEdges : parsed.draft.roadEdge ? [parsed.draft.roadEdge] : DEFAULT_INTAKE_DRAFT.roadEdges,
-          floorHeightM: FLOOR_HEIGHT_OPTIONS.some(([value]) => value === parsed.draft?.floorHeightM) ? parsed.draft.floorHeightM : DEFAULT_INTAKE_DRAFT.floorHeightM,
-          stairWidthMm: STAIR_WIDTH_OPTIONS.some(([value]) => value === parsed.draft?.stairWidthMm) ? parsed.draft.stairWidthMm : DEFAULT_INTAKE_DRAFT.stairWidthMm,
-          setbacks: { ...DEFAULT_INTAKE_DRAFT.setbacks, ...parsed.draft.setbacks },
-          socialSpaceMode: parsed.draft.socialSpaceMode ?? DEFAULT_INTAKE_DRAFT.socialSpaceMode,
-          programs: DEFAULT_INTAKE_DRAFT.programs.map((fallback, level) => (parsed.version ?? 0) >= 2
-            ? normalizeFloorProgram(parsed.draft?.programs?.[level], fallback)
-            : upgradeLegacyFloorProgram(parsed.draft?.programs?.[level], fallback)),
+          ...storedDraft,
+          roadEdges: storedDraft.roadEdges?.length ? storedDraft.roadEdges : storedDraft.roadEdge ? [storedDraft.roadEdge] : DEFAULT_INTAKE_DRAFT.roadEdges,
+          floorHeightM: FLOOR_HEIGHT_OPTIONS.some(([value]) => value === storedDraft.floorHeightM) ? storedDraft.floorHeightM : DEFAULT_INTAKE_DRAFT.floorHeightM,
+          stairWidthMm: STAIR_WIDTH_OPTIONS.some(([value]) => value === storedDraft.stairWidthMm) ? storedDraft.stairWidthMm : DEFAULT_INTAKE_DRAFT.stairWidthMm,
+          setbacks: { ...DEFAULT_INTAKE_DRAFT.setbacks, ...storedDraft.setbacks },
+          socialSpaceMode: storedDraft.socialSpaceMode ?? DEFAULT_INTAKE_DRAFT.socialSpaceMode,
+          programs: DEFAULT_INTAKE_DRAFT.programs.map((fallback, level) => (stored?.version ?? 0) >= 2
+            ? normalizeFloorProgram(storedDraft.programs?.[level], fallback)
+            : upgradeLegacyFloorProgram(storedDraft.programs?.[level], fallback)),
         });
-        if (typeof parsed.stepIndex === "number") setStepIndex(Math.max(0, Math.min(STEPS.length - 1, parsed.stepIndex)));
+      } else {
+        setDraft(hydration.value);
       }
+      setStepIndex(Math.max(0, Math.min(STEPS.length - 1, hydration.stepIndex)));
+      setError(null);
     } catch {
       // Local progress is an enhancement; malformed storage is ignored.
+      setDraft(initialValue ? draftFromRequirements(initialValue) : DEFAULT_INTAKE_DRAFT);
+      setStepIndex(0);
     }
     setHydrated(true);
-  }, [initialValue, storageKey]);
+  }, [draftId, initialValue]);
 
   useEffect(() => {
     if (!hydrated) return;
-    window.localStorage.setItem(`brickpilot:intake:${storageKey}`, JSON.stringify({ version: INTAKE_STORAGE_VERSION, draft, stepIndex }));
-  }, [draft, hydrated, stepIndex, storageKey]);
+    try {
+      saveDraft(window.localStorage, draftId, { version: INTAKE_STORAGE_VERSION, draft, stepIndex }, { title: draft.projectName });
+    } catch {
+      // Local progress is an enhancement; generation remains available if storage is full.
+    }
+  }, [draft, draftId, hydrated, stepIndex]);
 
   useEffect(() => {
     if (requirements) onChange?.(requirements);
@@ -286,6 +331,15 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
     patch({ roadEdges: selected ? draft.roadEdges.filter((edge) => edge !== direction) : [...draft.roadEdges, direction] });
   }
 
+  function updateShadeStructure(location: ShadeStructureRequirement["location"], type: ShadeStructureRequirement["type"] | "none") {
+    setDraft((current) => applyShadeStructureChoice(current, location, type));
+    setError(null);
+  }
+
+  function shadeType(location: ShadeStructureRequirement["location"]) {
+    return draft.shadeStructures.find((shade) => shade.location === location)?.type ?? "none";
+  }
+
   function changeUnits(next: IntakeDraft["displayUnit"]) {
     if (next === draft.displayUnit) return;
     const factor = next === "imperial" ? 3.28084 : 0.3048;
@@ -301,18 +355,37 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
     }
     if (!requirements) { setError("Some answers do not form a valid building brief yet. Review the highlighted step values."); return; }
     if (capacity?.blocking) { setError("The minimum room programme is larger than the usable floor area. Follow the capacity recommendations above before generating."); return; }
-    const parsed = buildingRequirementsSchema.safeParse(createRequirements(draft));
+    const parsed = currentBuildingRequirementsSchema.safeParse(createCurrentRequirements(draft));
+    const parsedLegacy = legacyBuildingRequirementsSchema.safeParse(createRequirements(draft));
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "The brief is incomplete."); return; }
+    if (!parsedLegacy.success) { setError(parsedLegacy.error.issues[0]?.message ?? "The brief is incomplete."); return; }
     setError(null);
-    await onSubmit(parsed.data);
+    await onSubmit(parsed.data, parsedLegacy.data);
   }
 
   function reset() {
     setDraft(DEFAULT_INTAKE_DRAFT);
     setStepIndex(0);
     setError(null);
-    window.localStorage.removeItem(`brickpilot:intake:${storageKey}`);
+    try { clearDraft(window.localStorage, draftId); } catch {
+      // Resetting the visible form must still work when browser storage is unavailable.
+    }
   }
+
+  const goToPreviousStep = () => setStepIndex((index) => Math.max(0, index - 1));
+  const goToNextStep = () => setStepIndex((index) => Math.min(STEPS.length - 1, index + 1));
+  const sharedActionBarProps = {
+    backDisabled: stepIndex === 0 || isSubmitting,
+    blocking: capacity?.blocking,
+    isLast: stepIndex === STEPS.length - 1,
+    isSubmitting,
+    onBack: goToPreviousStep,
+    onContinue: goToNextStep,
+    onSubmit: submit,
+    ready: stepReady(step.id, draft),
+    submitDisabled: !requirements || Boolean(capacity?.blocking) || isSubmitting,
+    submitLabel,
+  };
 
   return (
     <section className={`guided-intake border border-[#8e5a31]/45 bg-[#0d0c0a] text-[#fff6ea] ${className ?? ""}`}>
@@ -326,6 +399,12 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             {STEPS.map((item, index) => { const active = index === stepIndex; const complete = index < stepIndex && stepReady(item.id, draft); return <li className="shrink-0 lg:flex-1" key={item.id}><button aria-current={active ? "step" : undefined} className={`relative flex w-full items-center justify-center gap-2.5 px-4 py-3.5 transition-colors lg:px-2 ${active ? "bg-[#17110c] text-[#fff6ea]" : complete ? "text-[#c5b5a5] hover:text-[#fff6ea]" : "text-[#776a5d] hover:text-[#c5b5a5]"}`} onClick={() => setStepIndex(index)} type="button"><span className={`grid h-6 w-6 shrink-0 place-items-center border text-[0.6rem] font-bold ${complete ? "border-[#4a8d68]/70 text-[#77c497]" : active ? "border-[#ff4e00] text-[#ff8b4d]" : "border-[#4a4037]/70"}`}>{complete ? <Check className="h-3 w-3" /> : String(index + 1).padStart(2, "0")}</span><span className="whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.12em]">{item.label}</span>{active ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#ff4e00]" /> : null}</button></li>; })}
           </ol>
         </nav>
+
+        <div className="sticky top-0 z-20 border-b border-[#8e5a31]/25 bg-[#0d0c0a]">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-7">
+            <ActionBar {...sharedActionBarProps} meta={<p className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#8f8275]">Step {stepIndex + 1} of {STEPS.length} · {step.label}</p>} />
+          </div>
+        </div>
 
         <div className="mx-auto w-full max-w-5xl p-5 sm:p-7">
           <div className="mb-7"><p className="text-[0.61rem] font-bold uppercase tracking-[0.13em] text-[#8f8275]">Step {stepIndex + 1} of {STEPS.length}</p><h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl font-normal tracking-[-0.025em]">{step.question}</h2></div>
@@ -366,7 +445,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             <div className="grid gap-5 sm:grid-cols-2"><div className="bg-[#11100e] px-4"><NumberControl label="Household occupants" max={30} min={1} onChange={(occupants) => patch({ occupants })} value={draft.occupants} /></div><Toggle checked={draft.accessibilityRequired} detail="Prioritises a ground-floor bedroom, bathroom, route and clearances." label="Step-free / mobility access needed" onChange={(accessibilityRequired) => patch({ accessibilityRequired })} /></div>
             <div><p className={LABEL}>Ground-floor living and dining</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Choice checked={draft.socialSpaceMode === "separate"} detail="Two distinct rooms with a required direct opening between living and dining." onClick={() => patch({ socialSpaceMode: "separate" })} title="Separate living + dining" /><Choice checked={draft.socialSpaceMode === "combined"} detail="One larger shared hall sized for both living and dining functions." onClick={() => patch({ socialSpaceMode: "combined" })} title="Combined living / dining hall" /></div></div>
             <div><p className={LABEL}>Room programme by floor</p><div className="mt-2 grid gap-3 xl:grid-cols-2">{draft.programs.slice(0, draft.floorCount).map((program, level) => { const brief = floorProgramBrief(program); return <section className="bg-[#11100e]" key={level}><header className="flex items-center justify-between border-b border-[#8e5a31]/25 px-4 py-3"><div><p className="text-sm font-bold">{level === 0 ? "Ground floor" : `Floor ${level}`}</p><p className="mt-0.5 text-[0.62rem] uppercase tracking-[0.09em] text-[#74685d]">F{level}</p></div><span className="font-[family-name:var(--font-display)] text-2xl text-[#c97940]">{program.bedrooms}B · {program.bathrooms}W</span></header><div className="px-4"><NumberControl label="Bedrooms with attached bathroom" max={Math.min(8 - brief.bedroomsWithoutAttachedBathroom, 8 - brief.sharedBathrooms)} min={0} onChange={(attachedBedrooms) => updateProgramBrief(level, { attachedBedrooms })} value={brief.attachedBedrooms} /><p className="pb-2 text-[0.68rem] leading-5 text-[#8f8275]">Each creates a private bathroom with a required direct door from its bedroom.</p><NumberControl label="Bedrooms without attached bathroom" max={8 - brief.attachedBedrooms} min={0} onChange={(bedroomsWithoutAttachedBathroom) => updateProgramBrief(level, { bedroomsWithoutAttachedBathroom })} value={brief.bedroomsWithoutAttachedBathroom} /><NumberControl label="Additional / shared bathrooms" max={8 - brief.attachedBedrooms} min={0} onChange={(sharedBathrooms) => updateProgramBrief(level, { sharedBathrooms })} value={brief.sharedBathrooms} /><NumberControl label="Studies / offices" max={3} min={0} onChange={(studies) => updateProgram(level, { studies })} value={program.studies} /></div>{level > 0 ? <div className="p-3"><Toggle checked={program.balcony} label="Balcony on this floor" onChange={(balcony) => updateProgram(level, { balcony })} /></div> : null}</section>; })}</div></div>
-            <div><p className={LABEL}>Ground-floor priorities</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.includeParking} label="Covered parking" onChange={(includeParking) => patch({ includeParking })} /><Toggle checked={draft.includeUtility} label="Utility / laundry" onChange={(includeUtility) => patch({ includeUtility })} /><Toggle checked={draft.includePooja} label="Pooja / sacred room" onChange={(includePooja) => patch({ includePooja })} /><Toggle checked={draft.includeCourtyard} detail="Creates an exterior planning void, not leftover gap." label="Central courtyard" onChange={(includeCourtyard) => patch({ includeCourtyard })} /></div></div>
+            <div><p className={LABEL}>Ground-floor priorities</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><Toggle checked={draft.includeParking} label="Covered parking" onChange={(includeParking) => patch({ includeParking, ...(includeParking ? {} : { shadeStructures: draft.shadeStructures.filter((shade) => shade.location !== "parking"), aboveParkingUse: { value: "auto", source: "default" } as const }) })} /><Toggle checked={draft.includeVerandah} label="Covered verandah" onChange={(includeVerandah) => patch({ includeVerandah, ...(includeVerandah ? {} : { shadeStructures: draft.shadeStructures.filter((shade) => shade.location !== "verandah") }) })} /><Toggle checked={draft.includeUtility} label="Utility / laundry" onChange={(includeUtility) => patch({ includeUtility })} /><Toggle checked={draft.includePooja} label="Pooja / sacred room" onChange={(includePooja) => patch({ includePooja })} /><Toggle checked={draft.includeCourtyard} detail="Creates an exterior planning void, not leftover gap." label="Central courtyard" onChange={(includeCourtyard) => patch({ includeCourtyard })} /></div></div>
           </div> : null}
 
           {step.id === "architecture" ? <div className="space-y-10">
@@ -374,6 +453,7 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
             <ArchitectureReferencePicker description="This is a design constraint, not a decorative label. It controls elevation vocabulary, shade, roof expression and the visualization brief." legend="Choose the villa language" name="architectural-style" onChange={(architecturalStyle) => patch({ architecturalStyle })} options={ARCHITECTURAL_STYLE_PREVIEWS} suggestedValue={regionalResolution.pack.intakeStyle} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.architecturalStyle} />
             <ArchitectureReferencePicker description="Choose the volumetric rule that organizes rooms, courts and terraces. The plate is a strategy preview, not a generated façade." legend="Choose the built-form strategy" name="form-strategy" onChange={(formStrategy) => patch(formStrategyPatch(formStrategy))} options={FORM_STRATEGY_PREVIEWS} suggestedValue={regionalResolution.pack.defaultFormStrategy} suggestionLabel={regionalResolution.matchedAdminArea ?? (draft.adminArea || draft.countryCode)} value={draft.formStrategy} />
             <div className="grid gap-5 sm:grid-cols-2"><Field label="Roof character"><select className={CONTROL} onChange={(event) => patch({ roofCharacter: event.target.value as IntakeDraft["roofCharacter"] })} value={draft.roofCharacter}><option value="mixed">Mixed · shelter + terraces</option><option value="sloped">Predominantly sloped</option><option value="flat_parapet">Flat parapet</option></select></Field><Field label="Material direction"><select className={CONTROL} onChange={(event) => patch({ materialDirection: event.target.value as IntakeDraft["materialDirection"] })} value={draft.materialDirection}><option value="warm_natural">Warm natural · timber + stone + mineral plaster</option><option value="earthy_textured">Earthy textured · brick + lime + local stone</option><option value="light_mineral">Light mineral · pale plaster + restrained timber</option><option value="monochrome">Monochrome · concrete + dark metal + clear glazing</option></select></Field></div>
+            <section className="space-y-5 border-t border-[#8e5a31]/30 pt-7"><div><p className={LABEL}>Entry and outdoor roof intent</p><p className="mt-2 max-w-3xl text-xs leading-5 text-[#8f8275]">These are physical constraints. Open pergolas remain visibly slatted; solid canopies and occupied outdoor edges receive their required supports and guards.</p></div><div className="grid gap-5 sm:grid-cols-2"><Field label="Primary entry side"><select className={CONTROL} onChange={(event) => patch({ currentEntry: { ...draft.currentEntry, primarySide: { value: event.target.value as IntakeDraft["currentEntry"]["primarySide"]["value"], source: "user" } } })} value={draft.currentEntry.primarySide.value}><option value="auto_road_side">Automatic · road-facing side</option>{DIRECTIONS.map((direction) => <option key={direction} value={direction}>{direction}</option>)}</select></Field><Field label="Secondary entry"><select className={CONTROL} onChange={(event) => patch({ currentEntry: { ...draft.currentEntry, secondaryEntry: { value: event.target.value as IntakeDraft["currentEntry"]["secondaryEntry"]["value"], source: "user" } } })} value={draft.currentEntry.secondaryEntry.value}><option value="auto">Automatic if useful</option><option value="none">No secondary entry</option><option value="rear">Rear entry</option><option value="service_side">Service-side entry</option></select></Field><Field label="Main door clear width"><select className={CONTROL} onChange={(event) => patch({ currentEntry: { ...draft.currentEntry, primaryDoorClearWidthMm: Number(event.target.value) } })} value={draft.currentEntry.primaryDoorClearWidthMm}>{[1000, 1200, 1400, 1600].map((width) => <option key={width} value={width}>{width} mm</option>)}</select></Field><Field label="Maximum exterior pedestrian entries"><select className={CONTROL} onChange={(event) => patch({ maxExteriorPedestrianEntryCount: Number(event.target.value) })} value={draft.maxExteriorPedestrianEntryCount}>{[1, 2].map((count) => <option key={count} value={count}>{count}</option>)}</select></Field></div><div className="grid gap-5 sm:grid-cols-2">{(["front_entry", "parking", "verandah", "terrace"] as const).map((location) => { const disabled = location === "parking" && !draft.includeParking || location === "verandah" && !draft.includeVerandah; return <Field key={location} label={`${location.replaceAll("_", " ")} roof`}><select className={CONTROL} disabled={disabled} onChange={(event) => updateShadeStructure(location, event.target.value as ShadeStructureRequirement["type"] | "none")} value={disabled ? "none" : shadeType(location)}><option value="none">No added shade structure</option><option value="open_pergola">Open pergola · slatted</option><option value="solid_canopy">Solid canopy</option></select></Field>; })}</div>{draft.includeParking ? <Field label="Use of space above parking"><select className={CONTROL} onChange={(event) => patch({ aboveParkingUse: { value: event.target.value as IntakeDraft["aboveParkingUse"]["value"], source: "user" } })} value={draft.aboveParkingUse.value}><option value="auto">Automatic · use proportionately</option><option value="occupied_rooms">Occupied rooms</option><option value="balcony">Balcony</option><option value="terrace">Terrace</option><option value="unbuilt">Leave unbuilt</option></select></Field> : null}</section>
             <div className="border-l-2 border-[#c97940] bg-[#17120e] p-4 text-xs leading-6 text-[#aa9b8d]"><strong className="text-[#fff6ea]">Plot and house are separate decisions.</strong> A rectangular site may contain stepped, winged or courtyard-based built form. BrickPilot still keeps every room and support concept inside the verified buildable envelope.</div>
           </div> : null}
 
@@ -386,14 +466,14 @@ export function GuidedIntake({ initialValue, onChange, onSubmit, isSubmitting = 
           {step.id === "review" ? <Review capacity={capacity} draft={draft} requirements={requirements} /> : null}
 
           {error ? <p className="mt-6 border border-[#ff5b45]/70 bg-[#1a0c09] p-3 text-sm text-[#ff9e91]" role="alert">{error}</p> : null}
-          <footer className="intake-actions mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5"><button className="inline-flex min-h-11 items-center gap-2 border border-[#8e5a31]/55 px-4 py-3 text-[0.8125rem] font-bold uppercase tracking-[0.11em] text-[#b5a697] hover:border-[#c97940] hover:text-[#fff6ea] disabled:opacity-30" disabled={stepIndex === 0 || isSubmitting} onClick={() => setStepIndex((index) => Math.max(0, index - 1))} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>{stepIndex < STEPS.length - 1 ? <button className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!stepReady(step.id, draft)} onClick={() => setStepIndex((index) => Math.min(STEPS.length - 1, index + 1))} type="button">Confirm & continue <ArrowRight className="h-4 w-4" /></button> : <button className="inline-flex min-h-11 items-center gap-3 bg-[#ff4e00] px-5 py-3 text-[0.8125rem] font-extrabold uppercase tracking-[0.12em] text-[#090908] transition-transform hover:-translate-y-0.5 hover:bg-[#e94700] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none" disabled={!requirements || capacity?.blocking || isSubmitting} onClick={submit} type="button">{isSubmitting ? "Solving the brief" : capacity?.blocking ? "Adjust brief to continue" : submitLabel}{isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Sparkles className="h-4 w-4" />}</button>}</footer>
+          <footer className="intake-actions mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#8e5a31]/25 pt-5"><ActionBar {...sharedActionBarProps} /></footer>
         </div>
       </div>
     </section>
   );
 }
 
-function Review({ draft, requirements, capacity }: { draft: IntakeDraft; requirements: BuildingRequirements | null; capacity: ReturnType<typeof assessBriefCapacity> | null }) {
+function Review({ draft, requirements, capacity }: { draft: IntakeDraft; requirements: CurrentBuildingRequirements | null; capacity: ReturnType<typeof assessBriefCapacity> | null }) {
   const totalBedrooms = draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bedrooms, 0);
   const totalBathrooms = draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.bathrooms, 0);
   const totalAttachedBathrooms = draft.programs.slice(0, draft.floorCount).reduce((sum, floor) => sum + floor.attachedBathrooms, 0);
@@ -407,6 +487,9 @@ function Review({ draft, requirements, capacity }: { draft: IntakeDraft; require
     ["Private rooms", `${totalBedrooms} bedrooms · ${totalBathrooms} bathrooms · ${totalAttachedBathrooms} attached`],
     ["Social spaces", draft.socialSpaceMode === "combined" ? "Combined living / dining hall" : "Separate living + dining"],
     ["Architecture", `${draft.architecturalStyle.replaceAll("_", " ")} · ${draft.formStrategy.replaceAll("_", " ")}`],
+    ["Entry", `${draft.currentEntry.primarySide.value.replaceAll("_", " ")} · ${draft.currentEntry.primaryDoorClearWidthMm} mm main door · ${draft.currentEntry.secondaryEntry.value.replaceAll("_", " ")} secondary`],
+    ["Roof + shade", `${draft.roofCharacter.replaceAll("_", " ")}${draft.shadeStructures.length ? ` · ${draft.shadeStructures.map((shade) => `${shade.type.replaceAll("_", " ")} at ${shade.location.replaceAll("_", " ")}`).join(", ")}` : " · no added shade structure"}`],
+    ["Above parking", draft.includeParking ? draft.aboveParkingUse.value.replaceAll("_", " ") : "No parking requested"],
     ["Budget target", draft.budgetHighMajor > 0 ? `${budget.format(draft.budgetLowMajor)} – ${budget.format(draft.budgetHighMajor)}` : "No target supplied"],
     ["Canonical output", requirements ? `${requirements.rooms.length} named spaces · ${requirements.relationships.length} relationship rules` : "Requires corrections"],
   ];

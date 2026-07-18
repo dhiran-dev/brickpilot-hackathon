@@ -1,4 +1,4 @@
-import type { BuildingRequirements } from "@/lib/building/requirements";
+import type { ReadableBuildingRequirements } from "@/lib/building/requirements";
 import type { ConfidenceGrade, CostWarning, RatePack } from "@/lib/cost/schema";
 
 export type RatePackSelection =
@@ -20,7 +20,7 @@ function lowerGrade(grade: Exclude<ConfidenceGrade, "unavailable">): Exclude<Con
 }
 
 export function selectRatePack(
-  requirements: BuildingRequirements,
+  requirements: ReadableBuildingRequirements,
   packs: readonly RatePack[],
   asOf: Date = new Date(),
 ): RatePackSelection {

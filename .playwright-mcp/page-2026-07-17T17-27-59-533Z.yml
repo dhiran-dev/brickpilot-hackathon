@@ -1,0 +1,154 @@
+- generic [ref=f8e1]:
+  - main [ref=f8e2]:
+    - generic [ref=f8e3]:
+      - generic [ref=f8e4]:
+        - generic [ref=f8e5]:
+          - generic [ref=f8e6]:
+            - paragraph [ref=f8e7]: BrickPilot
+            - paragraph [ref=f8e8]: Residential concept engineering
+          - generic [ref=f8e9]: Topology · validation · cost · drawing
+        - generic [ref=f8e10]:
+          - generic [ref=f8e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f8e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f8e18]
+      - generic [ref=f8e23]:
+        - generic [ref=f8e24]:
+          - paragraph [ref=f8e28]: Describe it in one sentence
+          - generic [ref=f8e29]:
+            - textbox "Home design description" [ref=f8e30]:
+              - /placeholder: 3BHK east-facing Vastu home for a family of 4 on a 30×50 plot
+            - button "Parse sentence" [disabled] [ref=f8e31]
+        - generic [ref=f8e32]:
+          - generic [ref=f8e34]:
+            - generic [ref=f8e35]:
+              - paragraph [ref=f8e36]: Guided residential brief
+              - heading "Questions before coordinates." [level=1] [ref=f8e37]
+              - paragraph [ref=f8e38]: Every answer becomes a measurable planning constraint. No room geometry or cost is invented from a sentence.
+            - button "Reset" [ref=f8e39]
+          - generic [ref=f8e43]:
+            - navigation "Brief steps" [ref=f8e44]:
+              - list [ref=f8e45]:
+                - listitem [ref=f8e46]:
+                  - button "Project" [ref=f8e152]
+                - listitem [ref=f8e51]:
+                  - button "Region" [ref=f8e155]
+                - listitem [ref=f8e55]:
+                  - button "Site" [ref=f8e158]
+                - listitem [ref=f8e59]:
+                  - button "Levels" [ref=f8e161]
+                - listitem [ref=f8e63]:
+                  - button "Rooms" [ref=f8e164]
+                - listitem [ref=f8e67]:
+                  - button "06 Style" [active] [ref=f8e68]:
+                    - generic [ref=f8e69]: "06"
+                    - generic [ref=f8e70]: Style
+                - listitem [ref=f8e71]:
+                  - button "07 Budget" [ref=f8e72]:
+                    - generic [ref=f8e73]: "07"
+                    - generic [ref=f8e74]: Budget
+                - listitem [ref=f8e75]:
+                  - button "08 Review" [ref=f8e76]:
+                    - generic [ref=f8e77]: "08"
+                    - generic [ref=f8e78]: Review
+            - generic [ref=f8e80]:
+              - paragraph [ref=f8e82]: Step 6 of 8 · Style
+              - button "Back" [ref=f8e83]
+              - button "Confirm & continue" [ref=f8e86]
+            - generic [ref=f8e89]:
+              - generic [ref=f8e90]:
+                - paragraph [ref=f8e91]: Step 6 of 8
+                - heading "What architectural character should shape it?" [level=2] [ref=f8e168]
+              - generic [ref=f8e169]:
+                - group "Choose the villa language" [ref=f8e170]:
+                  - paragraph [ref=f8e172]: This is a design constraint, not a decorative label. It controls elevation vocabulary, shade, roof expression and the visualization brief.
+                  - generic [ref=f8e173]:
+                    - generic [ref=f8e174] [cursor=pointer]:
+                      - radio "ST-01 Suggested for Kerala Selected Contemporary tropical Deep shade, screened openings, planted edges and warm natural finishes." [checked] [ref=f8e175]
+                      - generic [ref=f8e176]:
+                        - generic [ref=f8e177]:
+                          - generic [ref=f8e178]:
+                            - generic [ref=f8e179]: ST-01
+                            - generic [ref=f8e180]: Suggested for Kerala
+                          - generic [ref=f8e181]: Selected
+                        - generic [ref=f8e185]: Contemporary tropical
+                        - generic [ref=f8e186]: Deep shade, screened openings, planted edges and warm natural finishes.
+                    - generic [ref=f8e187] [cursor=pointer]:
+                      - radio "ST-02 Kerala contemporary Regional roof cues and rain protection with clear, modern planning." [ref=f8e188]
+                      - generic [ref=f8e189]:
+                        - generic [ref=f8e190]: ST-02
+                        - generic [ref=f8e193]: Kerala contemporary
+                        - generic [ref=f8e194]: Regional roof cues and rain protection with clear, modern planning.
+                    - generic [ref=f8e195] [cursor=pointer]:
+                      - radio "ST-03 Warm minimal Quiet planes, timber warmth and restrained, human-scaled detail." [ref=f8e196]
+                      - generic [ref=f8e197]:
+                        - generic [ref=f8e198]: ST-03
+                        - generic [ref=f8e201]: Warm minimal
+                        - generic [ref=f8e202]: Quiet planes, timber warmth and restrained, human-scaled detail.
+                    - generic [ref=f8e203] [cursor=pointer]:
+                      - radio "ST-04 Courtyard vernacular An inward-looking shaded heart with regionally grounded proportions." [ref=f8e204]
+                      - generic [ref=f8e205]:
+                        - generic [ref=f8e206]: ST-04
+                        - generic [ref=f8e209]: Courtyard vernacular
+                        - generic [ref=f8e210]: An inward-looking shaded heart with regionally grounded proportions.
+                    - generic [ref=f8e211] [cursor=pointer]:
+                      - radio "ST-05 Modernist Clear structural rhythm, strong horizontals and disciplined openings." [ref=f8e212]
+                      - generic [ref=f8e213]:
+                        - generic [ref=f8e214]: ST-05
+                        - generic [ref=f8e217]: Modernist
+                        - generic [ref=f8e218]: Clear structural rhythm, strong horizontals and disciplined openings.
+                  - paragraph [ref=f8e219]: Selected Contemporary tropical. Deep shade, screened openings, planted edges and warm natural finishes.
+                - group "Choose the built-form strategy" [ref=f8e220]:
+                  - paragraph [ref=f8e222]: Choose the volumetric rule that organizes rooms, courts and terraces. The plate is a strategy preview, not a generated façade.
+                  - generic [ref=f8e223]:
+                    - generic [ref=f8e224] [cursor=pointer]:
+                      - radio "FM-01 Stepped villa Receding levels create shaded entry courts and usable terraces." [ref=f8e225]
+                      - generic [ref=f8e226]:
+                        - generic [ref=f8e227]: FM-01
+                        - generic [ref=f8e230]: Stepped villa
+                        - generic [ref=f8e231]: Receding levels create shaded entry courts and usable terraces.
+                    - generic [ref=f8e232] [cursor=pointer]:
+                      - radio "FM-02 Suggested for Kerala Selected Courts + wings Connected room clusters frame practical side courts and an entry recess." [checked] [ref=f8e233]
+                      - generic [ref=f8e234]:
+                        - generic [ref=f8e235]:
+                          - generic [ref=f8e236]:
+                            - generic [ref=f8e237]: FM-02
+                            - generic [ref=f8e238]: Suggested for Kerala
+                          - generic [ref=f8e239]: Selected
+                        - generic [ref=f8e243]: Courts + wings
+                        - generic [ref=f8e244]: Connected room clusters frame practical side courts and an entry recess.
+                    - generic [ref=f8e245] [cursor=pointer]:
+                      - radio "FM-03 Courtyard form Reserve an open-to-sky planning heart as part of the room brief." [ref=f8e246]
+                      - generic [ref=f8e247]:
+                        - generic [ref=f8e248]: FM-03
+                        - generic [ref=f8e251]: Courtyard form
+                        - generic [ref=f8e252]: Reserve an open-to-sky planning heart as part of the room brief.
+                    - generic [ref=f8e253] [cursor=pointer]:
+                      - radio "FM-04 Compact An efficient envelope gains depth from shade and façade layers." [ref=f8e254]
+                      - generic [ref=f8e255]:
+                        - generic [ref=f8e256]: FM-04
+                        - generic [ref=f8e259]: Compact
+                        - generic [ref=f8e260]: An efficient envelope gains depth from shade and façade layers.
+                  - paragraph [ref=f8e261]: Selected Courts + wings. Connected room clusters frame practical side courts and an entry recess.
+                - generic [ref=f8e262]:
+                  - generic [ref=f8e263]:
+                    - text: Roof character
+                    - combobox "Roof character" [ref=f8e264]:
+                      - option "Mixed · shelter + terraces" [selected]
+                      - option "Predominantly sloped"
+                      - option "Flat parapet"
+                  - generic [ref=f8e265]:
+                    - text: Material direction
+                    - combobox "Material direction" [ref=f8e266]:
+                      - option "Warm natural · timber + stone + mineral plaster" [selected]
+                      - option "Earthy textured · brick + lime + local stone"
+                      - option "Light mineral · pale plaster + restrained timber"
+                      - option "Monochrome · concrete + dark metal + clear glazing"
+                - generic [ref=f8e267]:
+                  - strong [ref=f8e268]: Plot and house are separate decisions.
+                  - text: A rectangular site may contain stepped, winged or courtyard-based built form. BrickPilot still keeps every room and support concept inside the verified buildable envelope.
+              - generic [ref=f8e135]:
+                - button "Back" [ref=f8e136]
+                - button "Confirm & continue" [ref=f8e139]
+  - button "Open Next.js Dev Tools" [ref=f8e147] [cursor=pointer]
+  - alert [ref=f8e151]

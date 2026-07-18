@@ -14,13 +14,20 @@ export const replicatePredictionSchema = z.object({
 
 export type ReplicatePrediction = z.infer<typeof replicatePredictionSchema>;
 
+export class ReplicateCreateAmbiguousError extends Error {
+  constructor(cause: unknown) {
+    super("Replicate create outcome is ambiguous; await the tokenized provider webhook", { cause });
+    this.name = "ReplicateCreateAmbiguousError";
+  }
+}
+
 function token() {
   const value = process.env.REPLICATE_API_TOKEN;
   if (!value) throw new Error("REPLICATE_API_TOKEN is not configured");
   return value;
 }
 
-function model() {
+export function replicateModelVersion() {
   const value = process.env.IMAGE_MODEL ?? "openai/gpt-image-2";
   if (value !== "openai/gpt-image-2") throw new Error("IMAGE_MODEL must be openai/gpt-image-2 for Phase 7");
   return value;
@@ -31,13 +38,15 @@ function quality() {
   return parsed.success ? parsed.data : "high";
 }
 
-export function replicateWebhookUrl() {
+export function replicateWebhookUrl(dispatchToken?: string) {
   const base = process.env.NEXT_PUBLIC_APP_URL;
   if (!base) return undefined;
   try {
     const url = new URL(base);
     if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return undefined;
-    return new URL("/api/webhooks/replicate", url).toString();
+    const webhook = new URL("/api/webhooks/replicate", url);
+    if (dispatchToken) webhook.searchParams.set("dispatch", dispatchToken);
+    return webhook.toString();
   } catch {
     return undefined;
   }
@@ -66,8 +75,12 @@ export function safePredictionPayload(prediction: ReplicatePrediction) {
   };
 }
 
-export async function createReplicatePrediction(spec: RenderSpec, inputImages: string[]) {
-  const webhook = replicateWebhookUrl();
+export async function createReplicatePrediction(
+  spec: RenderSpec,
+  inputImages: string[],
+  options: { dispatchToken?: string } = {},
+) {
+  const webhook = replicateWebhookUrl(options.dispatchToken);
   const requestBody = JSON.stringify({
     input: {
       prompt: spec.prompt,
@@ -80,20 +93,34 @@ export async function createReplicatePrediction(spec: RenderSpec, inputImages: s
       output_compression: 90,
       moderation: "auto",
     },
-    ...(webhook ? { webhook, webhook_events_filter: ["completed"] } : {}),
+    // The start callback closes the provider-accepted/database-attach gap by carrying the
+    // durable dispatch token back with the provider prediction id. Completed remains for the
+    // normal asynchronous finalization path.
+    ...(webhook ? { webhook, webhook_events_filter: ["start", "completed"] } : {}),
   });
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch(`https://api.replicate.com/v1/models/${model()}/predictions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token()}`,
-        "Content-Type": "application/json",
-        "Cancel-After": "8m",
-      },
-      body: requestBody,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`https://api.replicate.com/v1/models/${replicateModelVersion()}/predictions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token()}`,
+          "Content-Type": "application/json",
+          "Cancel-After": "8m",
+        },
+        body: requestBody,
+      });
+    } catch (error) {
+      // A network failure cannot prove whether the provider accepted the POST. The durable
+      // dispatch stays active and the signed tokenized start/completed webhook resolves it.
+      throw new ReplicateCreateAmbiguousError(error);
+    }
     const body = await response.json().catch(() => null);
-    if (response.ok) return replicatePredictionSchema.parse(body);
+    if (response.ok) {
+      const parsed = replicatePredictionSchema.safeParse(body);
+      if (!parsed.success) throw new ReplicateCreateAmbiguousError(parsed.error);
+      return parsed.data;
+    }
     if (response.status === 429 && attempt === 0) {
       const headerDelay = Number(response.headers.get("retry-after"));
       const payloadDelay = body && typeof body === "object" && "retry_after" in body ? Number(body.retry_after) : Number.NaN;
@@ -114,4 +141,16 @@ export async function getReplicatePrediction(providerJobId: string) {
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new Error(`Replicate status failed (${response.status}): ${JSON.stringify(body).slice(0, 300)}`);
   return replicatePredictionSchema.parse(body);
+}
+
+export async function cancelReplicatePrediction(providerJobId: string) {
+  const response = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(providerJobId)}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token()}` },
+    cache: "no-store",
+  });
+  const body = await response.json().catch(() => null);
+  if (response.status === 404) return { disposition: "not_found" as const, prediction: null };
+  if (!response.ok) throw new Error(`Replicate cancel failed (${response.status}): ${JSON.stringify(body).slice(0, 300)}`);
+  return { disposition: "accepted" as const, prediction: replicatePredictionSchema.parse(body) };
 }

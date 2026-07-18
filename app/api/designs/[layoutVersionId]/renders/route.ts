@@ -1,17 +1,23 @@
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth";
-import { buildingRequirementsSchema } from "@/lib/building/requirements";
-import { buildingSchema } from "@/lib/building/schema";
+import { buildingRequirementsContractVersion, readableBuildingRequirementsSchema } from "@/lib/building/requirements";
+import { buildingContractVersion, readableBuildingSchema } from "@/lib/building/schema";
 import { db } from "@/lib/db";
 import { generatedAssets, generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
-import { persistedValidationReportSchema } from "@/lib/design/persisted-study";
+import { readablePersistedValidationReportSchema } from "@/lib/design/persisted-study";
+import { dispatchRenderSpecs, isSupportedRenderContractVersion, renderEligibleInteriorSpace, type VersionedRenderSpec } from "@/lib/render/dispatch";
+import { CURRENT_PROMPT_VERSION, type CurrentRenderSpec } from "@/lib/render/current-prompts";
 import { applyReplicatePrediction, reconcileReplicateJob, renderJobMatchesCanonical } from "@/lib/render/finalize-job";
+import { claimAndArmProviderDispatch, createAndAttachProviderPrediction, ProviderAcceptedBeforeAttachError } from "@/lib/render/provider-dispatch";
 import { buildRenderSpecs, isRenderPurpose, RENDER_CONTRACT_VERSION, RENDER_PURPOSES, type RenderPurpose, type RenderSpec } from "@/lib/render/prompts";
-import { createReplicatePrediction, safePredictionPayload } from "@/lib/render/replicate";
-import { decodeReferenceDataUri, storeReferenceDataUri } from "@/lib/render/storage";
+import { cancelReplicatePrediction, createReplicatePrediction, ReplicateCreateAmbiguousError, replicateModelVersion, replicateWebhookUrl } from "@/lib/render/replicate";
+import { compensateStoredAssets, decodeReferenceDataUri, settleAssetWrites, sha256Hex, storeReferenceDataUri } from "@/lib/render/storage";
+import { ACTIVE_GENERATION_STATUSES, lockProjectLifecycle } from "@/lib/server/project-lifecycle";
+import { emitProjectMutationDenial, projectMutationDenial } from "@/lib/server/project-capabilities";
+import { armProviderDispatch, attachProviderPredictionByDispatchToken, claimProviderDispatch, drainStaleDispatchClaims } from "@/lib/server/render-dispatch";
 
 const referenceRoleSchema = z.enum(["plan_reference", "massing_front", "massing_collage", "massing_top"]);
 const renderRequestSchema = z.object({
@@ -48,7 +54,11 @@ function errorResponse(message: string, status: number, code: string, details?: 
 }
 
 function purposeOf(payload: Record<string, unknown>): RenderPurpose | null {
-  return payload.renderContractVersion === RENDER_CONTRACT_VERSION && isRenderPurpose(payload.renderPurpose) ? payload.renderPurpose : null;
+  return isSupportedRenderContractVersion(payload.renderContractVersion) && isRenderPurpose(payload.renderPurpose) ? payload.renderPurpose : null;
+}
+
+function isCurrentRenderSpec(spec: VersionedRenderSpec): spec is CurrentRenderSpec {
+  return "promptVersion" in spec && spec.promptVersion === CURRENT_PROMPT_VERSION;
 }
 
 export function renderJobBelongsToScheme(payload: Record<string, unknown>, selectedSchemeId: string | null, geometryHash: string | null) {
@@ -69,16 +79,17 @@ function renderContractLockKey(layoutVersionId: string) {
 export async function renderState(layoutVersionId: string) {
   const [layout] = await db.select({ selectedSchemeId: layoutVersions.selectedSchemeId, building: layoutVersions.layoutJson })
     .from(layoutVersions).where(eq(layoutVersions.id, layoutVersionId)).limit(1);
-  const canonicalBuilding = buildingSchema.safeParse(layout?.building);
+  const canonicalBuilding = readableBuildingSchema.safeParse(layout?.building);
   const geometryHash = canonicalBuilding.success ? canonicalBuilding.data.candidate.geometryHash : null;
   const jobs = await db.select().from(generationJobs)
     .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")))
     .orderBy(generationJobs.createdAt);
+  const userJobs = jobs.filter((job) => job.requestPayload.releaseEvalBatch !== true);
   const assets = await db.select().from(generatedAssets)
     .where(eq(generatedAssets.layoutVersionId, layoutVersionId))
     .orderBy(generatedAssets.createdAt);
   const latestByPurpose = new Map<RenderPurpose, typeof generationJobs.$inferSelect>();
-  for (const job of jobs) {
+  for (const job of userJobs) {
     if (!renderJobBelongsToScheme(job.requestPayload, layout?.selectedSchemeId ?? null, geometryHash)) continue;
     const purpose = purposeOf(job.requestPayload);
     if (purpose) latestByPurpose.set(purpose, job);
@@ -99,7 +110,7 @@ export async function renderState(layoutVersionId: string) {
     const job = latestJobs.find((candidate) => candidate.providerJobId === asset.providerJobId);
     return { id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType, index, schemeId: typeof job?.requestPayload.schemeId === "string" ? job.requestPayload.schemeId : null };
   });
-  const previousJobs = jobs.filter((job) => !renderJobBelongsToScheme(job.requestPayload, layout?.selectedSchemeId ?? null, geometryHash));
+  const previousJobs = userJobs.filter((job) => !renderJobBelongsToScheme(job.requestPayload, layout?.selectedSchemeId ?? null, geometryHash));
   const previousProviderJobIds = new Set(previousJobs.map((job) => job.providerJobId).filter((id): id is string => Boolean(id)));
   const previousAssets = assets
     .filter((asset) => asset.type === "render" && Boolean(asset.providerJobId) && previousProviderJobIds.has(asset.providerJobId!))
@@ -129,7 +140,7 @@ export async function renderState(layoutVersionId: string) {
     if (belongsToCurrentPackage) latestSourceByRole.set(asset.role, asset);
   }
   const publicSources = [...latestSourceByRole.values()].map((asset) => ({ id: asset.id, role: asset.role, url: asset.url, contentType: asset.contentType }));
-  const active = latestJobs.some((job) => job.status === "queued" || job.status === "processing");
+  const active = latestJobs.some((job) => ACTIVE_GENERATION_STATUSES.includes(job.status as typeof ACTIVE_GENERATION_STATUSES[number]));
   const completedRoles = new Set(currentAssets.map((asset) => asset.role));
   const complete = RENDER_PURPOSES.every((purpose) => completedRoles.has(purpose));
   const failed = latestJobs.some((job) => job.status === "failed" || job.status === "canceled");
@@ -140,6 +151,8 @@ export async function renderState(layoutVersionId: string) {
 async function ownedStudy(layoutVersionId: string, userId: string) {
   const [row] = await db.select({
     projectId: projects.id,
+    projectStatus: projects.status,
+    capabilityProfile: projects.capabilityProfile,
     title: projects.title,
     status: layoutVersions.status,
     version: layoutVersions.version,
@@ -163,9 +176,10 @@ export async function GET(request: Request, context: { params: Promise<{ layoutV
   if (!await ownedStudy(layoutVersionId, user.id)) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
   const row = await ownedStudy(layoutVersionId, user.id);
   if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
-  const building = buildingSchema.safeParse(row.building);
+  const building = readableBuildingSchema.safeParse(row.building);
+  await drainStaleDispatchClaims(layoutVersionId);
   const activeJobs = await db.select().from(generationJobs)
-    .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render"), inArray(generationJobs.status, ["queued", "processing"])));
+    .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render"), inArray(generationJobs.status, [...ACTIVE_GENERATION_STATUSES])));
   const active = activeJobs.filter((job) => renderJobBelongsToScheme(job.requestPayload, row.selectedSchemeId, building.success ? building.data.candidate.geometryHash : null));
   await Promise.allSettled(active.map((job) => reconcileReplicateJob(job.id)));
   return NextResponse.json(await renderState(layoutVersionId));
@@ -185,8 +199,9 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   }
   const parsed = renderRequestSchema.safeParse(body);
   if (!parsed.success) return errorResponse("Render references are missing or invalid.", 400, "INVALID_RENDER_REFERENCES", parsed.error.flatten());
+  const referenceChecksums = new Map<string, string>();
   try {
-    parsed.data.references.forEach((reference) => decodeReferenceDataUri(reference.dataUri));
+    parsed.data.references.forEach((reference) => referenceChecksums.set(reference.role, sha256Hex(decodeReferenceDataUri(reference.dataUri).bytes)));
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Reference image is invalid.", 400, "INVALID_REFERENCE_IMAGE");
   }
@@ -195,50 +210,88 @@ export async function POST(request: Request, context: { params: Promise<{ layout
 
   const row = await ownedStudy(layoutVersionId, user.id);
   if (!row) return errorResponse("Study not found.", 404, "STUDY_NOT_FOUND");
+  await drainStaleDispatchClaims(layoutVersionId);
+  const preflightDenial = projectMutationDenial(row.capabilityProfile, row.projectStatus, "canGenerateRender");
+  if (preflightDenial) {
+    emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canGenerateRender", profile: row.capabilityProfile, status: row.projectStatus, phase: "preflight", code: preflightDenial.code });
+    return errorResponse(preflightDenial.message, 409, preflightDenial.code);
+  }
   if (row.status !== "completed") return errorResponse("This study is not completed yet.", 409, "STUDY_NOT_COMPLETED");
-  const building = buildingSchema.safeParse(row.building);
-  const requirements = buildingRequirementsSchema.safeParse(row.requirements);
-  const validation = persistedValidationReportSchema.safeParse(row.validation);
+  const building = readableBuildingSchema.safeParse(row.building);
+  const requirements = readableBuildingRequirementsSchema.safeParse(row.requirements);
+  const validation = readablePersistedValidationReportSchema.safeParse(row.validation);
   if (!building.success || !requirements.success || !validation.success) return errorResponse("This saved study is incompatible with the render pipeline.", 409, "INCOMPATIBLE_STUDY");
+  if (buildingContractVersion(building.data) !== buildingRequirementsContractVersion(requirements.data)
+    || buildingContractVersion(building.data) !== ("schemaVersion" in validation.data ? "v3" : "v2")) {
+    return errorResponse("This saved study mixes incompatible contract versions.", 409, "INCOMPATIBLE_STUDY");
+  }
   if (!validation.data.valid) return errorResponse("Resolve hard validation errors before creating concept renders.", 409, "VALIDATION_BLOCKED");
   if (parsed.data.schemeId !== row.selectedSchemeId) return errorResponse("The reference package belongs to a different selected scheme. Reload the study and capture again.", 409, "STALE_SCHEME");
   if (parsed.data.geometryHash !== building.data.candidate.geometryHash) return errorResponse("The 3D references belong to an older geometry revision. Reload the study and capture again.", 409, "STALE_GEOMETRY");
-  const selected = building.data.floors.flatMap((floor) => floor.spaces).find((space) => space.id === parsed.data.selectedInteriorSpaceId);
-  if (!selected || !selected.occupied || ["parking", "circulation", "stair", "courtyard", "terrace", "balcony"].includes(selected.type)) {
+  const selected = renderEligibleInteriorSpace(building.data, parsed.data.selectedInteriorSpaceId);
+  if (!selected) {
     return errorResponse("Choose an occupied interior room for the furnished concept.", 400, "INVALID_INTERIOR_SPACE");
   }
   const [{ latestVersion }] = await db.select({ latestVersion: sql<number>`max(${layoutVersions.version})::integer` }).from(layoutVersions).where(eq(layoutVersions.projectId, row.projectId));
   if (Number(latestVersion) !== row.version) return errorResponse("Open the latest immutable study version before spending on renders.", 409, "STALE_STUDY_VERSION");
 
-  const specs = buildRenderSpecs({ building: building.data, requirements: requirements.data, selectedInteriorSpaceId: selected.id });
+  const dispatch = dispatchRenderSpecs({ building: building.data, requirements: requirements.data, selectedInteriorSpaceId: selected.id });
+  const specs = dispatch.specs;
   const now = new Date();
   const dayStart = new Date(now);
   dayStart.setUTCHours(0, 0, 0, 0);
   const packageId = crypto.randomUUID();
-  let reserved: { reused: boolean; jobs: Array<typeof generationJobs.$inferSelect>; specs: RenderSpec[]; binding: { schemeId: string | null; geometryHash: string } };
+  let reserved: { reused: boolean; sourcesReady?: boolean; jobs: Array<typeof generationJobs.$inferSelect>; specs: VersionedRenderSpec[]; binding: { schemeId: string | null; geometryHash: string; buildingSchemaVersion: 2 | 3; renderContractVersion: 2 | 3 } };
   try {
     reserved = await db.transaction(async (transaction) => {
+      await lockProjectLifecycle(transaction, row.projectId);
       await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${renderContractLockKey(layoutVersionId)}, 0))`);
+      const [projectState] = await transaction
+        .select({ status: projects.status, capabilityProfile: projects.capabilityProfile })
+        .from(projects)
+        .where(and(eq(projects.id, row.projectId), eq(projects.ownerId, user.id)))
+        .limit(1);
+      if (!projectState) throw new Error("PROJECT_STATE_CHANGED");
+      const denial = projectMutationDenial(projectState.capabilityProfile, projectState.status, "canGenerateRender");
+      if (denial) {
+        emitProjectMutationDenial({ projectId: row.projectId, layoutVersionId, capability: "canGenerateRender", profile: projectState.capabilityProfile, status: projectState.status, phase: "transaction_recheck", code: denial.code });
+        throw new Error(denial.code);
+      }
       const [currentLayout] = await transaction.select({
         selectedSchemeId: layoutVersions.selectedSchemeId,
         building: layoutVersions.layoutJson,
       }).from(layoutVersions).where(eq(layoutVersions.id, layoutVersionId)).limit(1);
-      const currentBuilding = buildingSchema.safeParse(currentLayout?.building);
+      const currentBuilding = readableBuildingSchema.safeParse(currentLayout?.building);
       if (!currentBuilding.success || currentBuilding.data.candidate.geometryHash !== parsed.data.geometryHash) throw new Error("STALE_GEOMETRY");
+      if (currentBuilding.data.buildingSchemaVersion !== dispatch.buildingSchemaVersion) throw new Error("STALE_GEOMETRY");
       const selectedSchemeId = currentLayout?.selectedSchemeId ?? null;
       if (selectedSchemeId !== parsed.data.schemeId) throw new Error("STALE_SCHEME");
-      const binding = { schemeId: selectedSchemeId, geometryHash: currentBuilding.data.candidate.geometryHash };
+      const binding = {
+        schemeId: selectedSchemeId,
+        geometryHash: currentBuilding.data.candidate.geometryHash,
+        buildingSchemaVersion: dispatch.buildingSchemaVersion,
+        renderContractVersion: dispatch.renderContractVersion,
+      };
       const existing = await transaction.select().from(generationJobs)
         .where(and(eq(generationJobs.layoutVersionId, layoutVersionId), eq(generationJobs.kind, "render")))
         .orderBy(generationJobs.createdAt);
-      const currentExisting = existing.filter((job) => renderJobBelongsToScheme(job.requestPayload, selectedSchemeId, currentBuilding.data.candidate.geometryHash));
-      const active = currentExisting.filter((job) => job.status === "queued" || job.status === "processing");
+      // Internal five-sample release evidence is isolated from the user's render package and
+      // retry budget. It still remains a lifecycle-active render for deletion/scheme locking.
+      const currentExisting = existing.filter((job) => job.requestPayload.releaseEvalBatch !== true
+        && renderJobBelongsToScheme(job.requestPayload, selectedSchemeId, currentBuilding.data.candidate.geometryHash));
+      const active = currentExisting.filter((job) => ACTIVE_GENERATION_STATUSES.includes(job.status as typeof ACTIVE_GENERATION_STATUSES[number]));
+      const recovered = active.filter((job) => job.status === "queued" && job.dispatchState === "reserved" && job.dispatchToken && !job.providerJobId);
+      if (recovered.length > 0) {
+        const recoveredPurposes = new Set(recovered.map((job) => purposeOf(job.requestPayload)).filter(Boolean));
+        return { reused: false, sourcesReady: true, jobs: recovered, specs: specs.filter((spec) => recoveredPurposes.has(spec.purpose)), binding };
+      }
       if (active.length > 0) return { reused: true, jobs: active, specs: [], binding };
       const completedPurposes = new Set(currentExisting.filter((job) => job.status === "completed").map((job) => purposeOf(job.requestPayload)).filter(Boolean));
       const missingSpecs = specs.filter((spec) => !completedPurposes.has(spec.purpose));
       if (missingSpecs.length === 0) return { reused: true, jobs: currentExisting.filter((job) => job.status === "completed"), specs: [], binding };
       for (const spec of missingSpecs) {
-        const attempts = currentExisting.filter((job) => purposeOf(job.requestPayload) === spec.purpose).length;
+        const attempts = currentExisting.filter((job) => purposeOf(job.requestPayload) === spec.purpose
+          && (job.dispatchToken == null || job.dispatchAttemptedAt != null)).length;
         if (attempts >= MAX_RENDER_ATTEMPTS_PER_PURPOSE) throw new Error(`RETRY_LIMIT:${spec.purpose}`);
       }
       const requestedNow = missingSpecs.reduce((sum, spec) => sum + spec.requestedOutputCount, 0);
@@ -247,23 +300,44 @@ export async function POST(request: Request, context: { params: Promise<{ layout
       }).from(generationJobs)
         .innerJoin(layoutVersions, eq(generationJobs.layoutVersionId, layoutVersions.id))
         .innerJoin(projects, eq(layoutVersions.projectId, projects.id))
-        .where(and(eq(projects.ownerId, user.id), eq(generationJobs.kind, "render"), gte(generationJobs.createdAt, dayStart)));
+        .where(and(
+          eq(projects.ownerId, user.id),
+          eq(generationJobs.kind, "render"),
+          gte(generationJobs.createdAt, dayStart),
+          sql`coalesce(${generationJobs.requestPayload}->>'releaseEvalBatch', 'false') <> 'true'`,
+          or(isNull(generationJobs.dispatchToken), sql`${generationJobs.dispatchAttemptedAt} is not null`),
+        ));
       const [globalUsage] = await transaction.select({
         outputs: sql<number>`coalesce(sum(coalesce((${generationJobs.requestPayload}->>'requestedOutputCount')::integer, 1)), 0)::integer`,
-      }).from(generationJobs).where(and(eq(generationJobs.kind, "render"), gte(generationJobs.createdAt, dayStart)));
+      }).from(generationJobs).where(and(
+        eq(generationJobs.kind, "render"),
+        gte(generationJobs.createdAt, dayStart),
+        sql`coalesce(${generationJobs.requestPayload}->>'releaseEvalBatch', 'false') <> 'true'`,
+        or(isNull(generationJobs.dispatchToken), sql`${generationJobs.dispatchAttemptedAt} is not null`),
+      ));
       if (Number(userUsage?.outputs ?? 0) + requestedNow > DAILY_IMAGE_LIMIT) throw new Error("USER_IMAGE_LIMIT");
       if (Number(globalUsage?.outputs ?? 0) + requestedNow > GLOBAL_DAILY_AI_CAP) throw new Error("GLOBAL_IMAGE_LIMIT");
       const jobs: Array<typeof generationJobs.$inferSelect> = [];
+      const sourcePrefix = renderSourceStoragePrefix(layoutVersionId, {
+        packageId,
+        schemeId: binding.schemeId ?? undefined,
+        geometryHash: binding.geometryHash,
+      });
       for (const spec of missingSpecs) {
+        const sourceStorageKey = `${sourcePrefix}${spec.sourceRole}.webp`;
+        const currentSpec = binding.buildingSchemaVersion === 3 && isCurrentRenderSpec(spec) ? spec : null;
+        const dispatchToken = crypto.randomUUID();
         const [job] = await transaction.insert(generationJobs).values({
           layoutVersionId,
           kind: "render",
           provider: "replicate",
+          dispatchToken,
+          dispatchState: "reserved",
           idempotencyKey: `render:${layoutVersionId}:${packageId}:${spec.purpose}`,
           status: "queued",
           requestPayload: {
             packageId,
-            renderContractVersion: RENDER_CONTRACT_VERSION,
+            renderContractVersion: binding.renderContractVersion,
             renderPurpose: spec.purpose,
             requestedOutputCount: spec.requestedOutputCount,
             geometryHash: binding.geometryHash,
@@ -271,10 +345,38 @@ export async function POST(request: Request, context: { params: Promise<{ layout
             selectedInteriorSpaceId: selected.id,
             referenceRoles: [spec.sourceRole],
             prompt: spec.prompt,
+            ...(currentSpec ? {
+              buildingSchemaVersion: 3,
+              providerModelVersion: replicateModelVersion(),
+              promptVersion: currentSpec.promptVersion,
+              semanticView: currentSpec.semanticView,
+              semanticCamera: currentSpec.semanticCamera,
+              geometryLock: currentSpec.geometryLock,
+              releaseEvalTarget: currentSpec.releaseEvalTarget,
+              inputReferences: [{
+                role: spec.sourceRole,
+                storageKey: sourceStorageKey,
+                checksum: referenceChecksums.get(spec.sourceRole),
+              }],
+            } : {}),
           },
           updatedAt: now,
         }).returning();
         jobs.push(job);
+      }
+      for (const reference of orderedReferences) {
+        const storageKey = `${sourcePrefix}${reference.role}.webp`;
+        await transaction.insert(generatedAssets).values({
+          projectId: row.projectId,
+          layoutVersionId,
+          type: "source",
+          role: reference.role,
+          provider: "brickpilot",
+          status: "finalizing",
+          storageKey,
+          url: `/api/assets/${storageKey.split("/").map(encodeURIComponent).join("/")}`,
+          contentType: "application/octet-stream",
+        }).onConflictDoNothing();
       }
       return { reused: false, jobs, specs: missingSpecs, binding };
     });
@@ -283,6 +385,9 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     if (message.startsWith("RETRY_LIMIT:")) return errorResponse(`The ${message.split(":")[1]} render reached its retry limit.`, 409, "RENDER_RETRY_LIMIT");
     if (message === "STALE_SCHEME") return errorResponse("The selected scheme changed before render reservation. Reload and capture the references again.", 409, "STALE_SCHEME");
     if (message === "STALE_GEOMETRY") return errorResponse("The selected scheme changed before render reservation. Reload and capture the references again.", 409, "STALE_GEOMETRY");
+    if (message === "PROJECT_VIEW_ONLY") return errorResponse("This legacy project is view-only. Its saved results remain available.", 409, "PROJECT_VIEW_ONLY");
+    if (message === "PROJECT_DELETING") return errorResponse("This project is being deleted.", 409, "PROJECT_DELETING");
+    if (message === "PROJECT_NOT_READY" || message === "PROJECT_STATE_CHANGED") return errorResponse("This project is not ready for rendering.", 409, "PROJECT_NOT_READY");
     if (message === "USER_IMAGE_LIMIT") return errorResponse("Daily image limit reached. Try again tomorrow.", 429, "IMAGE_RATE_LIMITED");
     if (message === "GLOBAL_IMAGE_LIMIT") return errorResponse("The global image budget is paused for today.", 503, "GLOBAL_IMAGE_CAP_REACHED");
     console.error("Render reservation failed", error);
@@ -290,36 +395,40 @@ export async function POST(request: Request, context: { params: Promise<{ layout
   }
   if (reserved.reused) return NextResponse.json(await renderState(layoutVersionId));
 
-  try {
+  if (!reserved.sourcesReady) {
     const sourcePrefix = renderSourceStoragePrefix(layoutVersionId, {
-      packageId,
-      schemeId: reserved.binding.schemeId ?? undefined,
-      geometryHash: reserved.binding.geometryHash,
-    });
-    const stored = await Promise.all(orderedReferences.map((reference) => storeReferenceDataUri(
-      reference.dataUri,
-      `${sourcePrefix}${reference.role}.webp`,
+    packageId,
+    schemeId: reserved.binding.schemeId ?? undefined,
+    geometryHash: reserved.binding.geometryHash,
+  });
+    const sourceKeys = orderedReferences.map((reference) => `${sourcePrefix}${reference.role}.webp`);
+    const sourceWrites = await settleAssetWrites(orderedReferences.map((reference, index) => () => (
+      storeReferenceDataUri(reference.dataUri, sourceKeys[index])
     )));
+    try {
+    if (sourceWrites.failures.length > 0) throw new Error(`${sourceWrites.failures.length} reference upload(s) failed`);
     await db.transaction(async (transaction) => {
-      for (const [index, asset] of stored.entries()) {
-        await transaction.insert(generatedAssets).values({
-          projectId: row.projectId,
-          layoutVersionId,
-          type: "source",
-          role: orderedReferences[index].role,
-          provider: "brickpilot",
+      await lockProjectLifecycle(transaction, row.projectId);
+      const [projectState] = await transaction.select({ status: projects.status }).from(projects)
+        .where(eq(projects.id, row.projectId)).limit(1);
+      if (!projectState || projectState.status === "deleting") throw new Error("PROJECT_DELETING_AFTER_REFERENCE_UPLOAD");
+      for (const { value: asset } of sourceWrites.stored) {
+        await transaction.update(generatedAssets).set({
           status: "completed",
-          storageKey: asset.storageKey,
           url: asset.url,
           contentType: asset.contentType,
-        }).onConflictDoNothing();
+        }).where(eq(generatedAssets.storageKey, asset.storageKey));
       }
     });
-  } catch (error) {
+    } catch (error) {
+    await compensateStoredAssets(sourceWrites.stored.map((item) => item.value));
+    await db.update(generatedAssets).set({ status: "failed" })
+      .where(inArray(generatedAssets.storageKey, sourceKeys));
     const failedAt = new Date();
     await db.update(generationJobs).set({ status: "failed", failureReason: `Reference storage failed: ${error instanceof Error ? error.message : "unknown error"}`, completedAt: failedAt, updatedAt: failedAt })
       .where(inArray(generationJobs.id, reserved.jobs.map((job) => job.id)));
-    return errorResponse("The geometry references could not be stored, so nothing was sent to GPT Image 2.", 502, "REFERENCE_STORAGE_FAILED");
+      return errorResponse("The geometry references could not be stored, so nothing was sent to GPT Image 2.", 502, "REFERENCE_STORAGE_FAILED");
+    }
   }
 
   for (const job of reserved.jobs) {
@@ -329,20 +438,60 @@ export async function POST(request: Request, context: { params: Promise<{ layout
     try {
       const source = referencesByRole.get(spec.sourceRole);
       if (!source) throw new Error(`Required render source ${spec.sourceRole} is missing`);
-      const prediction = await createReplicatePrediction(spec, [source.dataUri]);
-      const startedAt = new Date();
-      await db.update(generationJobs).set({
-        providerJobId: prediction.id,
-        status: "processing",
-        responsePayload: safePredictionPayload(prediction) as Record<string, unknown>,
-        startedAt,
-        updatedAt: startedAt,
-      }).where(eq(generationJobs.id, job.id));
+      const armed = await claimAndArmProviderDispatch({
+        claim: () => claimProviderDispatch(row.projectId, job.id),
+        arm: (claim) => claim.leaseToken
+          ? armProviderDispatch(row.projectId, job.id, claim.leaseToken)
+          : Promise.resolve(null),
+      });
+      if (!armed?.dispatchToken) continue;
+      // Only the pre-attempt `claimed` state is safe to expire. `armProviderDispatch` commits
+      // provider-pending evidence before fetch, so ambiguous outcomes are never redriven.
+      const prediction = await createAndAttachProviderPrediction({
+        create: () => createReplicatePrediction(spec, [source.dataUri], { dispatchToken: armed.dispatchToken! }),
+        attach: async (created) => {
+          const attached = await attachProviderPredictionByDispatchToken(armed.dispatchToken!, created);
+          if (!attached?.attached) throw new Error("PROVIDER_DISPATCH_ATTACHMENT_REJECTED");
+        },
+      });
       await applyReplicatePrediction(job.id, prediction);
     } catch (error) {
+      if (error instanceof ProviderAcceptedBeforeAttachError) {
+        const dispatchToken = job.dispatchToken;
+        // Public deployments recover through the signed tokenized webhook. Local/non-webhook
+        // environments cannot do so after request loss, therefore cancel the accepted provider
+        // work instead of leaving an untracked paid prediction running.
+        if (dispatchToken && !replicateWebhookUrl(dispatchToken)) {
+          try {
+            const canceled = await cancelReplicatePrediction(error.prediction.id);
+            const terminal = canceled.prediction ?? { ...error.prediction, status: "canceled" as const, output: null };
+            await attachProviderPredictionByDispatchToken(dispatchToken, terminal);
+            await applyReplicatePrediction(job.id, terminal);
+          } catch (recoveryError) {
+            console.error("Unable to cancel a provider prediction after dispatch attachment failed", recoveryError);
+          }
+        }
+        console.error("Provider prediction accepted; awaiting durable webhook attachment", {
+          generationJobId: job.id,
+          providerJobId: error.prediction.id,
+        });
+        continue;
+      }
+      if (error instanceof ReplicateCreateAmbiguousError && job.dispatchToken && replicateWebhookUrl(job.dispatchToken)) {
+        console.error("Replicate create outcome is ambiguous; awaiting durable webhook recovery", { generationJobId: job.id });
+        continue;
+      }
       const failedAt = new Date();
-      await db.update(generationJobs).set({ status: "failed", failureReason: error instanceof Error ? error.message : "Replicate create failed", completedAt: failedAt, updatedAt: failedAt })
-        .where(and(eq(generationJobs.id, job.id), inArray(generationJobs.status, ["queued", "processing"])));
+      await db.update(generationJobs).set({
+        status: "failed",
+        dispatchState: "failed",
+        dispatchLeaseToken: null,
+        dispatchLeaseAcquiredAt: null,
+        failureReason: error instanceof Error ? error.message : "Replicate create failed",
+        completedAt: failedAt,
+        updatedAt: failedAt,
+      })
+        .where(and(eq(generationJobs.id, job.id), inArray(generationJobs.status, [...ACTIVE_GENERATION_STATUSES])));
     }
   }
   return NextResponse.json(await renderState(layoutVersionId), { status: 202 });

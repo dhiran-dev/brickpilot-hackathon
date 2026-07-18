@@ -1,37 +1,87 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ArchitectureReferencePicker } from "@/components/guided-intake/GuidedIntake";
+import { ArchitectureOptionCard, ArchitectureReferencePicker } from "@/components/guided-intake/GuidedIntake";
 import { ARCHITECTURAL_STYLE_PREVIEWS, FORM_STRATEGY_PREVIEWS } from "@/components/guided-intake/architecture-options";
 
-describe("GuidedIntake pinned architecture references", () => {
-  test("renders a native radio group with one pinned selected reference", () => {
+function findElements(node: ReactNode, predicate: (element: ReactElement) => boolean): ReactElement[] {
+  const matches: ReactElement[] = [];
+  const visit = (child: ReactNode): void => {
+    if (Array.isArray(child)) { child.forEach(visit); return; }
+    if (!isValidElement(child)) return;
+    if (predicate(child)) matches.push(child);
+    visit((child.props as { children?: ReactNode }).children);
+  };
+  visit(node);
+  return matches;
+}
+
+describe("GuidedIntake architecture option cards", () => {
+  test("renders every option as a radio card in a responsive grid", () => {
     const markup = renderToStaticMarkup(createElement(ArchitectureReferencePicker, {
       legend: "Choose the villa language",
       description: "Choose a grounded regional reference.",
       name: "architectural-style-test",
       options: ARCHITECTURAL_STYLE_PREVIEWS,
       value: "contemporary_tropical",
-      suggestedValue: "contemporary_tropical",
-      suggestionLabel: "Kerala",
       onChange: () => undefined,
     }));
 
     expect(markup).toContain("<fieldset");
-    expect(markup).toContain("data-layout=\"pinned-reference-choice-rail\"");
-    expect(markup.match(/type="radio"/g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length);
-    expect(markup.match(/checked=""/g)?.length).toBe(1);
+    expect(markup).toContain("sm:grid-cols-2 xl:grid-cols-3");
+    expect(markup).toContain("aspect-[16/10]");
     expect(markup).toContain("name=\"architectural-style-test-");
-    expect(markup).toContain("Suggested for Kerala");
-    expect(markup).toContain("Layered tropical villa with deep overhangs and screened terraces");
-    expect(markup).toContain("reference illustration unavailable");
-    expect(markup).toContain("aria-live=\"polite\"");
+    expect(markup.match(/type="radio"/g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length);
+    expect(markup.match(/<img /g)?.length).toBe(ARCHITECTURAL_STYLE_PREVIEWS.length);
+    for (const option of ARCHITECTURAL_STYLE_PREVIEWS) {
+      expect(markup).toContain(option.title);
+      expect(markup).toContain(option.detail);
+      expect(markup).toContain(option.plate);
+      expect(markup).toContain(`value="${option.value}"`);
+      expect(markup).toContain(option.imageAlt);
+    }
+    expect(markup).not.toContain("data-layout=");
+    expect(markup).not.toContain("intake-reference");
+    expect(markup).not.toContain("intake-choice-rail");
+    expect(markup).not.toContain("reference unavailable");
     expect(markup).not.toContain("aria-pressed");
   });
 
-  test("preserves complete long labels and uses a separate radio group for form strategy", () => {
+  test("marks the selected option with the checked radio and check badge", () => {
+    const markup = renderToStaticMarkup(createElement(ArchitectureReferencePicker, {
+      legend: "Choose the villa language",
+      description: "Choose a grounded regional reference.",
+      name: "architectural-style-test",
+      options: ARCHITECTURAL_STYLE_PREVIEWS,
+      value: "kerala_contemporary",
+      onChange: () => undefined,
+    }));
+
+    expect(markup.match(/checked=""/g)?.length).toBe(1);
+    expect(markup).toMatch(/<input(?=[^>]*checked="")(?=[^>]*value="kerala_contemporary")[^>]*>/);
+    expect(markup).toContain("<span class=\"sr-only\">Selected</span>");
+    expect(markup).toContain("aria-live=\"polite\"");
+    expect(markup).toContain("Selected Kerala contemporary.");
+  });
+
+  test("shows the regional suggestion once as a compact badge", () => {
+    const markup = renderToStaticMarkup(createElement(ArchitectureReferencePicker, {
+      legend: "Choose the villa language",
+      description: "Choose a grounded regional reference.",
+      name: "architectural-style-test",
+      options: ARCHITECTURAL_STYLE_PREVIEWS,
+      value: "modernist",
+      suggestedValue: "kerala_contemporary",
+      suggestionLabel: "Kerala",
+      onChange: () => undefined,
+    }));
+
+    expect(markup.match(/Suggested for Kerala/g)?.length).toBe(1);
+  });
+
+  test("preserves complete long labels and uses a separate radio group per picker", () => {
     const longOptions = [{
       ...FORM_STRATEGY_PREVIEWS[0],
       title: "Stepped terraces with a deliberately extended architectural reference label",
@@ -50,18 +100,61 @@ describe("GuidedIntake pinned architecture references", () => {
     expect(markup).toContain("Stepped terraces with a deliberately extended architectural reference label");
   });
 
-  test("defines the approved three responsive bands, 44px targets and reduced-motion override", () => {
+  test("calls onChange with the option value when a card radio changes", () => {
+    const option = FORM_STRATEGY_PREVIEWS[1];
+    const selected: string[] = [];
+    const card = ArchitectureOptionCard({
+      option,
+      checked: false,
+      radioName: "form-strategy-group",
+      onSelect: (value) => selected.push(value),
+      onImageError: () => undefined,
+    });
+
+    const radios = findElements(card, (element) => element.type === "input");
+    expect(radios).toHaveLength(1);
+    expect((radios[0].props as { type: string }).type).toBe("radio");
+    expect((radios[0].props as { value: string }).value).toBe(option.value);
+    (radios[0].props as { onChange: () => void }).onChange();
+    expect(selected).toEqual([option.value]);
+  });
+
+  test("hides the thumbnail entirely after an image error so the card still reads complete", () => {
+    const option = ARCHITECTURAL_STYLE_PREVIEWS[0];
+    const failedSources: string[] = [];
+    const props = {
+      option,
+      checked: true,
+      radioName: "architectural-style-group",
+      onSelect: () => undefined,
+      onImageError: (source: string) => failedSources.push(source),
+    };
+
+    const card = ArchitectureOptionCard(props);
+    const images = findElements(card, (element) => element.type === "img");
+    expect(images).toHaveLength(1);
+    expect((images[0].props as { alt: string }).alt).toBe(option.imageAlt);
+    expect((images[0].props as { src: string }).src).toBe(option.imageSrc);
+    (images[0].props as { onError: () => void }).onError();
+    expect(failedSources).toEqual([option.imageSrc]);
+
+    const degraded = renderToStaticMarkup(createElement(ArchitectureOptionCard, { ...props, imageFailed: true }));
+    expect(degraded).not.toContain("<img");
+    expect(degraded).not.toContain("aspect-[16/10]");
+    expect(degraded).not.toContain("unavailable");
+    expect(degraded).toContain(option.plate);
+    expect(degraded).toContain(option.title);
+    expect(degraded).toContain(option.detail);
+  });
+
+  test("drops the retired reference-sheet and choice-rail styles from globals.css", () => {
     const css = readFileSync("app/globals.css", "utf8");
 
-    expect(css).toContain("@media (min-width: 1200px)");
-    expect(css).toContain("@media (min-width: 768px) and (max-width: 1199px)");
-    expect(css).toContain("@media (max-width: 767px)");
-    expect(css).toContain("min-height: 44px");
-    expect(css).toContain("min-height: 56px");
-    expect(css).toContain("env(safe-area-inset-bottom)");
-    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(css).toContain("grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr)");
-    expect(css).toContain("aspect-ratio: 4 / 3");
-    expect(css).toContain("-webkit-line-clamp: 2");
+    expect(css).not.toContain("intake-reference");
+    expect(css).not.toContain("intake-choice-rail");
+    expect(css).not.toContain("intake-radio-input");
+    expect(css).not.toContain("-webkit-line-clamp");
+    expect(css).toContain(".intake-stepper");
+    expect(css).toContain(".intake-actions");
   });
 });

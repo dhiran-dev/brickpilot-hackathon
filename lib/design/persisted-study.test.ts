@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { classifyPersistedStudy, type PersistedStudyRow } from "@/lib/design/persisted-study";
+import { createCurrentRequirements, DEFAULT_INTAKE_DRAFT } from "@/components/guided-intake/model";
+import { generateV3PhysicalStage } from "@/lib/building/generate-v3-physical";
+import { estimateBuildingCost } from "@/lib/cost";
+import { classifyPersistedStudy, classifyReadablePersistedStudy, persistedStudyContractVersions, type PersistedStudyRow } from "@/lib/design/persisted-study";
+import { validateV3SchemeStage } from "@/lib/validation";
 
 const requirements = {
   requirementSchemaVersion: 2,
@@ -41,6 +45,48 @@ const diagnostics = { watchdogMs: 8000, candidateCeiling: 3000, plannedCandidate
 const row: PersistedStudyRow = { projectId: "project", designId: "design", version: 1, title: "Saved study", status: "completed", createdAt: new Date("2026-07-16T00:00:00.000Z"), requirements, building, validation, costEstimate, aiReview: null, intent: { generationDiagnostics: diagnostics } };
 
 describe("persisted study compatibility", () => {
+  test("opens only complete homogeneous v3 scheme sets", () => {
+    const currentRequirements = createCurrentRequirements(DEFAULT_INTAKE_DRAFT);
+    const physical = generateV3PhysicalStage(currentRequirements);
+    const validated = validateV3SchemeStage(physical.schemes, currentRequirements, { cohortId: "persisted-study-test" });
+    const currentRow: PersistedStudyRow = {
+      ...row,
+      requirements: currentRequirements,
+      building: validated.building,
+      validation: validated.validation,
+      costEstimate: estimateBuildingCost(validated.building, currentRequirements),
+      aiReview: { status: "unavailable", reason: "not_configured" },
+      schemes: validated.schemes,
+      selectedSchemeId: validated.selectedSchemeId,
+    };
+
+    expect(classifyReadablePersistedStudy(currentRow)).toMatchObject({ compatible: true, study: { selectedSchemeId: validated.selectedSchemeId } });
+    expect(classifyReadablePersistedStudy({ ...currentRow, aiReview: null })).toMatchObject({ compatible: false, study: { reason: "INVALID_AI_REVIEW" } });
+    expect(classifyReadablePersistedStudy({
+      ...currentRow,
+      schemes: [validated.schemes[0], {
+        schemeId: "legacy-mixed",
+        partiId: "legacy",
+        name: "Legacy mixed",
+        rationale: "Invalid mixed-contract fixture.",
+        building,
+        validation,
+        evidence: [],
+        ladderRung: 0,
+      }],
+    })).toMatchObject({ compatible: false, study: { reason: "INVALID_SCHEMES" } });
+  });
+
+  test("discriminates persisted contracts before invoking full read schemas", () => {
+    expect(persistedStudyContractVersions(row)).toEqual({ requirements: "v2", building: "v2" });
+    expect(persistedStudyContractVersions({ ...row, status: "planning", building: null })).toEqual({ requirements: "v2", building: null });
+    expect(persistedStudyContractVersions({
+      ...row,
+      requirements: { requirementSchemaVersion: 3 },
+      building: { buildingSchemaVersion: 3 },
+    })).toEqual({ requirements: "v3", building: "v3" });
+  });
+
   test("returns only schema-valid completed payloads as openable", () => {
     const result = classifyPersistedStudy(row);
     expect(result.compatible).toBe(true);

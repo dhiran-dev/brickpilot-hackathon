@@ -1,5 +1,5 @@
 import type { CardinalDirection, RoomType } from "@/lib/building/requirements";
-import type { Point, Rectangle } from "@/lib/building/schema";
+import type { OpeningRole, Point, Point3, Rectangle, Segment2 } from "@/lib/building/schema";
 import { CAD_RENDERER_VERSION } from "@/lib/renderer-version";
 
 export const RENDERER_VERSION = CAD_RENDERER_VERSION;
@@ -10,6 +10,8 @@ export const DRAWING_LAYER_DEFINITIONS = [
   { id: "circulation", label: "Circulation + access", shortLabel: "Routes", core: true },
   { id: "walls", label: "Walls + columns", shortLabel: "Walls", core: true },
   { id: "openings", label: "Doors + windows", shortLabel: "Openings", core: true },
+  { id: "roof", label: "Roof planes + ridges", shortLabel: "Roof", core: true },
+  { id: "safety", label: "Supports + edge protection", shortLabel: "Safety", core: true },
   { id: "furniture", label: "Furniture + fixtures", shortLabel: "Furniture", core: true },
   { id: "labels", label: "Room labels + areas", shortLabel: "Labels", core: true },
   { id: "dimensions-overall", label: "Overall dimensions", shortLabel: "Overall dims", core: true },
@@ -27,22 +29,22 @@ export const DRAWING_PRESETS: Record<DrawingPreset, { label: string; appearance:
   presentation: {
     label: "Presentation",
     appearance: "cad-dark",
-    visible: ["site", "zoning", "walls", "openings", "furniture", "labels", "annotation"],
+    visible: ["site", "zoning", "walls", "openings", "roof", "safety", "furniture", "labels", "annotation"],
   },
   architectural: {
     label: "Architectural",
     appearance: "cad-dark",
-    visible: ["site", "walls", "openings", "furniture", "labels", "dimensions-overall", "annotation"],
+    visible: ["site", "walls", "openings", "roof", "safety", "furniture", "labels", "dimensions-overall", "annotation"],
   },
   validation: {
     label: "Validation",
     appearance: "cad-dark",
-    visible: ["site", "zoning", "circulation", "walls", "openings", "labels", "validation", "annotation"],
+    visible: ["site", "zoning", "circulation", "walls", "openings", "roof", "safety", "labels", "validation", "annotation"],
   },
   print: {
     label: "Print",
     appearance: "paper-light",
-    visible: ["site", "walls", "openings", "furniture", "labels", "dimensions-overall", "dimensions-internal", "validation", "annotation"],
+    visible: ["site", "walls", "openings", "roof", "safety", "furniture", "labels", "dimensions-overall", "dimensions-internal", "validation", "annotation"],
   },
 };
 
@@ -93,6 +95,8 @@ export type DrawingOpening = {
   widthMm: number;
   wallThicknessMm: number;
   isEntrance: boolean;
+  role?: OpeningRole;
+  isMainEntry?: boolean;
   interiorPoint?: Point;
 };
 
@@ -153,6 +157,8 @@ export type DrawingAnnotationLayout = {
 };
 
 export type DrawingFloorArtifact = {
+  /** V2 is optional for already-cached artifacts; every newly built artifact persists the version. */
+  artifactSchemaVersion?: 2 | 3;
   id: string;
   rendererVersion: typeof RENDERER_VERSION;
   buildingId: string;
@@ -193,9 +199,28 @@ export type DrawingFloorArtifact = {
     partiId?: string;
     style?: string;
   };
+  /** Schema-v3 physical overlays; absent on frozen v2 artifacts. */
+  floorRegions?: Array<{ id: string; kind: "interior" | "covered_outdoor" | "open_to_sky" | "intentional_unbuilt"; polygon: Point[]; spaceId?: string }>;
+  constructedFootprints?: Point[][];
+  intentionalUnbuiltRegions?: Array<{ id: string; polygon: Point[] }>;
+  roofOverlay?: Array<{
+    id: string;
+    kind: "flat_slab" | "gable" | "hip" | "shed" | "solid_canopy" | "open_pergola";
+    footprint: Point[];
+    planes: Array<{ id: string; vertices: Point3[] }>;
+    ridges: Segment2[];
+  }>;
+  supports?: Array<{
+    id: string;
+    role: "primary_column" | "canopy_post" | "pergola_post" | "ledger";
+    geometry: Point | Segment2;
+  }>;
+  guards?: Array<{ id: string; edge: Segment2; kind: "parapet" | "metal_rail" | "glass_rail"; heightMm: number }>;
+  mainEntryId?: string;
 };
 
 export type BuildingDrawing = {
+  artifactSchemaVersion?: 2 | 3;
   rendererVersion: typeof RENDERER_VERSION;
   buildingId: string;
   floors: DrawingFloorArtifact[];

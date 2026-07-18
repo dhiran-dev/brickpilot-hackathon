@@ -2,8 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
-import { classifyPersistedStudy } from "@/lib/design/persisted-study";
-import { validateBuilding } from "@/lib/validation";
+import { classifyReadablePersistedStudy } from "@/lib/design/persisted-study";
 import { renderState } from "@/app/api/designs/[layoutVersionId]/renders/route";
 import type { DeckPayload, DeckRenders } from "@/lib/design/deck";
 
@@ -38,7 +37,7 @@ export async function loadDeckPayload(layoutVersionId: string, userId: string): 
 
   if (!row) return { ok: false, status: 404, code: "STUDY_NOT_FOUND", message: "Study not found." };
 
-  const classified = classifyPersistedStudy(row);
+  const classified = classifyReadablePersistedStudy(row);
   if (!classified.compatible) {
     return { ok: false, status: 409, code: "INCOMPATIBLE_STUDY", message: "This saved study is incompatible with the current renderer." };
   }
@@ -65,7 +64,7 @@ export async function loadDeckPayload(layoutVersionId: string, userId: string): 
     generatedAt: new Date().toISOString(),
     requirements: study.requirements,
     building: study.building,
-    validation: validateBuilding(study.building, study.requirements),
+    validation: study.validation,
     costEstimate: study.costEstimate,
     aiReview: study.aiReview ?? null,
     scheme,

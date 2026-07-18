@@ -1,5 +1,5 @@
-import type { BuildingRequirements } from "@/lib/building/requirements";
-import type { Building } from "@/lib/building/schema";
+import type { ReadableBuildingRequirements } from "@/lib/building/requirements";
+import type { ReadableBuilding } from "@/lib/building/schema";
 import { deriveQuantityTakeoff } from "@/lib/cost/quantity";
 import type { CostEstimate, CostLineItem, EstimateBand, RatePack } from "@/lib/cost/schema";
 import { selectRatePack } from "@/lib/cost/selection";
@@ -62,7 +62,7 @@ export interface EstimateOptions {
   generatedAt?: Date;
 }
 
-export function estimateBuildingCost(building: Building, requirements: BuildingRequirements, options: EstimateOptions = {}): CostEstimate {
+export function estimateBuildingCost(building: ReadableBuilding, requirements: ReadableBuildingRequirements, options: EstimateOptions = {}): CostEstimate {
   const generatedAt = options.generatedAt ?? new Date();
   const selection = selectRatePack(requirements, options.ratePacks ?? BUILTIN_RATE_PACKS, options.asOf ?? generatedAt);
   const common = {
@@ -136,6 +136,7 @@ export function estimateBuildingCost(building: Building, requirements: BuildingR
       ...pack.assumptions,
       `Quality tier: ${requirements.budget.qualityTier}.`,
       `Contingency: ${requirements.budget.contingencyPercent}%; tax allowance: ${requirements.budget.taxPercent}%.`,
+      ...(building.buildingSchemaVersion === 3 ? ["Roof surfaces, canopy/pergola posts and edge protection are reported as informational physical quantities and remain included in the GFA base rate; no separate unit rates or duplicate line items are applied."] : []),
     ],
     sources: pack.sources,
     disclaimer: pack.disclaimer,

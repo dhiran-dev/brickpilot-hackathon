@@ -1,8 +1,13 @@
 import { AiProviderError, callJsonModeCompletion } from "@/lib/ai/client";
 import { architecturalConcurrenceSchema, type ArchitecturalConcurrence, type ArchitecturalReviewResult } from "@/lib/ai/schema";
-import type { BuildingRequirements } from "@/lib/building/requirements";
-import type { Building } from "@/lib/building/schema";
-import type { ValidationReport } from "@/lib/validation";
+import type { CurrentBuildingRequirements, LegacyBuildingRequirements, ReadableBuildingRequirements } from "@/lib/building/requirements";
+import type { CurrentBuilding, LegacyBuilding, ReadableBuilding } from "@/lib/building/schema";
+import { orthogonalPolygonAreaMm2 } from "@/lib/building/orthogonal-partition";
+import type { ValidationReport, ValidationReportV3 } from "@/lib/validation";
+
+type ReviewBuildingInput =
+  | { requirements: LegacyBuildingRequirements; building: LegacyBuilding; validation: ValidationReport }
+  | { requirements: CurrentBuildingRequirements; building: CurrentBuilding; validation: ValidationReportV3 };
 
 const SYSTEM_PROMPT = `You are an advisory architectural concurrence reviewer for a concept-stage residential plan that has already passed deterministic geometry, topology, opening, vertical-connectivity, and preliminary column-coordination validation.
 Review circulation, adjacency, daylight, orientation, door/window logic, multi-storey stacking, and the supplied conceptual column/grid coordination evidence using only the structured evidence provided. Never change geometry and never claim licensed-architect, permit, structural, MEP, or code approval. Column evidence is a preliminary coordination aid only; never infer loads, member sizing, foundations, seismic safety, or construction readiness.
@@ -10,22 +15,43 @@ Every concern must cite exact evidenceIds and objectIds values from the payload.
 Return only JSON: { "concurs": boolean, "confidence": "high|medium|low", "citedConcerns": [{ "ruleId"?: string, "floorId"?: string, "objectIds": string[], "evidenceIds": string[], "topic": "circulation|adjacency|daylight|orientation|opening|vertical_stacking|structural_coordination|other", "whyItMatters": string, "recommendation": string, "whatItSaves": string }], "requirementDeltas": [{ "op": "add_room|resize_room|remove_room", "summary": string, "roomId"?: string, "resizeDirection"?: "increase|decrease", "newRoom"?: { "id": string, "name": string, "type": string, "floorId": string, "privacy": string } }] }.
 Never emit a coordinate, wall position, raw area, money value, or unsupported room/floor id.`;
 
-function floorTopologySummary(building: Building) {
+function spaceAreaMm2(building: ReadableBuilding, floorId: string, spaceId: string) {
+  const floor = building.floors.find((candidate) => candidate.id === floorId);
+  if (!floor) return 0;
+  if (building.buildingSchemaVersion === 3) {
+    const currentFloor = building.floors.find((candidate) => candidate.id === floorId);
+    const space = currentFloor?.spaces.find((candidate) => candidate.id === spaceId);
+    const region = space ? currentFloor?.regions.find((candidate) => candidate.id === space.regionId) : undefined;
+    return region ? orthogonalPolygonAreaMm2(region.polygon) : 0;
+  }
+  return building.floors.find((candidate) => candidate.id === floorId)?.spaces.find((candidate) => candidate.id === spaceId)?.areaMm2 ?? 0;
+}
+
+function spaceOccupied(building: ReadableBuilding, floorId: string, spaceId: string) {
+  if (building.buildingSchemaVersion === 3) {
+    const floor = building.floors.find((candidate) => candidate.id === floorId);
+    const space = floor?.spaces.find((candidate) => candidate.id === spaceId);
+    return space ? floor?.regions.find((candidate) => candidate.id === space.regionId)?.kind === "interior" : false;
+  }
+  return building.floors.find((candidate) => candidate.id === floorId)?.spaces.find((candidate) => candidate.id === spaceId)?.occupied ?? false;
+}
+
+function floorTopologySummary(building: ReadableBuilding) {
   return building.floors.map((floor) => ({
     floorId: floor.id,
     label: floor.label,
     rooms: floor.spaces.map((space) => ({
       id: space.id,
       type: space.type,
-      areaM2: Number((space.areaMm2 / 1_000_000).toFixed(1)),
-      occupied: space.occupied,
+      areaM2: Number((spaceAreaMm2(building, floor.id, space.id) / 1_000_000).toFixed(1)),
+      occupied: spaceOccupied(building, floor.id, space.id),
       accessible: space.accessible,
     })),
     openings: floor.openings.map((opening) => ({ id: opening.id, kind: opening.kind, usage: opening.usage, connects: opening.connects })),
   }));
 }
 
-function requirementsSummary(requirements: BuildingRequirements) {
+function requirementsSummary(requirements: ReadableBuildingRequirements) {
   return {
     rooms: requirements.rooms.map((room) => ({
       id: room.id,
@@ -43,7 +69,7 @@ function requirementsSummary(requirements: BuildingRequirements) {
   };
 }
 
-function drawingSummary(building: Building) {
+function drawingSummary(building: ReadableBuilding) {
   return building.floors.map((floor) => ({
     floorId: floor.id,
     label: floor.label,
@@ -53,7 +79,7 @@ function drawingSummary(building: Building) {
         evidenceId: `room:${space.id}`,
         roomId: space.id,
         type: space.type,
-        areaM2: Number((space.areaMm2 / 1_000_000).toFixed(1)),
+        areaM2: Number((spaceAreaMm2(building, floor.id, space.id) / 1_000_000).toFixed(1)),
         openingIds: openings.map((opening) => opening.id),
         exteriorOpeningIds: openings.filter((opening) => opening.connects.includes("EXTERIOR")).map((opening) => opening.id),
         connectedObjectIds: openings.flatMap((opening) => opening.connects.filter((id) => id !== space.id && id !== "EXTERIOR")),
@@ -63,7 +89,7 @@ function drawingSummary(building: Building) {
   }));
 }
 
-function evidenceIdsFor(input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport }) {
+function evidenceIdsFor(input: ReviewBuildingInput) {
   const ids = new Set<string>();
   for (const floor of input.building.floors) {
     for (const space of floor.spaces) ids.add(`room:${space.id}`);
@@ -73,13 +99,19 @@ function evidenceIdsFor(input: { requirements: BuildingRequirements; building: B
   input.building.verticalConnectors.forEach((connector) => ids.add(`connector:${connector.id}`));
   input.building.structuralConcept?.columns.forEach((column) => ids.add(`column:${column.id}`));
   input.building.structuralConcept?.axes.forEach((axis) => ids.add(`grid:${axis.id}`));
+  if (input.building.buildingSchemaVersion === 3) {
+    input.building.floors.forEach((floor) => floor.regions.forEach((region) => ids.add(`region:${region.id}`)));
+    input.building.roofSystems.forEach((roof) => ids.add(`roof:${roof.id}`));
+    input.building.secondaryRoofSupports.forEach((support) => ids.add(`support:${support.id}`));
+    input.building.edgeProtections.forEach((guard) => ids.add(`guard:${guard.id}`));
+  }
   input.validation.findings.forEach((_, index) => ids.add(`finding:${index}`));
   return ids;
 }
 
 function isGroundedReview(
   review: ArchitecturalConcurrence,
-  input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport },
+  input: ReviewBuildingInput,
 ) {
   const floorIds = new Set(input.building.floors.map((floor) => floor.id));
   const objectIds = new Set<string>();
@@ -92,6 +124,12 @@ function isGroundedReview(
   for (const connector of input.building.verticalConnectors) objectIds.add(connector.id);
   for (const column of input.building.structuralConcept?.columns ?? []) objectIds.add(column.id);
   for (const axis of input.building.structuralConcept?.axes ?? []) objectIds.add(axis.id);
+  if (input.building.buildingSchemaVersion === 3) {
+    for (const floor of input.building.floors) for (const region of floor.regions) { objectIds.add(region.id); objectFloorIds.set(region.id, floor.id); }
+    for (const roof of input.building.roofSystems) objectIds.add(roof.id);
+    for (const support of input.building.secondaryRoofSupports) { objectIds.add(support.id); objectFloorIds.set(support.id, support.floorId); }
+    for (const guard of input.building.edgeProtections) { objectIds.add(guard.id); objectFloorIds.set(guard.id, guard.floorId); }
+  }
   const ruleIds = new Set(input.validation.findings.map((finding) => finding.ruleId));
   const roomIds = new Set(input.requirements.rooms.map((room) => room.id));
   const validEvidenceIds = evidenceIdsFor(input);
@@ -103,7 +141,7 @@ function isGroundedReview(
     if (concern.floorId && concern.objectIds.some((id) => objectFloorIds.has(id) && objectFloorIds.get(id) !== concern.floorId)) return false;
     for (const evidenceId of concern.evidenceIds) {
       const [kind, value] = evidenceId.split(":", 2);
-      if (["room", "opening", "connector", "column", "grid"].includes(kind) && !concern.objectIds.includes(value)) return false;
+      if (["room", "opening", "connector", "column", "grid", "region", "roof", "support", "guard"].includes(kind) && !concern.objectIds.includes(value)) return false;
       if (kind === "relationship") {
         const relationship = input.requirements.relationships[Number(value)];
         if (!relationship || !concern.objectIds.some((id) => id === relationship.fromRoomId || id === relationship.toRoomId)) return false;
@@ -136,7 +174,7 @@ function isGroundedReview(
 
 function retainGroundedReview(
   review: ArchitecturalConcurrence,
-  input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport },
+  input: ReviewBuildingInput,
 ) {
   const citedConcerns = review.citedConcerns.filter((concern) => isGroundedReview({
     concurs: true,
@@ -155,7 +193,7 @@ function retainGroundedReview(
 }
 
 export async function reviewBuilding(
-  input: { requirements: BuildingRequirements; building: Building; validation: ValidationReport },
+  input: ReviewBuildingInput,
   options: { complete?: typeof callJsonModeCompletion } = {},
 ): Promise<ArchitecturalReviewResult> {
   const complete = options.complete ?? callJsonModeCompletion;
@@ -186,6 +224,13 @@ export async function reviewBuilding(
         return axes.slice(1).map((axis, index) => ({ orientation: direction === "x" ? "horizontal" : "vertical", fromAxisId: axes[index].id, toAxisId: axis.id, bayMm: axis.coordinateMm - axes[index].coordinateMm }));
       }),
       columns: input.building.structuralConcept.columns.map((column) => ({ evidenceId: `column:${column.id}`, id: column.id, servedFloorIds: column.servedFloorIds })),
+    } : null,
+    physicalSystems: input.building.buildingSchemaVersion === 3 ? {
+      regions: input.building.floors.flatMap((floor) => floor.regions.map((region) => ({ evidenceId: `region:${region.id}`, id: region.id, floorId: floor.id, kind: region.kind, spaceId: region.spaceId }))),
+      roofs: input.building.roofSystems.map((roof) => ({ evidenceId: `roof:${roof.id}`, id: roof.id, kind: roof.kind, servesSpaceIds: roof.kind === "open_pergola" ? [roof.hostSpaceId] : roof.servesSpaceIds })),
+      supports: input.building.secondaryRoofSupports.map((support) => ({ evidenceId: `support:${support.id}`, id: support.id, floorId: support.floorId, role: support.role, roofSystemIds: support.roofSystemIds })),
+      guards: input.building.edgeProtections.map((guard) => ({ evidenceId: `guard:${guard.id}`, id: guard.id, floorId: guard.floorId, kind: guard.kind })),
+      intentRealizations: input.building.intentRealizations,
     } : null,
   };
 

@@ -31,24 +31,15 @@ import {
 import { MassingViewer, type MassingCapture, type MassingViewerHandle, type MassingView } from "@/components/massing";
 import { MASSING_CAPTURE_LAYER_STATE } from "@/components/massing/MassingViewer";
 import { PreviousSchemeRenderGallery, type PreviousSchemeRenderAsset } from "@/components/massing/PreviousSchemeRenderGallery";
+import { RenderEvalPanel } from "@/components/massing/RenderEvalPanel";
+import { capabilitiesForWorkspace, ProjectCapabilityNotice, projectCapabilityPresentation, PROJECT_VIEW_ONLY_EXPLANATION } from "@/components/project-capability-ui";
 import { WorkspaceStepper, type WorkspaceStepperItem } from "@/components/workspace-stepper";
-import type { BuildingRequirements } from "@/lib/building/requirements";
-import type { Building } from "@/lib/building/schema";
+import type { CurrentFloor, CurrentSpace, Floor, ReadableBuilding, Space } from "@/lib/building/schema";
+import type { ReadableDesignResult } from "@/lib/design/study-result";
 import { massingMetrics } from "@/lib/render/massing";
 import { buildReferencePlanSvg } from "@/lib/render/reference-plan";
 
-type Study = {
-  projectId: string;
-  designId: string;
-  version: number;
-  title: string;
-  status: string;
-  requirements: BuildingRequirements;
-  building: Building;
-  selectedSchemeId: string | null;
-  schemes: Array<{ schemeId: string; name: string }>;
-  validation: { valid: boolean; score: number; counts: { error: number; warning: number; info: number } };
-};
+type Study = ReadableDesignResult & { status: string; version: number };
 
 type RenderState = {
   status: "idle" | "processing" | "partial" | "completed" | "failed";
@@ -98,6 +89,29 @@ function markInteriorPlanSource(svg: string) {
   return svg.replace("</svg>", `<rect x="56" y="100" width="470" height="34" fill="#090908" stroke="#ff8d49"/><text x="72" y="122" fill="#fff6ea" font-family="Arial, sans-serif" font-size="15" font-weight="700">SOURCE D · INTERIOR · PLAN-DERIVED CAMERA</text></svg>`);
 }
 
+const NON_INTERIOR_SPACE_TYPES = new Set(["parking", "circulation", "stair", "courtyard", "terrace", "balcony", "verandah"]);
+
+export function isEligibleInteriorSpace(space: Space | CurrentSpace) {
+  if ("occupied" in space && !space.occupied) return false;
+  return !NON_INTERIOR_SPACE_TYPES.has(space.type);
+}
+
+function spacesForFloor(floor: Floor | CurrentFloor): Array<Space | CurrentSpace> {
+  return "regions" in floor ? floor.spaces : floor.spaces;
+}
+
+function sortedReadableFloors(building: ReadableBuilding): Array<Floor | CurrentFloor> {
+  return building.buildingSchemaVersion === 3
+    ? [...building.floors].sort((left, right) => left.level - right.level)
+    : [...building.floors].sort((left, right) => left.level - right.level);
+}
+
+function interiorOptions(building: ReadableBuilding) {
+  return sortedReadableFloors(building).flatMap((floor) => spacesForFloor(floor)
+    .map((space) => ({ ...space, floorLabel: floor.label })))
+    .filter(isEligibleInteriorSpace);
+}
+
 export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionId: string; userName: string }) {
   const viewerRef = useRef<MassingViewerHandle>(null);
   const [study, setStudy] = useState<Study | null>(null);
@@ -139,9 +153,10 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
       if (!active) return;
       setStudy(loadedStudy);
       setVisibleFloorIds(loadedStudy.building.floors.map((floor) => floor.id));
-      const preferred = loadedStudy.building.floors.flatMap((floor) => floor.spaces)
+      const candidates = interiorOptions(loadedStudy.building);
+      const preferred = candidates
         .find((space) => space.type === "living" || space.type === "dining" || space.type === "bedroom");
-      setSelectedInteriorSpaceId(preferred?.id ?? loadedStudy.building.floors[0].spaces[0].id);
+      setSelectedInteriorSpaceId(preferred?.id ?? candidates[0]?.id ?? "");
       if (loadedRenders) setRenderState(loadedRenders);
     }).catch((error) => {
       if (active) setLoadError(error instanceof Error ? error.message : "Unable to load this study.");
@@ -162,15 +177,22 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     setReferenceKey(null);
   }, [selectedInteriorSpaceId]);
 
-  const floors = useMemo(() => study ? [...study.building.floors].sort((left, right) => left.level - right.level) : [], [study]);
-  const eligibleInteriorSpaces = useMemo(() => floors.flatMap((floor) => floor.spaces.map((space) => ({ ...space, floorLabel: floor.label })))
-    .filter((space) => space.occupied && !["parking", "circulation", "stair", "courtyard", "terrace", "balcony"].includes(space.type)), [floors]);
+  const floors = useMemo<Array<Floor | CurrentFloor>>(() => study ? sortedReadableFloors(study.building) : [], [study]);
+  const eligibleInteriorSpaces = useMemo(() => study ? interiorOptions(study.building) : [], [study]);
   const metrics = useMemo(() => study ? massingMetrics(study.building) : null, [study]);
   const currentReferenceKey = study ? `${study.building.candidate.geometryHash}:${selectedInteriorSpaceId}` : "";
   const referencesCurrent = references && referenceKey === currentReferenceKey;
   const assetsByRole = useMemo(() => new Map(renderState.assets.map((asset) => [asset.role, asset])), [renderState.assets]);
   const sourcesByRole = useMemo(() => new Map((renderState.sources ?? []).map((source) => [source.role, source])), [renderState.sources]);
-  const schemeNameById = useMemo(() => new Map(study?.schemes.map((scheme) => [scheme.schemeId, scheme.name]) ?? []), [study]);
+  const schemeNameById = useMemo(() => new Map(study?.schemes?.map((scheme) => [scheme.schemeId, scheme.name]) ?? []), [study]);
+  const projectCapabilities = capabilitiesForWorkspace(study?.capabilities);
+  const capabilityPresentation = projectCapabilityPresentation({
+    capabilityProfile: study?.capabilityProfile,
+    projectStatus: study?.projectStatus,
+    capabilities: study?.capabilities,
+  });
+  const retryingRender = renderState.status === "failed" || renderState.status === "partial";
+  const canSubmitRender = retryingRender ? projectCapabilities.canRetryRender : projectCapabilities.canGenerateRender;
   const layerControls = [
     { label: "Internal walls", checked: showInteriorWalls, setChecked: setShowInteriorWalls, Icon: Layers3 },
     { label: "Columns", checked: showColumns, setChecked: setShowColumns, Icon: Columns3 },
@@ -185,7 +207,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   }
 
   async function prepareReferences() {
-    if (!study) return;
+    if (!study || !projectCapabilities.canGenerateRender) return;
     setPreparing(true);
     setActionError(null);
     const prior = { visibleFloorIds, explodePercent, showInteriorWalls, showColumns, showSlabs, showRoof, showSite, presentationMode };
@@ -226,7 +248,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
   }
 
   async function confirmAndGenerate() {
-    if (!study || !referencesCurrent) return;
+    if (!study || !referencesCurrent || !canSubmitRender) return;
     setSubmitting(true);
     setActionError(null);
     try {
@@ -252,6 +274,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
 
   if (loading) return <main className="grid min-h-screen place-items-center bg-[#090908] text-[#fff6ea]"><div className="flex items-center gap-3 text-xs uppercase tracking-[0.15em] text-[#c97940]"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading canonical model</div></main>;
   if (!study || loadError) return <main className="grid min-h-screen place-items-center bg-[#090908] p-6 text-[#fff6ea]"><div className="max-w-lg border border-[#8e5a31]/60 bg-[#11100e] p-7"><CircleAlert className="h-6 w-6 text-[#ff806f]" /><h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl">3D massing unavailable</h1><p className="mt-3 text-sm leading-6 text-[#b5a697]">{loadError ?? "This study could not be loaded."}</p><Link className="mt-6 inline-flex items-center gap-2 border border-[#c97940] px-4 py-3 text-xs font-bold uppercase tracking-[0.12em]" href="/workspace"><ArrowLeft className="h-4 w-4" /> Back to workspace</Link></div></main>;
+  if (capabilityPresentation?.blocksNormalAccess) return <main className="grid min-h-screen place-items-center bg-[#090908] p-6 text-[#fff6ea]"><ProjectCapabilityNotice presentation={capabilityPresentation} /></main>;
 
   const explodeM = metrics ? metrics.heightM * explodePercent / 100 / Math.max(1, metrics.storeys - 1) : 0;
 
@@ -274,6 +297,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
     </header>
 
     <div className="mx-auto w-full max-w-[112rem] px-3 py-3 lg:px-5">
+      {capabilityPresentation?.kind === "view_only" ? <div className="mb-4"><ProjectCapabilityNotice compact presentation={capabilityPresentation} /></div> : null}
       <section className="overflow-hidden border border-[#8e5a31]/55 bg-[#0c0b09] shadow-[9px_10px_0_rgba(3,3,2,0.72)]">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#8e5a31]/45 bg-[#0b0a09] px-5 py-4">
           <div><p className="text-[0.59rem] font-extrabold uppercase tracking-[0.15em] text-[#ff8d49]">Step 3 · 3D massing · deterministic</p><h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em]">{study.title}</h1></div>
@@ -316,9 +340,9 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
             ].map(([Icon, value, label]) => <div className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-2 border-b border-[#8e5a31]/30 py-3" key={label as string}><Icon className="h-4 w-4 text-[#c97940]" /><dd className="font-[family-name:var(--font-display)] text-xl">{value as string}</dd><dt className="text-[0.54rem] font-bold uppercase tracking-[0.11em] text-[#8f8275]">{label as string}</dt></div>)}</dl> : null}
             <div className="mt-6"><div className="flex items-center justify-between"><p className="text-[0.61rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Reference captures</p>{referencesCurrent ? <span className="text-[0.53rem] font-bold uppercase tracking-[0.08em] text-[#7bc79e]">Local only</span> : null}</div>
               <div className="mt-3 grid grid-cols-3 gap-1.5">{(["massing_front", "massing_collage", "massing_top"] as const).map((role) => { const reference = references?.find((item) => item.role === role); return <div className="relative aspect-[3/2] border border-[#8e5a31]/45 bg-[#090908]" key={role}>{reference ? <img alt={`${role.replaceAll("_", " ")} local reference`} className="h-full w-full object-cover" src={reference.dataUri} /> : <div className="grid h-full place-items-center"><Camera className="h-4 w-4 text-[#574d45]" /></div>}<span className="absolute inset-x-0 bottom-0 bg-[#090908]/90 px-1 py-1 text-center text-[0.42rem] font-bold uppercase tracking-[0.06em] text-[#b5a697]">{role.replace("massing_", "")}</span>{reference ? <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center bg-[#1f5b3d]"><Check className="h-2.5 w-2.5" /></span> : null}</div>; })}</div>
-              <button className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-[#c97940]/70 px-3 py-2.5 text-[0.58rem] font-bold uppercase tracking-[0.1em] hover:bg-[#171512] disabled:opacity-45" disabled={preparing || !selectedInteriorSpaceId || !viewerReady} onClick={() => void prepareReferences()} type="button">{preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}{referencesCurrent ? "Refresh reference set" : "Prepare reference set"}</button>
+              <button className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-[#c97940]/70 px-3 py-2.5 text-[0.58rem] font-bold uppercase tracking-[0.1em] hover:bg-[#171512] disabled:opacity-45" disabled={!projectCapabilities.canGenerateRender || preparing || !selectedInteriorSpaceId || !viewerReady} onClick={() => void prepareReferences()} title={!projectCapabilities.canGenerateRender ? PROJECT_VIEW_ONLY_EXPLANATION : undefined} type="button">{preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}{referencesCurrent ? "Refresh reference set" : "Prepare reference set"}</button>
             </div>
-            <label className="mt-6 block"><span className="text-[0.61rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Interior source</span><select className="mt-3 w-full border border-[#8e5a31]/60 bg-[#090908] px-3 py-3 text-xs text-[#fff6ea] outline-none focus:border-[#ff4e00]" onChange={(event) => setSelectedInteriorSpaceId(event.target.value)} value={selectedInteriorSpaceId}>{eligibleInteriorSpaces.map((space) => <option key={space.id} value={space.id}>{space.name} · {space.floorLabel}</option>)}</select></label>
+            <label className="mt-6 block"><span className="text-[0.61rem] font-extrabold uppercase tracking-[0.14em] text-[#c97940]">Interior source</span><select className="mt-3 w-full border border-[#8e5a31]/60 bg-[#090908] px-3 py-3 text-xs text-[#fff6ea] outline-none focus:border-[#ff4e00] disabled:cursor-not-allowed disabled:opacity-50" disabled={!projectCapabilities.canGenerateRender} onChange={(event) => setSelectedInteriorSpaceId(event.target.value)} title={!projectCapabilities.canGenerateRender ? PROJECT_VIEW_ONLY_EXPLANATION : undefined} value={selectedInteriorSpaceId}>{eligibleInteriorSpaces.map((space) => <option key={space.id} value={space.id}>{space.name} · {space.floorLabel}</option>)}</select></label>
             <p className="mt-3 text-[0.61rem] leading-5 text-[#786d62]">The marked interior plan and three fixed 3:2 camera sources ground four separate image-edit jobs. References remain in this browser until confirmation.</p>
           </aside>
         </div>
@@ -326,7 +350,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         <div className="grid gap-4 border-t border-[#8e5a31]/50 bg-[#0a0908] p-5 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
           <div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center border border-[#8e5a31]/65"><LockKeyhole className="h-5 w-5 text-[#c97940]" /></span><div><p className="font-[family-name:var(--font-display)] text-xl">{renderState.status === "idle" ? "Nothing has been sent to GPT Image 2." : renderState.status === "processing" ? "GPT Image 2 is creating the grounded concepts." : renderState.status === "completed" ? "All four grounded concepts are ready." : "The massing remains available while renders are recovered."}</p><p className="mt-1 text-xs leading-5 text-[#8f8275]">{renderState.status === "idle" ? "Prepare and review the local reference set, then confirm explicitly." : renderState.status === "processing" ? "This page can be left and reopened; status is persisted and reconciled." : "Concept visualization only. Geometry remains authoritative in the 2D and massing views."}</p>{actionError ? <p className="mt-2 text-xs text-[#ff806f]">{actionError}</p> : null}</div></div>
           <div className="border-l border-[#8e5a31]/40 pl-5"><p className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.1em]"><Camera className="h-4 w-4 text-[#c97940]" /> Front + collage + top + interior</p><p className="mt-1 flex items-center gap-2 text-[0.61rem] text-[#8f8275]"><Clock3 className="h-3.5 w-3.5" /> Four camera-locked async edits</p></div>
-          {renderState.status === "processing" ? <button className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#8e5a31]/55 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#b5a697]" disabled type="button"><LoaderCircle className="h-4 w-4 animate-spin" /> Rendering package</button> : renderState.status === "completed" ? <a className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#38765a]/65 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#7bc79e]" href="#render-gallery"><Eye className="h-4 w-4" /> View final concepts</a> : <button className="inline-flex min-w-64 items-center justify-center gap-2 bg-[#e94300] px-5 py-4 text-[0.66rem] font-extrabold uppercase tracking-[0.12em] text-[#fff6ea] transition hover:bg-[#ff4e00] disabled:cursor-not-allowed disabled:bg-[#4d2515] disabled:text-[#957461]" disabled={!referencesCurrent || submitting} onClick={() => void confirmAndGenerate()} type="button">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : renderState.status === "failed" || renderState.status === "partial" ? <RefreshCw className="h-4 w-4" /> : <MousePointer2 className="h-4 w-4" />}{renderState.status === "failed" || renderState.status === "partial" ? "Retry missing render" : "Confirm & generate 4 renders"}</button>}
+          {renderState.status === "processing" ? <button className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#8e5a31]/55 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#b5a697]" disabled type="button"><LoaderCircle className="h-4 w-4 animate-spin" /> Rendering package</button> : renderState.status === "completed" ? <a className="inline-flex min-w-64 items-center justify-center gap-2 border border-[#38765a]/65 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#7bc79e]" href="#render-gallery"><Eye className="h-4 w-4" /> View final concepts</a> : !canSubmitRender ? <button className="inline-flex min-w-64 cursor-not-allowed items-center justify-center gap-2 border border-[#8e5a31]/55 px-5 py-4 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#8f8275]" disabled title={PROJECT_VIEW_ONLY_EXPLANATION} type="button"><LockKeyhole className="h-4 w-4" /> View-only project</button> : <button className="inline-flex min-w-64 items-center justify-center gap-2 bg-[#e94300] px-5 py-4 text-[0.66rem] font-extrabold uppercase tracking-[0.12em] text-[#fff6ea] transition hover:bg-[#ff4e00] disabled:cursor-not-allowed disabled:bg-[#4d2515] disabled:text-[#957461]" disabled={!referencesCurrent || submitting} onClick={() => void confirmAndGenerate()} type="button">{submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : retryingRender ? <RefreshCw className="h-4 w-4" /> : <MousePointer2 className="h-4 w-4" />}{retryingRender ? "Retry missing render" : "Confirm & generate 4 renders"}</button>}
         </div>
       </section>
 
@@ -340,6 +364,7 @@ export function MassingWorkspace({ layoutVersionId, userName }: { layoutVersionI
         {renderState.jobs.some((job) => job.failureReason) ? <div className="mt-4 border border-[#c28a2a]/50 bg-[#18140b] p-4 text-xs leading-5 text-[#d9a856]">{renderState.jobs.filter((job) => job.failureReason).map((job) => <p key={job.id}><strong className="uppercase">{job.purpose ?? "Render"}:</strong> {job.failureReason}</p>)}</div> : null}
       </section> : null}
       <PreviousSchemeRenderGallery assets={renderState.previousAssets ?? []} schemeNameById={schemeNameById} />
+      {study.building.buildingSchemaVersion === 3 ? <RenderEvalPanel layoutVersionId={layoutVersionId} /> : null}
     </div>
   </main>;
 }

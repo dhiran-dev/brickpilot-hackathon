@@ -1,7 +1,7 @@
 import { formatCurrencyMinor } from "@/lib/cost/format";
 import { deriveQuantityTakeoff } from "@/lib/cost/quantity";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
-import type { ValidationCategory } from "@/lib/validation";
+import type { ValidationCategoryV3 } from "@/lib/validation";
 import type { DeckPayload } from "@/lib/design/deck";
 
 /** Turn an enum token (`dog_leg`, `contemporary_tropical`) into display copy (`Dog leg`, `Contemporary tropical`). */
@@ -158,7 +158,7 @@ export function deckScheduleView(payload: DeckPayload): DeckScheduleView {
 // ---------------------------------------------------------------------------
 // Validation — score, per-category status, ordered findings.
 
-const CATEGORY_BLURB: Record<ValidationCategory, string> = {
+const CATEGORY_BLURB: Record<ValidationCategoryV3, string> = {
   geometry: "Rooms close, sizes hold, nothing overlaps",
   topology: "Every room reachable, no orphaned space",
   opening: "Doors and windows land on walls",
@@ -166,19 +166,28 @@ const CATEGORY_BLURB: Record<ValidationCategory, string> = {
   planning: "Zoning, privacy and daylight heuristics",
   structure: "Column grid coordinates across floors",
   cost: "Estimate inputs reconcile with quantities",
+  circulation: "Routes, entrances and room access remain connected",
+  accessibility: "Step-free and clear-width requirements are respected",
+  architecture: "Entry, roof, shade and facade intent are realized",
+  site: "Road orientation, setbacks and site limits are respected",
+  safety: "Roof support and exposed edges have physical protection",
+  scheme_set: "Alternatives remain meaningfully distinct",
 };
+
+const LEGACY_VALIDATION_CATEGORIES: ValidationCategoryV3[] = ["geometry", "topology", "opening", "vertical", "planning", "structure", "cost"];
+const V3_VALIDATION_CATEGORIES = Object.keys(CATEGORY_BLURB) as ValidationCategoryV3[];
 
 export type DeckValidationView = {
   score: number;
   counts: { error: number; warning: number; info: number };
-  categories: Array<{ id: ValidationCategory; label: string; blurb: string; findings: number; worst: "error" | "warning" | "info" | null }>;
+  categories: Array<{ id: ValidationCategoryV3; label: string; blurb: string; findings: number; worst: "error" | "warning" | "info" | null }>;
   findings: Array<{ severity: "error" | "warning" | "info"; category: string; message: string; action: string | null }>;
   rulePackVersion: string;
 };
 
 export function deckValidationView(payload: DeckPayload): DeckValidationView {
   const { validation } = payload;
-  const byCategory = new Map<ValidationCategory, { findings: number; worst: "error" | "warning" | "info" | null }>();
+  const byCategory = new Map<ValidationCategoryV3, { findings: number; worst: "error" | "warning" | "info" | null }>();
   for (const finding of validation.findings) {
     const entry = byCategory.get(finding.category) ?? { findings: 0, worst: null };
     entry.findings += 1;
@@ -187,7 +196,8 @@ export function deckValidationView(payload: DeckPayload): DeckValidationView {
     }
     byCategory.set(finding.category, entry);
   }
-  const categories = (Object.keys(CATEGORY_BLURB) as ValidationCategory[]).map((id) => ({
+  const categoryIds = "schemaVersion" in validation ? V3_VALIDATION_CATEGORIES : LEGACY_VALIDATION_CATEGORIES;
+  const categories = categoryIds.map((id) => ({
     id,
     label: id.charAt(0).toUpperCase() + id.slice(1),
     blurb: CATEGORY_BLURB[id],

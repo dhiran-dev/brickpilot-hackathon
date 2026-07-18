@@ -1,0 +1,19 @@
+- generic [active] [ref=f1e1]:
+  - main [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - link "BrickPilot" [ref=f1e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f1e5]:
+        - paragraph [ref=f1e6]: Studio access
+        - heading "Return to the drafting table." [level=1] [ref=f1e7]
+        - paragraph [ref=f1e8]: BrickPilot is invite-only. Sign in with a seeded project account.
+      - generic [ref=f1e9]:
+        - generic [ref=f1e10]:
+          - text: Email
+          - textbox "Email" [ref=f1e11]: owner@brickpilot.demo
+        - generic [ref=f1e12]:
+          - text: Password
+          - textbox "Password" [ref=f1e13]: BrickPilotOwner_2026
+        - button "Enter studio" [ref=f1e14]
+  - button "Open Next.js Dev Tools" [ref=f1e23] [cursor=pointer]
+  - alert [ref=f1e27]

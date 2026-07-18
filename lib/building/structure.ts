@@ -1,4 +1,4 @@
-import type { Floor, Opening, Rectangle, StructuralColumn, StructuralConcept, WallSegment } from "@/lib/building/schema";
+import type { CurrentFloor, Floor, Opening, Rectangle, StructuralColumn, StructuralConcept, WallSegment } from "@/lib/building/schema";
 import { isOpenToSkySpace } from "@/lib/building/topology";
 
 export const STRUCTURAL_CONCEPT_VERSION = 1 as const;
@@ -136,6 +136,57 @@ export function buildStructuralConcept(floors: Floor[]): StructuralConcept {
       servedFloorIds,
     } satisfies StructuralColumn));
   const columns = candidates.filter((column) => safeOnEveryServedFloor(column, orderedFloors));
+  return {
+    structuralConceptVersion: STRUCTURAL_CONCEPT_VERSION,
+    scope: STRUCTURAL_CONCEPT_SCOPE,
+    disclaimer: STRUCTURAL_CONCEPT_DISCLAIMER,
+    baselineMaxBayMm: STRUCTURAL_BASELINE_MAX_BAY_MM,
+    axes: [
+      ...xCoordinates.map((coordinateMm, index) => ({ id: `grid-x-${index + 1}`, direction: "x" as const, coordinateMm })),
+      ...yCoordinates.map((coordinateMm, index) => ({ id: `grid-y-${index + 1}`, direction: "y" as const, coordinateMm })),
+    ],
+    columns,
+  };
+}
+
+function pointTouchesConstructedFloor(point: { x: number; y: number }, floor: CurrentFloor) {
+  return floor.regions.some((region) => region.kind !== "intentional_unbuilt" && region.kind !== "open_to_sky" && region.polygon.points.some((vertex) => vertex.x === point.x && vertex.y === point.y));
+}
+
+/**
+ * Schema-v3 column coordination consumes canonical region vertices instead of legacy room bounds.
+ * Columns retain the floors they actually touch, so partial upper plates never imply floating
+ * all-floor columns. Secondary canopy/pergola posts remain outside this collection.
+ */
+export function buildV3StructuralConcept(floors: CurrentFloor[]): StructuralConcept {
+  const ordered = [...floors].sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  const pointFloors = new Map<string, { point: { x: number; y: number }; floorIds: Set<string> }>();
+  for (const floor of ordered) for (const region of floor.regions.filter((candidate) => candidate.kind !== "intentional_unbuilt" && candidate.kind !== "open_to_sky")) {
+    for (const point of region.polygon.points) {
+      const key = `${point.x}:${point.y}`;
+      const entry = pointFloors.get(key) ?? { point, floorIds: new Set<string>() };
+      if (pointTouchesConstructedFloor(point, floor)) entry.floorIds.add(floor.id);
+      pointFloors.set(key, entry);
+    }
+  }
+  const candidates = [...pointFloors.values()].map(({ point, floorIds }) => ({
+    id: `column-${point.x}-${point.y}`,
+    center: point,
+    widthMm: STRUCTURAL_NOMINAL_COLUMN_MM,
+    depthMm: STRUCTURAL_NOMINAL_COLUMN_MM,
+    servedFloorIds: [...floorIds].sort(),
+  } satisfies StructuralColumn));
+  const columns = candidates.filter((column) => column.servedFloorIds.length > 0 && column.servedFloorIds.every((floorId) => {
+    const floor = ordered.find((candidate) => candidate.id === floorId);
+    if (!floor) return false;
+    const wallById = new Map(floor.walls.map((wall) => [wall.id, wall]));
+    return floor.openings.every((opening) => {
+      const wall = wallById.get(opening.wallId);
+      return !wall || !columnConflictsWithOpening(column, opening, wall);
+    });
+  }));
+  const xCoordinates = [...new Set(ordered.flatMap((floor) => floor.regions.flatMap((region) => region.polygon.points.map((point) => point.x))))].sort((left, right) => left - right);
+  const yCoordinates = [...new Set(ordered.flatMap((floor) => floor.regions.flatMap((region) => region.polygon.points.map((point) => point.y))))].sort((left, right) => left - right);
   return {
     structuralConceptVersion: STRUCTURAL_CONCEPT_VERSION,
     scope: STRUCTURAL_CONCEPT_SCOPE,

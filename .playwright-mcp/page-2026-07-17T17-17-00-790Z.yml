@@ -1,0 +1,378 @@
+- generic [active] [ref=f5e1]:
+  - main [ref=f5e2]:
+    - generic [ref=f5e3]:
+      - generic [ref=f5e4]:
+        - generic [ref=f5e5]:
+          - generic [ref=f5e6]:
+            - paragraph [ref=f5e7]: BrickPilot
+            - paragraph [ref=f5e8]: Residential concept engineering
+          - generic [ref=f5e9]: Topology · validation · cost · drawing
+        - generic [ref=f5e10]:
+          - generic [ref=f5e11]: Signed in as BrickPilot Owner
+          - link "Dashboard" [ref=f5e12] [cursor=pointer]:
+            - /url: /dashboard
+          - button "Sign out" [ref=f5e18]
+      - generic [ref=f5e25]:
+        - generic [ref=f5e26]:
+          - generic [ref=f5e27]:
+            - paragraph [ref=f5e28]: Study 28183da8 · immutable v1
+            - heading "My family home 3" [level=1] [ref=f5e29]
+          - button "New study" [ref=f5e30]
+        - navigation "Study steps" [ref=f5e32]:
+          - list [ref=f5e33]:
+            - listitem [ref=f5e34]:
+              - button "01 Directions" [ref=f5e35]:
+                - generic [ref=f5e36]: "01"
+                - generic [ref=f5e37]: Directions
+            - listitem [ref=f5e39]:
+              - button "02 2D plan" [ref=f5e40]:
+                - generic [ref=f5e41]: "02"
+                - generic [ref=f5e42]: 2D plan
+            - listitem [ref=f5e43]:
+              - link "03 3D massing" [ref=f5e44] [cursor=pointer]:
+                - /url: /workspace/designs/28183da8-1a6e-4217-b2fb-e204ad295efc/massing
+                - generic [ref=f5e45]: "03"
+                - generic [ref=f5e46]: 3D massing
+            - listitem [ref=f5e47]:
+              - link "04 Render" [ref=f5e48] [cursor=pointer]:
+                - /url: /workspace/designs/28183da8-1a6e-4217-b2fb-e204ad295efc/massing#render-gallery
+                - generic [ref=f5e49]: "04"
+                - generic [ref=f5e50]: Render
+        - generic [ref=f5e51]:
+          - generic [ref=f5e52]:
+            - paragraph [ref=f5e53]: Step 1 of 4 · Directions
+            - heading "Choose the direction to engineer" [level=2] [ref=f5e54]
+            - paragraph [ref=f5e55]: Every option below is a verified deterministic scheme. Pin one, review its evidence, then confirm it as the canonical plan.
+          - group "Viable villa directions" [ref=f5e56]:
+            - paragraph [ref=f5e58]: Choose a drawing to pin it for review. The canonical plan changes only after you confirm.
+            - generic [ref=f5e59]:
+              - generic [ref=f5e60] [cursor=pointer]:
+                - radio "Courtyard Villa · Scheme A Pinned courtyard · rung 0 Courtyard Villa is the deterministic preferred parti option at relaxation rung 0." [checked] [ref=f5e61]
+                - generic [ref=f5e63]:
+                  - generic [ref=f5e64]: Courtyard Villa · Scheme A
+                  - generic [ref=f5e65]: Pinned
+                - img [ref=f5e69]:
+                  - generic [ref=f5e72]:
+                    - generic [ref=f5e73]: ROAD ACCESS · SOUTH
+                    - generic [ref=f5e76]: ROAD ACCESS · EAST
+                    - generic [ref=f5e81]: SITE BOUNDARY
+                  - generic [ref=f5e110]: MAIN ENTRY
+                  - generic [ref=f5e149]: UP
+                  - generic [ref=f5e203]:
+                    - generic [ref=f5e205]:
+                      - text: STAIR CORE
+                      - generic [ref=f5e206]: 7.1 m² · UP
+                    - generic [ref=f5e207]: R02
+                    - generic [ref=f5e211]: R03
+                    - generic [ref=f5e215]: R04
+                    - generic [ref=f5e220]:
+                      - text: OPEN-SIDED PRIVATE WING GALLERY
+                      - generic [ref=f5e221]: 19.7 m² · VER
+                    - generic [ref=f5e223]:
+                      - text: OPEN-SIDED COVERED GALLERY
+                      - generic [ref=f5e224]: 18.1 m² · VER
+                    - generic [ref=f5e226]:
+                      - text: COURTYARD
+                      - generic [ref=f5e227]: 14.0 m² · CYD
+                    - generic [ref=f5e229]:
+                      - text: ATTACHED BATHROOM 1
+                      - generic [ref=f5e230]: 5.3 m² · WC
+                    - generic [ref=f5e232]:
+                      - text: BEDROOM 1
+                      - generic [ref=f5e233]: 12.0 m² · BED
+                    - generic [ref=f5e235]:
+                      - text: KITCHEN
+                      - generic [ref=f5e236]: 9.7 m² · KIT
+                    - generic [ref=f5e238]:
+                      - text: UTILITY
+                      - generic [ref=f5e239]: 5.4 m² · UTL
+                    - generic [ref=f5e241]:
+                      - text: POOJA
+                      - generic [ref=f5e242]: 5.2 m² · PUJ
+                    - generic [ref=f5e244]:
+                      - text: ENTRY FOYER
+                      - generic [ref=f5e245]: 17.2 m² · ENT
+                    - generic [ref=f5e247]:
+                      - text: LIVING / DINING HALL
+                      - generic [ref=f5e248]: 44.4 m² · LIV
+                    - generic [ref=f5e250]:
+                      - text: COVERED PARKING
+                      - generic [ref=f5e251]: 75.6 m² · CAR
+                  - generic [ref=f5e252]:
+                    - generic [ref=f5e253]: 20.0 m
+                    - generic [ref=f5e256]: 18.0 m
+                    - generic [ref=f5e259]: 17.60 m
+                    - generic [ref=f5e262]: 14.0 m
+                  - generic [ref=f5e265]:
+                    - generic [ref=f5e266]:
+                      - generic [ref=f5e270]: "N"
+                      - generic [ref=f5e271]: S
+                      - generic [ref=f5e272]: E
+                      - generic [ref=f5e273]: W
+                    - generic [ref=f5e274]:
+                      - generic [ref=f5e277]: "0"
+                      - generic [ref=f5e278]: 5 m
+                    - generic [ref=f5e279]:
+                      - generic [ref=f5e280]: Social
+                      - generic [ref=f5e283]: Private
+                      - generic [ref=f5e286]: Kitchen
+                      - generic [ref=f5e289]: Wet service
+                      - generic [ref=f5e292]: Circulation
+                      - generic [ref=f5e295]: Outdoor
+                      - generic [ref=f5e298]: Utility
+                      - generic [ref=f5e301]: Work
+                      - generic [ref=f5e304]: Sacred
+                    - generic [ref=f5e307]:
+                      - generic [ref=f5e309]: BrickPilot
+                      - generic [ref=f5e310]: COURTYARD VILLA · SCHEME A
+                      - generic [ref=f5e311]: CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION
+                      - generic [ref=f5e312]: COURTYARD VILLA · SCHEME A · COURTYARD · SCHEME STUDY
+                      - generic [ref=f5e313]: GROUND FLOOR
+                      - generic [ref=f5e314]: SEED 805630579 · topology-hybrid-v2.0.0
+                      - generic [ref=f5e315]: RULES residential-baseline-2026.5
+                      - generic [ref=f5e316]: RENDERER cad-svg-v2
+                      - generic [ref=f5e317]: CANDIDATE COURTYARD / 0
+                    - generic [ref=f5e318]:
+                      - generic [ref=f5e319]: AREA SCHEDULE · ACHIEVED / TARGET
+                      - generic [ref=f5e320]: R01 · ENTRY VERANDAH RECESS · 5.0 m² / —
+                      - generic [ref=f5e321]: R02 · OPEN-SIDED PRIVATE WING GALLERY · 19.7 m² / —
+                      - generic [ref=f5e322]: R03 · OPEN-SIDED COVERED GALLERY · 18.1 m² / —
+                      - generic [ref=f5e323]: R04 · COURTYARD · 14.0 m² / —
+                      - generic [ref=f5e324]: R05 · ATTACHED BATHROOM 1 · 5.3 m² / —
+                      - generic [ref=f5e325]: R06 · BEDROOM 1 · 12.0 m² / —
+                      - generic [ref=f5e326]: R07 · KITCHEN · 9.7 m² / —
+                      - generic [ref=f5e327]: R08 · UTILITY · 5.4 m² / —
+                      - generic [ref=f5e328]: R09 · POOJA · 5.2 m² / —
+                      - generic [ref=f5e329]: R10 · ENTRY FOYER · 17.2 m² / —
+                      - generic [ref=f5e330]: R11 · LIVING / DINING HALL · 44.4 m² / —
+                      - generic [ref=f5e331]: R12 · COVERED PARKING · 75.6 m² / —
+                - generic [ref=f5e332]:
+                  - generic [ref=f5e333]: courtyard · rung 0
+                  - generic [ref=f5e334]: Courtyard Villa is the deterministic preferred parti option at relaxation rung 0.
+              - generic [ref=f5e335] [cursor=pointer]:
+                - radio "Compact Villa · Scheme B compact · rung 3 Compact Villa is the deterministic compact fallback option at relaxation rung 3." [ref=f5e336]
+                - generic [ref=f5e337]: Compact Villa · Scheme B
+                - img [ref=f5e341]:
+                  - generic [ref=f5e344]:
+                    - generic [ref=f5e345]: ROAD ACCESS · SOUTH
+                    - generic [ref=f5e348]: ROAD ACCESS · EAST
+                    - generic [ref=f5e353]: SITE BOUNDARY
+                  - generic [ref=f5e383]:
+                    - generic [ref=f5e384]: OPEN
+                    - generic [ref=f5e385]: MAIN ENTRY
+                  - generic [ref=f5e420]: UP
+                  - generic [ref=f5e475]:
+                    - generic [ref=f5e477]:
+                      - text: STAIR CORE
+                      - generic [ref=f5e478]: 7.1 m² · UP
+                    - generic [ref=f5e479]: R02
+                    - generic [ref=f5e483]: R03
+                    - generic [ref=f5e487]: R04
+                    - generic [ref=f5e492]:
+                      - text: OPEN-SIDED PRIVATE WING GALLERY
+                      - generic [ref=f5e493]: 19.7 m² · VER
+                    - generic [ref=f5e495]:
+                      - text: OPEN-SIDED COVERED GALLERY
+                      - generic [ref=f5e496]: 18.1 m² · VER
+                    - generic [ref=f5e498]:
+                      - text: COURTYARD
+                      - generic [ref=f5e499]: 14.0 m² · CYD
+                    - generic [ref=f5e501]:
+                      - text: ATTACHED BATHROOM 1
+                      - generic [ref=f5e502]: 5.3 m² · WC
+                    - generic [ref=f5e504]:
+                      - text: BEDROOM 1
+                      - generic [ref=f5e505]: 12.0 m² · BED
+                    - generic [ref=f5e507]:
+                      - text: KITCHEN
+                      - generic [ref=f5e508]: 9.7 m² · KIT
+                    - generic [ref=f5e510]:
+                      - text: UTILITY
+                      - generic [ref=f5e511]: 5.4 m² · UTL
+                    - generic [ref=f5e513]:
+                      - text: POOJA
+                      - generic [ref=f5e514]: 5.2 m² · PUJ
+                    - generic [ref=f5e516]:
+                      - text: ENTRY FOYER
+                      - generic [ref=f5e517]: 17.2 m² · ENT
+                    - generic [ref=f5e519]:
+                      - text: LIVING / DINING HALL
+                      - generic [ref=f5e520]: 44.4 m² · LIV
+                    - generic [ref=f5e522]:
+                      - text: COVERED PARKING
+                      - generic [ref=f5e523]: 75.6 m² · CAR
+                  - generic [ref=f5e524]:
+                    - generic [ref=f5e525]: 20.0 m
+                    - generic [ref=f5e528]: 18.0 m
+                    - generic [ref=f5e531]: 17.60 m
+                    - generic [ref=f5e534]: 14.0 m
+                  - generic [ref=f5e537]:
+                    - generic [ref=f5e538]:
+                      - generic [ref=f5e542]: "N"
+                      - generic [ref=f5e543]: S
+                      - generic [ref=f5e544]: E
+                      - generic [ref=f5e545]: W
+                    - generic [ref=f5e546]:
+                      - generic [ref=f5e549]: "0"
+                      - generic [ref=f5e550]: 5 m
+                    - generic [ref=f5e551]:
+                      - generic [ref=f5e552]: Social
+                      - generic [ref=f5e555]: Private
+                      - generic [ref=f5e558]: Kitchen
+                      - generic [ref=f5e561]: Wet service
+                      - generic [ref=f5e564]: Circulation
+                      - generic [ref=f5e567]: Outdoor
+                      - generic [ref=f5e570]: Utility
+                      - generic [ref=f5e573]: Work
+                      - generic [ref=f5e576]: Sacred
+                    - generic [ref=f5e579]:
+                      - generic [ref=f5e581]: BrickPilot
+                      - generic [ref=f5e582]: COMPACT VILLA · SCHEME B
+                      - generic [ref=f5e583]: CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION
+                      - generic [ref=f5e584]: COMPACT VILLA · SCHEME B · COMPACT · SCHEME STUDY
+                      - generic [ref=f5e585]: GROUND FLOOR
+                      - generic [ref=f5e586]: SEED 805630579 · topology-hybrid-v2.0.0
+                      - generic [ref=f5e587]: RULES residential-baseline-2026.5
+                      - generic [ref=f5e588]: RENDERER cad-svg-v2
+                      - generic [ref=f5e589]: CANDIDATE COMPACT / 4
+                    - generic [ref=f5e590]:
+                      - generic [ref=f5e591]: AREA SCHEDULE · ACHIEVED / TARGET
+                      - generic [ref=f5e592]: R01 · OPEN-SIDED PRIVATE WING GALLERY · 19.7 m² / —
+                      - generic [ref=f5e593]: R02 · OPEN-SIDED COVERED GALLERY · 18.1 m² / —
+                      - generic [ref=f5e594]: R03 · COURTYARD · 14.0 m² / —
+                      - generic [ref=f5e595]: R04 · ATTACHED BATHROOM 1 · 5.3 m² / —
+                      - generic [ref=f5e596]: R05 · BEDROOM 1 · 12.0 m² / —
+                      - generic [ref=f5e597]: R06 · KITCHEN · 9.7 m² / —
+                      - generic [ref=f5e598]: R07 · UTILITY · 5.4 m² / —
+                      - generic [ref=f5e599]: R08 · POOJA · 5.2 m² / —
+                      - generic [ref=f5e600]: R09 · ENTRY FOYER · 17.2 m² / —
+                      - generic [ref=f5e601]: R10 · LIVING / DINING HALL · 44.4 m² / —
+                      - generic [ref=f5e602]: R11 · COVERED PARKING · 75.6 m² / —
+                - generic [ref=f5e603]:
+                  - generic [ref=f5e604]: compact · rung 3
+                  - generic [ref=f5e605]: Compact Villa is the deterministic compact fallback option at relaxation rung 3.
+              - generic [ref=f5e606] [cursor=pointer]:
+                - radio "T-Hub Villa · Scheme C t hub · rung 2 T-Hub Villa is the deterministic simplified court option at relaxation rung 2." [ref=f5e607]
+                - generic [ref=f5e608]: T-Hub Villa · Scheme C
+                - img [ref=f5e612]:
+                  - generic [ref=f5e615]:
+                    - generic [ref=f5e616]: ROAD ACCESS · SOUTH
+                    - generic [ref=f5e619]: ROAD ACCESS · EAST
+                    - generic [ref=f5e624]: SITE BOUNDARY
+                  - generic [ref=f5e653]: MAIN ENTRY
+                  - generic [ref=f5e692]: UP
+                  - generic [ref=f5e746]:
+                    - generic [ref=f5e748]:
+                      - text: STAIR CORE
+                      - generic [ref=f5e749]: 7.1 m² · UP
+                    - generic [ref=f5e750]: R02
+                    - generic [ref=f5e754]: R03
+                    - generic [ref=f5e758]: R04
+                    - generic [ref=f5e763]:
+                      - text: OPEN-SIDED PRIVATE WING GALLERY
+                      - generic [ref=f5e764]: 19.7 m² · VER
+                    - generic [ref=f5e766]:
+                      - text: OPEN-SIDED COVERED GALLERY
+                      - generic [ref=f5e767]: 18.1 m² · VER
+                    - generic [ref=f5e768]: R07
+                    - generic [ref=f5e773]:
+                      - text: ATTACHED BATHROOM 1
+                      - generic [ref=f5e774]: 5.3 m² · WC
+                    - generic [ref=f5e776]:
+                      - text: BEDROOM 1
+                      - generic [ref=f5e777]: 12.0 m² · BED
+                    - generic [ref=f5e779]:
+                      - text: KITCHEN
+                      - generic [ref=f5e780]: 9.7 m² · KIT
+                    - generic [ref=f5e782]:
+                      - text: UTILITY
+                      - generic [ref=f5e783]: 5.4 m² · UTL
+                    - generic [ref=f5e785]:
+                      - text: POOJA
+                      - generic [ref=f5e786]: 5.2 m² · PUJ
+                    - generic [ref=f5e788]:
+                      - text: ENTRY FOYER
+                      - generic [ref=f5e789]: 17.9 m² · ENT
+                    - generic [ref=f5e791]:
+                      - text: LIVING / DINING HALL
+                      - generic [ref=f5e792]: 49.7 m² · LIV
+                    - generic [ref=f5e794]:
+                      - text: COVERED PARKING
+                      - generic [ref=f5e795]: 75.6 m² · CAR
+                  - generic [ref=f5e796]:
+                    - generic [ref=f5e797]: 20.0 m
+                    - generic [ref=f5e800]: 18.0 m
+                    - generic [ref=f5e803]: 17.60 m
+                    - generic [ref=f5e806]: 14.0 m
+                  - generic [ref=f5e809]:
+                    - generic [ref=f5e810]:
+                      - generic [ref=f5e814]: "N"
+                      - generic [ref=f5e815]: S
+                      - generic [ref=f5e816]: E
+                      - generic [ref=f5e817]: W
+                    - generic [ref=f5e818]:
+                      - generic [ref=f5e821]: "0"
+                      - generic [ref=f5e822]: 5 m
+                    - generic [ref=f5e823]:
+                      - generic [ref=f5e824]: Social
+                      - generic [ref=f5e827]: Private
+                      - generic [ref=f5e830]: Kitchen
+                      - generic [ref=f5e833]: Wet service
+                      - generic [ref=f5e836]: Circulation
+                      - generic [ref=f5e839]: Outdoor
+                      - generic [ref=f5e842]: Utility
+                      - generic [ref=f5e845]: Work
+                      - generic [ref=f5e848]: Sacred
+                    - generic [ref=f5e851]:
+                      - generic [ref=f5e853]: BrickPilot
+                      - generic [ref=f5e854]: T-HUB VILLA · SCHEME C
+                      - generic [ref=f5e855]: CONCEPT / FEASIBILITY PLAN · NOT FOR CONSTRUCTION
+                      - generic [ref=f5e856]: T-HUB VILLA · SCHEME C · T HUB · SCHEME STUDY
+                      - generic [ref=f5e857]: GROUND FLOOR
+                      - generic [ref=f5e858]: SEED 805630579 · topology-hybrid-v2.0.0
+                      - generic [ref=f5e859]: RULES residential-baseline-2026.5
+                      - generic [ref=f5e860]: RENDERER cad-svg-v2
+                      - generic [ref=f5e861]: CANDIDATE T_HUB / 3
+                    - generic [ref=f5e862]:
+                      - generic [ref=f5e863]: AREA SCHEDULE · ACHIEVED / TARGET
+                      - generic [ref=f5e864]: R01 · ENTRY VERANDAH RECESS · 5.0 m² / —
+                      - generic [ref=f5e865]: R02 · OPEN-SIDED PRIVATE WING GALLERY · 19.7 m² / —
+                      - generic [ref=f5e866]: R03 · OPEN-SIDED COVERED GALLERY · 18.1 m² / —
+                      - generic [ref=f5e867]: R04 · COURTYARD · 8.0 m² / —
+                      - generic [ref=f5e868]: R05 · ATTACHED BATHROOM 1 · 5.3 m² / —
+                      - generic [ref=f5e869]: R06 · BEDROOM 1 · 12.0 m² / —
+                      - generic [ref=f5e870]: R07 · KITCHEN · 9.7 m² / —
+                      - generic [ref=f5e871]: R08 · UTILITY · 5.4 m² / —
+                      - generic [ref=f5e872]: R09 · POOJA · 5.2 m² / —
+                      - generic [ref=f5e873]: R10 · ENTRY FOYER · 17.9 m² / —
+                      - generic [ref=f5e874]: R11 · LIVING / DINING HALL · 49.7 m² / —
+                      - generic [ref=f5e875]: R12 · COVERED PARKING · 75.6 m² / —
+                - generic [ref=f5e876]:
+                  - generic [ref=f5e877]: t hub · rung 2
+                  - generic [ref=f5e878]: T-Hub Villa is the deterministic simplified court option at relaxation rung 2.
+          - generic "Scheme evidence · Courtyard Villa · Scheme A" [ref=f5e879]:
+            - generic [ref=f5e880]:
+              - paragraph [ref=f5e881]: Why this works
+              - heading "Courtyard Villa · Scheme A" [level=3] [ref=f5e882]
+              - paragraph [ref=f5e883]: Courtyard Villa is the deterministic preferred parti option at relaxation rung 0.
+              - list [ref=f5e884]:
+                - listitem [ref=f5e885]: "Hot-humid response: 182.1 m² of covered verandah supports shaded air movement."
+                - listitem [ref=f5e886]: The north-facing entry and 5.7% court ratio are retained as orientation and cross-ventilation evidence.
+            - generic [ref=f5e887]:
+              - generic [ref=f5e888]:
+                - generic [ref=f5e889]:
+                  - term [ref=f5e890]: Hard validation
+                  - definition [ref=f5e891]: 100 / 100
+                - generic [ref=f5e892]:
+                  - term [ref=f5e893]: Cost evidence
+                  - definition [ref=f5e894]: Available
+                - generic [ref=f5e895]:
+                  - term [ref=f5e896]: AI review
+                  - definition [ref=f5e897]: Reviewed
+              - status [ref=f5e898]
+              - button "Selected scheme" [disabled] [ref=f5e899]
+          - generic [ref=f5e900]:
+            - paragraph [ref=f5e901]: Direction confirmed. The 2D plan, validation, cost and review all follow the selected scheme.
+            - button "Continue to 2D plan" [ref=f5e902]
+  - button "Open Next.js Dev Tools" [ref=f5e910] [cursor=pointer]
+  - alert [ref=f5e914]

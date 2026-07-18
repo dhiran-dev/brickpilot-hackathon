@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BrickPilot — AI house design",
+  title: "BrickPilot — See your home before you build it",
   description:
-    "Type a sentence, get a dimensionally-accurate floor plan, a validation and cost report, and photoreal renders.",
+    "Turn the home you have been imagining into a clear, considered concept—and move forward with confidence.",
 };
 
 export default function RootLayout({

@@ -263,6 +263,11 @@ function FloorPlanSvg({ plan, maxWidth, maxHeight }: { plan: PlanPrimitives; max
       {plan.roomFills.map((room, index) => (
         <Polygon fill={room.fill} fillOpacity={0.16} key={`fill-${index}`} points={room.points} stroke={room.openEdge ? LINE : "none"} strokeDasharray={room.openEdge ? "170 110" : undefined} strokeWidth={room.openEdge ? hairline : 0} />
       ))}
+      {plan.intentionalUnbuilt.map((region, index) => <Polygon fill="none" key={`unbuilt-${index}`} points={region.points} stroke={LINE} strokeDasharray="220 140" strokeWidth={hairline} />)}
+      {plan.roofLines.map((line, index) => <Line key={`roof-${index}`} stroke={PLAN_COLORS.accent} strokeDasharray={line.dashed ? "100 65" : undefined} strokeWidth={hairline} x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />)}
+      {plan.supportLines.map((line, index) => <Line key={`support-line-${index}`} stroke={LINE} strokeWidth={thin} x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />)}
+      {plan.supportPoints.map((point, index) => <Circle cx={point.x} cy={point.y} fill={LINE} key={`support-${index}`} r={115} />)}
+      {plan.guardLines.map((line, index) => <Line key={`guard-${index}`} stroke={PLAN_COLORS.info} strokeDasharray="100 55" strokeWidth={thin} x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />)}
 
       {plan.walls.map((wall, index) => (
         <Line key={`wall-${index}`} opacity={wall.stroke === PLAN_COLORS.ink ? 0.9 : 0.62} stroke={wall.stroke} strokeLinecap="square" strokeWidth={wall.thicknessMm} x1={wall.x1} x2={wall.x2} y1={wall.y1} y2={wall.y2} />

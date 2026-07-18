@@ -1,12 +1,16 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { buildingRequirementsSchema, hasMinimumResidentialRoomProgram } from "@/lib/building/requirements";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generationJobs, layoutVersions, projectRequirements, projects } from "@/lib/db/schema";
-import { classifyPersistedStudy } from "@/lib/design/persisted-study";
-import { runDesignPipeline } from "@/lib/server/design-pipeline";
+import { classifyReadablePersistedStudy } from "@/lib/design/persisted-study";
+import { runDesignPipelineForContract, type ReadablePipelineResult } from "@/lib/server/design-pipeline";
+import { projectCapabilityMetadata } from "@/lib/server/project-capabilities";
+import { projectCreationReplay, validClientRequestId } from "@/lib/server/project-creation";
+import { parseIssuedDesignRequirements } from "@/lib/server/design-request-contract";
+import { configuredProjectIssuance } from "@/lib/server/project-issuance";
+import { emitLifecycleEvent, lockProjectLifecycle } from "@/lib/server/project-lifecycle";
 
 function configuredLimit(value: string | undefined, fallback: number) {
   const parsed = Number(value);
@@ -32,7 +36,7 @@ function jsonRecord(value: unknown) {
 }
 
 class BuildingGenerationErrorLike extends Error {
-  constructor(readonly result: Extract<Awaited<ReturnType<typeof runDesignPipeline>>, { status: "failed" }>) {
+  constructor(readonly result: Extract<ReadablePipelineResult, { status: "failed" }>) {
     super(result.message);
   }
 }
@@ -47,6 +51,9 @@ export async function GET(request: Request) {
       designId: layoutVersions.id,
       version: layoutVersions.version,
       title: projects.title,
+      projectStatus: projects.status,
+      capabilityProfile: projects.capabilityProfile,
+      generatorContractVersion: projects.generatorContractVersion,
       status: layoutVersions.status,
       createdAt: layoutVersions.createdAt,
       requirements: projectRequirements.inputJson,
@@ -65,7 +72,16 @@ export async function GET(request: Request) {
     .orderBy(desc(layoutVersions.createdAt))
     .limit(48);
 
-  const classified = rows.map(classifyPersistedStudy);
+  const classified = rows.map((row) => {
+    const classifiedStudy = classifyReadablePersistedStudy(row);
+    return {
+      ...classifiedStudy,
+      study: {
+        ...classifiedStudy.study,
+        ...projectCapabilityMetadata(row.capabilityProfile, row.projectStatus, row.generatorContractVersion),
+      },
+    };
+  });
   const compatible = classified.filter((item) => item.compatible).map((item) => item.study);
   const studies = compatible.filter((study) => study.status === "completed").slice(0, 12);
   const failedStudies = compatible.filter((study) => study.status === "failed").slice(0, 8);
@@ -84,10 +100,14 @@ export async function POST(request: Request) {
     return errorResponse("Request body must be valid JSON.", 400, "INVALID_JSON");
   }
 
-  const candidate = body && typeof body === "object" && "requirements" in body
-    ? (body as { requirements: unknown }).requirements
-    : body;
-  const parsed = buildingRequirementsSchema.safeParse(candidate);
+  const envelope = body && typeof body === "object" ? body as Record<string, unknown> : null;
+  const rawClientRequestId = envelope?.clientRequestId ?? request.headers.get("idempotency-key");
+  const clientRequestId = typeof rawClientRequestId === "string" ? rawClientRequestId.trim() : "";
+  if (!validClientRequestId(clientRequestId)) {
+    return errorResponse("A stable clientRequestId is required for safe project creation.", 400, "INVALID_CLIENT_REQUEST_ID");
+  }
+  const issuance = configuredProjectIssuance(user.id);
+  const parsed = parseIssuedDesignRequirements(body, issuance.contract);
   if (!parsed.success) {
     const code = parsed.error.issues.some((issue) => issue.message === "BUILDING_TYPE_COMING_SOON")
       ? "BUILDING_TYPE_COMING_SOON"
@@ -105,7 +125,7 @@ export async function POST(request: Request) {
       parsed.error.flatten(),
     );
   }
-  if (!hasMinimumResidentialRoomProgram(parsed.data)) {
+  if (!parsed.data.rooms.some((room) => room.type === "bedroom") || !parsed.data.rooms.some((room) => room.type === "bathroom")) {
     return errorResponse("Add at least one bedroom and one bathroom before generating a residential study.", 400, "INCOMPLETE_ROOM_PROGRAM");
   }
   const randomSeed = new Uint32Array(1);
@@ -115,16 +135,41 @@ export async function POST(request: Request) {
   const now = new Date();
   const summary = `Structured residential requirements v${requirements.requirementSchemaVersion}; ${requirements.floors.length} floor(s); ${requirements.rooms.length} requested rooms.`;
   let queued: {
+    replayed: false;
     created: typeof projects.$inferSelect;
     requirement: typeof projectRequirements.$inferSelect;
     layout: typeof layoutVersions.$inferSelect;
     job: typeof generationJobs.$inferSelect;
+  } | {
+    replayed: true;
+    projectId: string;
+    designId: string | null;
+    projectStatus: typeof projects.$inferSelect.status;
+    capabilityProfile: typeof projects.$inferSelect.capabilityProfile;
+    generatorContractVersion: number;
+    responsePayload: Record<string, unknown> | null;
   };
   try {
     queued = await db.transaction(async (transaction) => {
       // postgres-js pins this Drizzle transaction callback to one transaction connection. The
       // xact-level advisory lock therefore covers both quota reads and all four inserts.
       await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`brickpilot:design-generation:${user.id}`}, 0))`);
+      const [existing] = await transaction
+        .select({
+          projectId: projects.id,
+          designId: layoutVersions.id,
+          projectStatus: projects.status,
+          capabilityProfile: projects.capabilityProfile,
+          generatorContractVersion: projects.generatorContractVersion,
+          responsePayload: generationJobs.responsePayload,
+        })
+        .from(projects)
+        .leftJoin(layoutVersions, eq(layoutVersions.projectId, projects.id))
+        .leftJoin(generationJobs, and(eq(generationJobs.layoutVersionId, layoutVersions.id), eq(generationJobs.kind, "design")))
+        .where(and(eq(projects.ownerId, user.id), eq(projects.clientRequestId, clientRequestId)))
+        .orderBy(desc(layoutVersions.version))
+        .limit(1);
+      if (existing) return { replayed: true as const, ...existing };
       const hourStart = new Date(now.getTime() - 60 * 60 * 1000);
       const dayStart = new Date(now);
       dayStart.setUTCHours(0, 0, 0, 0);
@@ -151,6 +196,10 @@ export async function POST(request: Request) {
         title: requirements.projectName,
         description: `${requirements.floors.length}-floor detached residential concept in ${requirements.region.locality ?? requirements.region.adminArea}`,
         status: "generating",
+        capabilityProfile: issuance.capabilityProfile,
+        generatorContractVersion: issuance.generatorContractVersion,
+        rolloutEpoch: issuance.rolloutEpoch,
+        clientRequestId,
         updatedAt: now,
       }).returning();
       const [requirement] = await transaction.insert(projectRequirements).values({
@@ -178,17 +227,30 @@ export async function POST(request: Request) {
         startedAt: now,
         updatedAt: now,
       }).returning();
-      return { created, requirement, layout, job };
+      return { replayed: false as const, created, requirement, layout, job };
     });
   } catch (error) {
     if (error instanceof GenerationRateLimitError) return errorResponse(error.message, 429, "RATE_LIMITED", { scope: error.scope, limit: error.limit, retryAfterSeconds: error.retryAfterSeconds });
     console.error("Design generation reservation failed", error);
     return errorResponse("Unable to reserve this generation safely. No partial study was saved.", 500, "GENERATION_RESERVATION_FAILED");
   }
+  if (queued.replayed) {
+    const replay = projectCreationReplay({
+      projectId: queued.projectId,
+      designId: queued.designId,
+      projectStatus: queued.projectStatus,
+      capabilityProfile: queued.capabilityProfile,
+      generatorContractVersion: queued.generatorContractVersion,
+      responsePayload: queued.responsePayload,
+    });
+    return NextResponse.json(replay.body, { status: replay.status });
+  }
   const { created, layout, job } = queued;
 
   try {
-    const pipelineResult = await runDesignPipeline(requirements);
+    const pipelineResult = created.generatorContractVersion === 3
+      ? await runDesignPipelineForContract("v3", requirements)
+      : await runDesignPipelineForContract("v2", requirements);
     if (pipelineResult.status === "failed") throw new BuildingGenerationErrorLike(pipelineResult);
     const { building, validation, costEstimate, intent, aiReview, schemes, selectedSchemeId, diagnostics } = pipelineResult;
     const completedAt = new Date();
@@ -206,9 +268,26 @@ export async function POST(request: Request) {
       schemes,
       selectedSchemeId,
       diagnostics,
+      ...projectCapabilityMetadata(created.capabilityProfile, "ready", created.generatorContractVersion),
     };
 
     await db.transaction(async (transaction) => {
+      await lockProjectLifecycle(transaction, created.id);
+      const [reservedProject] = await transaction
+        .select({ status: projects.status, contractVersion: projects.generatorContractVersion })
+        .from(projects)
+        .where(eq(projects.id, created.id))
+        .limit(1);
+      if (!reservedProject || reservedProject.status !== "generating") throw new Error("PROJECT_STATE_CHANGED");
+      if (reservedProject.contractVersion !== building.buildingSchemaVersion) {
+        emitLifecycleEvent("generator_contract_mismatch", {
+          projectId: created.id,
+          layoutVersionId: layout.id,
+          reservedContractVersion: reservedProject.contractVersion,
+          actualContractVersion: building.buildingSchemaVersion,
+        });
+        throw new Error("GENERATOR_CONTRACT_MISMATCH");
+      }
       await transaction
         .update(layoutVersions)
         .set({
@@ -239,7 +318,19 @@ export async function POST(request: Request) {
     const generationError = error instanceof BuildingGenerationErrorLike ? error.result : undefined;
     const code = generationError?.code ?? "GENERATION_FAILED";
     const message = generationError?.message ?? "Unable to create a deterministic concept for these requirements.";
-    await db.transaction(async (transaction) => {
+    const failureSettlement = await db.transaction(async (transaction) => {
+      await lockProjectLifecycle(transaction, created.id);
+      const [projectState] = await transaction.select({ status: projects.status }).from(projects)
+        .where(eq(projects.id, created.id)).limit(1);
+      if (!projectState || projectState.status !== "generating") {
+        emitLifecycleEvent("generation_completion_suppressed", {
+          projectId: created.id,
+          layoutVersionId: layout.id,
+          generationJobId: job.id,
+          projectStatus: projectState?.status ?? null,
+        });
+        return { settled: false as const, projectStatus: projectState?.status ?? null };
+      }
       await transaction
         .update(layoutVersions)
         .set({
@@ -257,8 +348,17 @@ export async function POST(request: Request) {
       await transaction
         .update(projects)
         .set({ status: "failed", updatedAt: failedAt })
-        .where(eq(projects.id, created.id));
+        .where(and(eq(projects.id, created.id), eq(projects.status, "generating")));
+      return { settled: true as const, projectStatus: "failed" as const };
     });
+    if (!failureSettlement.settled) {
+      const deleting = failureSettlement.projectStatus === "deleting";
+      return errorResponse(
+        deleting ? "This project is being deleted." : "Project generation no longer owns this project state.",
+        409,
+        deleting ? "PROJECT_DELETING" : "PROJECT_STATE_CHANGED",
+      );
+    }
     return errorResponse(
       message,
       generationError ? 422 : 500,

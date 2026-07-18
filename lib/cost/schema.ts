@@ -71,7 +71,7 @@ export const costWarningSchema = z.object({
   message: z.string().min(1),
 });
 
-export const quantityTakeoffSchema = z.object({
+export const legacyQuantityTakeoffSchema = z.object({
   grossFloorAreaMm2: z.number().int().nonnegative(),
   floorAreasMm2: z.array(z.object({ floorId: z.string(), areaMm2: z.number().int().nonnegative() })),
   floorCount: z.number().int().positive(),
@@ -80,6 +80,19 @@ export const quantityTakeoffSchema = z.object({
   windowCount: z.number().int().nonnegative(),
   stairCount: z.number().int().nonnegative(),
 });
+export const currentQuantityTakeoffSchema = legacyQuantityTakeoffSchema.extend({
+  quantitySchemaVersion: z.literal(3),
+  roofSurfaceAreaMm2: z.number().int().nonnegative(),
+  solidCanopySurfaceAreaMm2: z.number().int().nonnegative(),
+  canopyPostCount: z.number().int().nonnegative(),
+  pergolaPostCount: z.number().int().nonnegative(),
+  pergolaMemberLengthMm: z.number().int().nonnegative(),
+  edgeProtectionLengthMm: z.number().int().nonnegative(),
+  informationalBasis: z.literal("Physical-system quantities are informational and remain included in the GFA base rate; no separate unit rates are applied."),
+});
+// Put the discriminated v3 shape first: the intentionally permissive legacy
+// object would otherwise accept a v3 value and strip its informational fields.
+export const quantityTakeoffSchema = z.union([currentQuantityTakeoffSchema, legacyQuantityTakeoffSchema]);
 
 const estimateBaseSchema = z.object({
   estimateSchemaVersion: z.literal(1),
@@ -132,6 +145,7 @@ export type RatePack = z.infer<typeof ratePackSchema>;
 export type CostLineItem = z.infer<typeof costLineItemSchema>;
 export type CostWarning = z.infer<typeof costWarningSchema>;
 export type QuantityTakeoff = z.infer<typeof quantityTakeoffSchema>;
+export type CurrentQuantityTakeoff = z.infer<typeof currentQuantityTakeoffSchema>;
 export type AvailableCostEstimate = z.infer<typeof availableCostEstimateSchema>;
 export type UnavailableCostEstimate = z.infer<typeof unavailableCostEstimateSchema>;
 export type CostEstimate = z.infer<typeof costEstimateSchema>;

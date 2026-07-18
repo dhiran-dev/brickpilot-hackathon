@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { requireUser } from "@/lib/auth";
@@ -18,6 +18,7 @@ export async function GET(request: Request, context: { params: Promise<{ key: st
       eq(generatedAssets.storageKey, storageKey),
       eq(generatedAssets.status, "completed"),
       eq(projects.ownerId, user.id),
+      ne(projects.status, "deleting"),
     ))
     .limit(1);
   if (!asset) return NextResponse.json({ error: "Asset not found.", code: "ASSET_NOT_FOUND" }, { status: 404 });

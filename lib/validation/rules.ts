@@ -1,4 +1,4 @@
-import type { ValidationCategory, ValidationFinding, ValidationSeverity } from "@/lib/validation/types";
+import type { ValidationCategory, ValidationCategoryV3, ValidationFinding, ValidationFindingV3, ValidationSeverity } from "@/lib/validation/types";
 
 export const RULE_PACK_VERSION = "residential-baseline-2026.5";
 export const MIN_CONCEPT_PASSAGE_WIDTH_MM = 700;
@@ -38,6 +38,23 @@ export const RULES = {
   daylight: "PLANNING_DAYLIGHT_INDICATION",
   relationshipConnect: "PLANNING_MUST_CONNECT",
   stackAlignment: "PLANNING_STACK_ALIGNMENT",
+  areaTargetExceeded: "AREA_TARGET_EXCEEDED",
+  schemeNotDistinct: "SCHEME_NOT_DISTINCT",
+  mainEntryMissing: "MAIN_ENTRY_MISSING",
+  mainEntryNotRoadSide: "MAIN_ENTRY_NOT_ROAD_SIDE",
+  mainEntryTooNarrow: "MAIN_ENTRY_TOO_NARROW",
+  exteriorEntryCountExceeded: "EXTERIOR_ENTRY_COUNT_EXCEEDED",
+  privateRoomExteriorExposure: "PRIVATE_ROOM_EXTERIOR_EXPOSURE",
+  parkingVehicleAccessMissing: "PARKING_VEHICLE_ACCESS_MISSING",
+  roofIntentNotRealized: "ROOF_INTENT_NOT_REALIZED",
+  roofGeometryInvalid: "ROOF_GEOMETRY_INVALID",
+  roofSiteBoundaryConflict: "ROOF_SITE_BOUNDARY_CONFLICT",
+  roofSupportIncomplete: "ROOF_SUPPORT_INCOMPLETE",
+  supportClearanceConflict: "SUPPORT_CLEARANCE_CONFLICT",
+  edgeProtectionMissing: "EDGE_PROTECTION_MISSING",
+  shadeStructureNotRealized: "SHADE_STRUCTURE_NOT_REALIZED",
+  facadeEntryConflict: "FACADE_ENTRY_CONFLICT",
+  intentRealizationMissing: "INTENT_REALIZATION_MISSING",
 } as const;
 
 export function finding(
@@ -49,5 +66,17 @@ export function finding(
     Pick<ValidationFinding, "objectIds">,
   sourceKind: ValidationFinding["sourceKind"] = "geometry",
 ): ValidationFinding {
+  return { ruleId, ruleVersion: 1, severity, category, message, sourceKind, ...fields };
+}
+
+export function findingV3(
+  ruleId: string,
+  severity: ValidationSeverity,
+  category: ValidationCategoryV3,
+  message: string,
+  fields: Partial<Omit<ValidationFindingV3, "ruleId" | "ruleVersion" | "severity" | "category" | "message" | "sourceKind">> &
+    Pick<ValidationFindingV3, "objectIds">,
+  sourceKind: ValidationFindingV3["sourceKind"] = "geometry",
+): ValidationFindingV3 {
   return { ruleId, ruleVersion: 1, severity, category, message, sourceKind, ...fields };
 }

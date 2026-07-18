@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { createReplicatePrediction, predictionOutputs, providerStatus, replicatePredictionSchema, replicateWebhookUrl } from "@/lib/render/replicate";
+import { cancelReplicatePrediction, createReplicatePrediction, predictionOutputs, providerStatus, ReplicateCreateAmbiguousError, replicatePredictionSchema, replicateWebhookUrl } from "@/lib/render/replicate";
 
 const originalUrl = process.env.NEXT_PUBLIC_APP_URL;
 const originalToken = process.env.REPLICATE_API_TOKEN;
@@ -34,6 +34,18 @@ describe("Replicate prediction contract", () => {
     expect(replicateWebhookUrl()).toBeUndefined();
     process.env.NEXT_PUBLIC_APP_URL = "https://brickpilot.example";
     expect(replicateWebhookUrl()).toBe("https://brickpilot.example/api/webhooks/replicate");
+    expect(replicateWebhookUrl("dispatch token")).toBe("https://brickpilot.example/api/webhooks/replicate?dispatch=dispatch+token");
+  });
+
+  test("treats a network failure as ambiguous so the durable webhook can recover it", async () => {
+    process.env.REPLICATE_API_TOKEN = "test-token";
+    process.env.IMAGE_MODEL = "openai/gpt-image-2";
+    globalThis.fetch = (async () => { throw new Error("socket reset after write"); }) as unknown as typeof fetch;
+    await expect(createReplicatePrediction(
+      { purpose: "interior", sourceRole: "plan_reference", prompt: "Grounded interior", requestedOutputCount: 1 },
+      ["data:image/webp;base64,fixture"],
+      { dispatchToken: "dispatch-1" },
+    )).rejects.toBeInstanceOf(ReplicateCreateAmbiguousError);
   });
 
   test("honors one provider throttle window and retries the same prediction", async () => {
@@ -54,5 +66,16 @@ describe("Replicate prediction contract", () => {
     );
     expect(prediction.id).toBe("prediction-1");
     expect(calls).toBe(2);
+  });
+
+  test("uses the provider cancellation endpoint and treats not-found as settled", async () => {
+    process.env.REPLICATE_API_TOKEN = "test-token";
+    const requests: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      requests.push(`${init?.method}:${String(input)}`);
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    expect(await cancelReplicatePrediction("prediction/unsafe")).toEqual({ disposition: "not_found", prediction: null });
+    expect(requests).toEqual(["POST:https://api.replicate.com/v1/predictions/prediction%2Funsafe/cancel"]);
   });
 });

@@ -6,12 +6,12 @@ import { AlertTriangle, BadgeCheck, Download, Info, Maximize2, Minus, Plus, Prin
 import { CadPlan } from "@/components/cad-plan";
 import { DrawingUnavailableState } from "@/components/cad-workspace/DrawingUnavailableState";
 import { LayerPanel } from "@/components/cad-workspace/LayerPanel";
-import type { Building } from "@/lib/building/schema";
+import type { ReadableBuilding } from "@/lib/building/schema";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
 import { DRAWING_PRESETS, visibilityForPreset, type DrawingAppearance, type DrawingFindingInput, type DrawingLayerId, type DrawingPreset, type LayerVisibility } from "@/lib/drawing/schema";
 
 export type CadWorkspaceProps = {
-  building: Building;
+  building: ReadableBuilding;
   projectName?: string;
   findings?: DrawingFindingInput[];
   highlightedObjectIds?: string[];
@@ -172,6 +172,8 @@ export function CadWorkspace({ building, projectName = "Residential feasibility 
     circulation: artifact.routes.length,
     walls: artifact.walls.length + artifact.columns.length,
     openings: artifact.openings.length,
+    roof: artifact.roofOverlay?.length ?? 0,
+    safety: (artifact.supports?.length ?? 0) + (artifact.guards?.length ?? 0),
     furniture: artifact.furniture.length,
     labels: artifact.rooms.length,
     "dimensions-overall": artifact.dimensions.overall.length,

@@ -4,9 +4,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import type { Building } from "@/lib/building/schema";
+import type { ReadableBuilding } from "@/lib/building/schema";
 import { entranceRoadSide } from "@/lib/building/topology";
-import { buildMassingModel, MASSING_GRID_Y_M, type MassingPrimitiveKind } from "@/lib/render/massing";
+import { buildSemanticRenderCameras } from "@/lib/render/camera";
+import { buildMassingModel, MASSING_GRID_Y_M, massingPrimitiveBounds, type MassingPrimitive, type MassingPrimitiveKind } from "@/lib/render/massing";
 
 export type MassingView = "front" | "rear" | "left" | "right" | "iso" | "top";
 export type MassingCapture = { role: "massing_front" | "massing_collage" | "massing_top"; dataUri: string };
@@ -16,6 +17,11 @@ export const MASSING_CAPTURE_LABELS = {
   front: "SOURCE A · FRONT / ROAD · CAMERA LOCK",
   collage: "SOURCE B · COLLAGE · FOUR LOCKED VIEWS",
   top: "SOURCE C · HIGH 3/4 · FRONT + RIGHT · CAMERA LOCK",
+} as const;
+export const CURRENT_MASSING_CAPTURE_LABELS = {
+  front: "SOURCE A · PRIMARY ROAD / MAIN ENTRY · CAMERA LOCK",
+  secondary: "SOURCE B · SECONDARY CONTEXT · CAMERA LOCK",
+  top: "SOURCE C · AERIAL · CAMERA LOCK",
 } as const;
 
 export const MASSING_VIEWER_CLASS_NAME = "relative h-full min-h-[34rem] w-full overflow-hidden touch-none";
@@ -74,7 +80,7 @@ export type MassingViewerHandle = {
 };
 
 type MassingViewerProps = {
-  building: Building;
+  building: ReadableBuilding;
   visibleFloorIds: string[];
   explodeM: number;
   showInteriorWalls: boolean;
@@ -106,6 +112,9 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> =
   exterior_wall: { color: 0xd8cec0, edge: 0x5b3a22 },
   interior_wall: { color: 0xa39486, edge: 0x6f533e },
   column: { color: 0xc9c0b2, edge: 0x4a4038 },
+  support: { color: 0xb7aa98, edge: 0x4a4038 },
+  guard: { color: 0x91b6c4, edge: 0x5b3a22 },
+  pergola: { color: 0x9b704b, edge: 0x4b2a18 },
   stair: { color: 0xb96834, edge: 0x4b2a18 },
   window_glass: { color: 0x9ec4d4, edge: 0x8e5a31 },
   door_leaf: { color: 0x8a5f38, edge: 0x2f1d0e },
@@ -117,6 +126,9 @@ const MATERIALS: Record<MassingPrimitiveKind, { color: number; edge: number }> =
 // plates, and lets exterior walls close internal junctions.
 const MASSING_SURFACE_DEPTH_UNITS: Record<MassingPrimitiveKind, number> = {
   column: 1,
+  support: 1,
+  guard: 2,
+  pergola: 2,
   roof: 2,
   slab: 2,
   stair: 3,
@@ -168,14 +180,14 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-function frontVector(facing: Building["site"]["facing"]) {
+function frontVector(facing: ReadableBuilding["site"]["facing"]) {
   if (facing === "north") return new THREE.Vector3(0, 0, -1);
   if (facing === "south") return new THREE.Vector3(0, 0, 1);
   if (facing === "east") return new THREE.Vector3(1, 0, 0);
   return new THREE.Vector3(-1, 0, 0);
 }
 
-export function massingViewVector(view: MassingView, facing: Building["site"]["facing"]) {
+export function massingViewVector(view: MassingView, facing: ReadableBuilding["site"]["facing"]) {
   const front = frontVector(facing).normalize();
   const right = new THREE.Vector3(-front.z, 0, front.x).normalize();
   if (view === "front") return front.clone().addScaledVector(right, 0.42).setY(0.3).normalize();
@@ -184,6 +196,25 @@ export function massingViewVector(view: MassingView, facing: Building["site"]["f
   if (view === "right") return right.clone().addScaledVector(front, 0.2).setY(0.28).normalize();
   if (view === "top") return front.clone().addScaledVector(right, 0.68).setY(1.08).normalize();
   return front.clone().addScaledVector(right, 0.75).setY(0.72).normalize();
+}
+
+export function semanticMassingScenePose(building: ReadableBuilding, view: MassingView) {
+  if (building.buildingSchemaVersion !== 3) return null;
+  const cameras = buildSemanticRenderCameras(building);
+  const semantic = view === "front"
+    ? cameras.primary_road_elevation
+    : view === "rear"
+      ? cameras.secondary_context
+      : view === "top"
+        ? cameras.aerial
+        : null;
+  if (!semantic) return null;
+  const toScene = (point: { x: number; y: number; z: number }) => new THREE.Vector3(
+    (point.x - building.site.widthMm / 2) / 1000,
+    point.z / 1000,
+    (point.y - building.site.depthMm / 2) / 1000,
+  );
+  return { semanticView: semantic.view, position: toScene(semantic.positionMm), target: toScene(semantic.targetMm) };
 }
 
 const CAPTURE_WIDTH = MASSING_CAPTURE_SIZE.width;
@@ -246,6 +277,30 @@ function collageDataUri(panels: Array<{ source: HTMLCanvasElement; label: string
   return dataUri;
 }
 
+export function massingPrimitiveMaterialStyle(primitive: Pick<MassingPrimitive, "kind" | "materialToken">) {
+  if (primitive.materialToken.startsWith("door.main-entry")) return { color: 0x5b2d18, edge: 0xffa466 };
+  return MATERIALS[primitive.kind];
+}
+
+function primitiveGeometry(primitive: MassingPrimitive) {
+  if (primitive.shape === "box") return { geometry: new THREE.BoxGeometry(...primitive.size), position: new THREE.Vector3(...primitive.center), quaternion: new THREE.Quaternion() };
+  if (primitive.shape === "mesh") {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(primitive.vertices.flat(), 3));
+    geometry.setIndex(primitive.triangleIndices);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    return { geometry, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+  }
+  const start = new THREE.Vector3(...primitive.start);
+  const end = new THREE.Vector3(...primitive.end);
+  const direction = end.clone().sub(start);
+  const length = Math.max(0.001, direction.length());
+  const geometry = new THREE.BoxGeometry(primitive.sectionMm.width / 1000, length, primitive.sectionMm.depth / 1000);
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  return { geometry, position: start.add(end).multiplyScalar(0.5), quaternion };
+}
+
 export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>(function MassingViewer({
   building,
   visibleFloorIds,
@@ -267,21 +322,25 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.viewAnimationFrame = cancelMassingViewAnimation(runtime.viewAnimationFrame);
-    const target = runtime.controls.target.clone();
+    const semanticPose = semanticMassingScenePose(building, view);
+    const target = semanticPose?.target ?? runtime.controls.target.clone();
     const distance = Math.max(8, runtime.modelRadius * 2.25);
-    const destination = target.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
+    const destination = semanticPose?.position ?? target.clone().add(massingViewVector(view, facingRef.current).multiplyScalar(distance));
     if (!animate) {
       runtime.camera.position.copy(destination);
+      runtime.controls.target.copy(target);
       runtime.controls.update();
       return;
     }
     const start = runtime.camera.position.clone();
+    const startTarget = runtime.controls.target.clone();
     const started = performance.now();
     const duration = 360;
     const move = (now: number) => {
       const raw = Math.min(1, (now - started) / duration);
       const eased = 1 - Math.pow(1 - raw, 3);
       runtime.camera.position.lerpVectors(start, destination, eased);
+      runtime.controls.target.lerpVectors(startTarget, target, eased);
       runtime.controls.update();
       if (raw < 1) runtime.viewAnimationFrame = requestAnimationFrame(move);
       else runtime.viewAnimationFrame = null;
@@ -325,17 +384,19 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
         }
         const front = snapshots.get("front")!;
         const top = snapshots.get("top")!;
+        if (building.buildingSchemaVersion === 3) return [
+          { role: "massing_front", dataUri: labeledDataUri(front, CURRENT_MASSING_CAPTURE_LABELS.front) },
+          { role: "massing_collage", dataUri: labeledDataUri(snapshots.get("rear")!, CURRENT_MASSING_CAPTURE_LABELS.secondary) },
+          { role: "massing_top", dataUri: labeledDataUri(top, CURRENT_MASSING_CAPTURE_LABELS.top) },
+        ];
         return [
           { role: "massing_front", dataUri: labeledDataUri(front, MASSING_CAPTURE_LABELS.front) },
-          {
-            role: "massing_collage",
-            dataUri: collageDataUri([
-              { source: front, label: "FRONT / ROAD" },
-              { source: snapshots.get("rear")!, label: "REAR" },
-              { source: snapshots.get("right")!, label: "RIGHT SIDE" },
-              { source: top, label: "HIGH 3/4" },
-            ]),
-          },
+          { role: "massing_collage", dataUri: collageDataUri([
+            { source: front, label: "FRONT / ROAD" },
+            { source: snapshots.get("rear")!, label: "REAR" },
+            { source: snapshots.get("right")!, label: "RIGHT SIDE" },
+            { source: top, label: "HIGH 3/4" },
+          ]) },
           { role: "massing_top", dataUri: labeledDataUri(top, MASSING_CAPTURE_LABELS.top) },
         ];
       } finally {
@@ -462,8 +523,8 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       ...massingVisibilityOptions({ showInteriorWalls, showColumns, showSlabs, showRoof, showSite }),
     });
     for (const primitive of model.primitives) {
-      const geometry = new THREE.BoxGeometry(...primitive.size);
-      const style = MATERIALS[primitive.kind];
+      const { geometry, position, quaternion } = primitiveGeometry(primitive);
+      const style = massingPrimitiveMaterialStyle(primitive);
       const surfaceStyle = massingSurfaceStyle(primitive.kind);
       const material = new THREE.MeshStandardMaterial({
         color: style.color,
@@ -478,7 +539,8 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.name = primitive.id;
-      mesh.position.set(...primitive.center);
+      mesh.position.copy(position);
+      mesh.quaternion.copy(quaternion);
       mesh.renderOrder = surfaceStyle.renderOrder;
       mesh.castShadow = primitive.kind !== "site";
       mesh.receiveShadow = true;
@@ -496,6 +558,7 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
           }),
         );
         edges.position.copy(mesh.position);
+        edges.quaternion.copy(mesh.quaternion);
         edges.renderOrder = edgeStyle.renderOrder;
         runtime.root.add(edges);
       }
@@ -512,8 +575,9 @@ export const MassingViewer = forwardRef<MassingViewerHandle, MassingViewerProps>
       const min = new THREE.Vector3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
       const max = new THREE.Vector3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
       for (const primitive of buildingPrimitives) {
-        const centre = new THREE.Vector3(...primitive.center);
-        const half = new THREE.Vector3(...primitive.size).multiplyScalar(0.5);
+        const bounds = massingPrimitiveBounds(primitive);
+        const centre = new THREE.Vector3(...bounds.center);
+        const half = new THREE.Vector3(...bounds.size).multiplyScalar(0.5);
         min.min(centre.clone().sub(half));
         max.max(centre.clone().add(half));
       }

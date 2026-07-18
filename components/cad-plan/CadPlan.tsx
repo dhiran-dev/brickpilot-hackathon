@@ -230,6 +230,7 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
           strokeWidth={room.edgeTreatment === "open" ? 1.2 : undefined}
           vectorEffect={room.edgeTreatment === "open" ? "non-scaling-stroke" : undefined}
         />)}
+        {artifact.intentionalUnbuiltRegions?.map((region) => <polygon fill="none" key={region.id} points={polygonPoints(region.polygon)} stroke={theme.construction} strokeDasharray="220 140" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />)}
       </g> : null}
 
       {layers.circulation ? <g aria-hidden="true" data-layer="circulation" id="layer-circulation">
@@ -239,6 +240,17 @@ export const CadPlan = forwardRef<SVGSVGElement, CadPlanProps>(function CadPlan(
       {layers.walls ? <g aria-hidden="true" data-layer="walls" id="layer-walls">
         {artifact.walls.map((wall) => <line key={wall.id} opacity={highlighted.has(wall.id) ? 1 : wall.type === "exterior" ? 0.72 : wall.type === "shaft" ? 0.62 : 0.52} stroke={highlighted.has(wall.id) ? theme.accent : wall.type === "exterior" ? theme.ink : theme.secondary} strokeLinecap="square" strokeWidth={wall.thicknessMm} x1={wall.start.x} x2={wall.end.x} y1={wall.start.y} y2={wall.end.y} />)}
         {artifact.columns.map((column) => <g aria-label={`${column.id}, conceptual column coordination`} key={column.id}><rect fill={highlighted.has(column.id) ? theme.accent : theme.ink} height={column.depthMm} opacity="0.92" stroke={theme.sheet} strokeWidth="1" vectorEffect="non-scaling-stroke" width={column.widthMm} x={column.center.x - column.widthMm / 2} y={column.center.y - column.depthMm / 2} /><circle cx={column.center.x} cy={column.center.y} fill="none" r={Math.max(column.widthMm, column.depthMm) * 0.8} stroke={theme.accent} strokeDasharray="55 35" strokeWidth="0.7" vectorEffect="non-scaling-stroke" /></g>)}
+      </g> : null}
+
+      {layers.roof ? <g aria-hidden="true" data-layer="roof" id="layer-roof">
+        {artifact.roofOverlay?.map((roof) => <g key={roof.id}><polygon fill="none" points={polygonPoints(roof.footprint)} stroke={roof.kind === "open_pergola" ? theme.zoning.outdoor : theme.accent} strokeDasharray={roof.kind === "open_pergola" ? "150 90" : "none"} strokeWidth="1.35" vectorEffect="non-scaling-stroke" />{roof.ridges.map((ridge, index) => <line key={`${roof.id}-ridge-${index}`} stroke={theme.accent} strokeDasharray="90 55" strokeWidth="1.15" vectorEffect="non-scaling-stroke" x1={ridge.start.x} x2={ridge.end.x} y1={ridge.start.y} y2={ridge.end.y} />)}</g>)}
+      </g> : null}
+
+      {layers.safety ? <g aria-hidden="true" data-layer="safety" id="layer-safety">
+        {artifact.supports?.map((support) => "start" in support.geometry
+          ? <line key={support.id} stroke={theme.warning} strokeWidth="2" vectorEffect="non-scaling-stroke" x1={support.geometry.start.x} x2={support.geometry.end.x} y1={support.geometry.start.y} y2={support.geometry.end.y} />
+          : <circle cx={support.geometry.x} cy={support.geometry.y} fill={theme.warning} key={support.id} r="125" stroke={theme.sheet} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+        {artifact.guards?.map((guard) => <line key={guard.id} stroke={theme.info} strokeDasharray={guard.kind === "glass_rail" ? "120 60" : undefined} strokeWidth="2.2" vectorEffect="non-scaling-stroke" x1={guard.edge.start.x} x2={guard.edge.end.x} y1={guard.edge.start.y} y2={guard.edge.end.y} />)}
       </g> : null}
 
       {layers.openings ? <g aria-hidden="true" data-layer="openings" id="layer-openings">{artifact.openings.map((opening) => <OpeningSymbol key={opening.id} opening={opening} theme={theme} />)}</g> : null}

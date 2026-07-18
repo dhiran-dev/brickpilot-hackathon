@@ -1,4 +1,5 @@
-import type { Building, Floor } from "@/lib/building/schema";
+import { orthogonalPolygonAreaMm2, orthogonalPolygonBounds } from "@/lib/building/orthogonal-partition";
+import type { CurrentFloor, Floor, ReadableBuilding } from "@/lib/building/schema";
 
 const WIDTH = 1600;
 const BOARD_PADDING = 56;
@@ -16,29 +17,38 @@ function escapeXml(value: string) {
   })[character] as string);
 }
 
-function floorPanel(floor: Floor, panelX: number, panelY: number, panelWidth: number, selectedSpaceId?: string) {
+function floorPanel(floor: Floor | CurrentFloor, panelX: number, panelY: number, panelWidth: number, selectedSpaceId?: string) {
   const captionHeight = 50;
   const drawingPadding = 34;
   const availableWidth = panelWidth - drawingPadding * 2;
   const availableHeight = FLOOR_HEIGHT - captionHeight - drawingPadding * 2;
-  const scale = Math.min(availableWidth / floor.envelope.width, availableHeight / floor.envelope.depth);
-  const drawingWidth = floor.envelope.width * scale;
-  const drawingHeight = floor.envelope.depth * scale;
+  const envelope = "regions" in floor ? orthogonalPolygonBounds(floor.envelope) : floor.envelope;
+  const scale = Math.min(availableWidth / envelope.width, availableHeight / envelope.depth);
+  const drawingWidth = envelope.width * scale;
+  const drawingHeight = envelope.depth * scale;
   const originX = panelX + (panelWidth - drawingWidth) / 2;
   const originY = panelY + captionHeight + (FLOOR_HEIGHT - captionHeight - drawingHeight) / 2;
-  const x = (value: number) => originX + (value - floor.envelope.x) * scale;
-  const y = (value: number) => originY + (value - floor.envelope.y) * scale;
+  const x = (value: number) => originX + (value - envelope.x) * scale;
+  const y = (value: number) => originY + (value - envelope.y) * scale;
   const parts: string[] = [
     `<rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${FLOOR_HEIGHT}" fill="#11100e" stroke="#8e5a31" stroke-opacity="0.7"/>`,
     `<text x="${panelX + 22}" y="${panelY + 32}" fill="#c97940" font-family="Avenir Next, sans-serif" font-size="17" font-weight="700" letter-spacing="2">${escapeXml(floor.label.toUpperCase())} · LEVEL ${floor.level}</text>`,
   ];
-  for (const space of floor.spaces) {
+  const spaces = "regions" in floor
+    ? floor.spaces.flatMap((space) => {
+        const region = floor.regions.find((candidate) => candidate.id === space.regionId);
+        if (!region) return [];
+        return [{ space, region, bounds: orthogonalPolygonBounds(region.polygon), areaMm2: orthogonalPolygonAreaMm2(region.polygon) }];
+      })
+    : floor.spaces.map((space) => ({ space, region: null, bounds: space.bounds, areaMm2: space.areaMm2 }));
+  for (const { space, region, bounds, areaMm2 } of spaces) {
     const selected = space.id === selectedSpaceId;
-    parts.push(`<rect x="${x(space.bounds.x)}" y="${y(space.bounds.y)}" width="${space.bounds.width * scale}" height="${space.bounds.depth * scale}" fill="${selected ? "#53220d" : "#1d1a16"}" stroke="${selected ? "#ff4e00" : "#6d543f"}" stroke-width="${selected ? 5 : 1.5}"/>`);
-    const centreX = x(space.bounds.x + space.bounds.width / 2);
-    const centreY = y(space.bounds.y + space.bounds.depth / 2);
-    const areaM2 = space.areaMm2 / 1_000_000;
-    parts.push(`<text x="${centreX}" y="${centreY - 5}" text-anchor="middle" fill="#fff6ea" font-family="Avenir Next, sans-serif" font-size="${Math.max(11, Math.min(18, Math.sqrt(space.areaMm2) * scale * 0.016))}" font-weight="600">${escapeXml(space.name)}</text>`);
+    if (region) parts.push(`<polygon points="${region.polygon.points.map((point) => `${x(point.x)},${y(point.y)}`).join(" ")}" fill="${selected ? "#53220d" : "#1d1a16"}" stroke="${selected ? "#ff4e00" : "#6d543f"}" stroke-width="${selected ? 5 : 1.5}"/>`);
+    else parts.push(`<rect x="${x(bounds.x)}" y="${y(bounds.y)}" width="${bounds.width * scale}" height="${bounds.depth * scale}" fill="${selected ? "#53220d" : "#1d1a16"}" stroke="${selected ? "#ff4e00" : "#6d543f"}" stroke-width="${selected ? 5 : 1.5}"/>`);
+    const centreX = x(bounds.x + bounds.width / 2);
+    const centreY = y(bounds.y + bounds.depth / 2);
+    const areaM2 = areaMm2 / 1_000_000;
+    parts.push(`<text x="${centreX}" y="${centreY - 5}" text-anchor="middle" fill="#fff6ea" font-family="Avenir Next, sans-serif" font-size="${Math.max(11, Math.min(18, Math.sqrt(areaMm2) * scale * 0.016))}" font-weight="600">${escapeXml(space.name)}</text>`);
     parts.push(`<text x="${centreX}" y="${centreY + 15}" text-anchor="middle" fill="#b5a697" font-family="Avenir Next, sans-serif" font-size="11">${areaM2.toFixed(1)} m²${selected ? " · INTERIOR SOURCE" : ""}</text>`);
   }
   for (const wall of floor.walls) {
@@ -61,13 +71,15 @@ function floorPanel(floor: Floor, panelX: number, panelY: number, panelWidth: nu
   return parts.join("");
 }
 
-export function buildReferencePlanSvg(building: Building, options: { projectName: string; selectedSpaceId?: string }) {
+export function buildReferencePlanSvg(building: ReadableBuilding, options: { projectName: string; selectedSpaceId?: string }) {
   const floors = [...building.floors].sort((left, right) => left.level - right.level);
   const columns = floors.length === 1 ? 1 : 2;
   const rows = Math.ceil(floors.length / columns);
   const panelWidth = (WIDTH - BOARD_PADDING * 2 - GAP * (columns - 1)) / columns;
   const height = HEADER_HEIGHT + BOARD_PADDING + rows * FLOOR_HEIGHT + Math.max(0, rows - 1) * GAP + BOARD_PADDING;
-  const selected = floors.flatMap((floor) => floor.spaces).find((space) => space.id === options.selectedSpaceId);
+  const selected = building.buildingSchemaVersion === 3
+    ? building.floors.flatMap((floor) => floor.spaces).find((space) => space.id === options.selectedSpaceId)
+    : building.floors.flatMap((floor) => floor.spaces).find((space) => space.id === options.selectedSpaceId);
   const panels = floors.map((floor, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);

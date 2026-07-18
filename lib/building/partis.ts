@@ -1,4 +1,4 @@
-import type { BuildingRequirements, FormStrategy, RoomRequirement } from "@/lib/building/requirements";
+import type { BuildingRequirements, CurrentBuildingRequirements, FormStrategy, RoomRequirement } from "@/lib/building/requirements";
 import type { Rectangle } from "@/lib/building/schema";
 import { entranceRoadSide } from "@/lib/building/topology";
 
@@ -11,6 +11,7 @@ export type ClimateClass =
 
 export type PartiId = "t_hub" | "l_court" | "courtyard" | "verandah_bungalow" | "compact";
 export type AccessEdge = "north" | "east" | "south" | "west";
+export type V3PartiId = "courtyard_ring" | "compact_bar" | "articulated_l" | "t_hub";
 
 export type PartiDefinition = {
   id: PartiId;
@@ -133,7 +134,7 @@ export const FORM_STRATEGY_PARTIS: Readonly<Record<FormStrategy, readonly PartiI
   articulated_wings: ["l_court", "t_hub", "courtyard"],
 });
 
-function stableSeedRank(seed: number, id: PartiId) {
+function stableSeedRank(seed: number, id: string) {
   let hash = seed ^ 0x811c9dc5;
   for (let index = 0; index < id.length; index += 1) {
     hash ^= id.charCodeAt(index);
@@ -159,6 +160,72 @@ const CLIMATE_PRIORITY: Readonly<Record<ClimateClass, Readonly<Partial<Record<Pa
   cold_continental: { compact: -3, t_hub: -1 },
   mediterranean: { l_court: -3, courtyard: -1 },
 });
+
+export type V3PartiDefinition = {
+  id: V3PartiId;
+  name: string;
+  topology: "ring" | "bar" | "l_wings" | "t_hub";
+  minimumShortSideMm: number;
+  minimumLongSideMm: number;
+};
+
+export const V3_PARTI_DEFINITIONS: Readonly<Record<V3PartiId, V3PartiDefinition>> = Object.freeze({
+  courtyard_ring: { id: "courtyard_ring", name: "Courtyard Ring", topology: "ring", minimumShortSideMm: 10_000, minimumLongSideMm: 12_000 },
+  compact_bar: { id: "compact_bar", name: "Compact Bar", topology: "bar", minimumShortSideMm: 5_000, minimumLongSideMm: 7_000 },
+  articulated_l: { id: "articulated_l", name: "Articulated L", topology: "l_wings", minimumShortSideMm: 9_000, minimumLongSideMm: 11_000 },
+  t_hub: { id: "t_hub", name: "T-Hub", topology: "t_hub", minimumShortSideMm: 7_000, minimumLongSideMm: 9_000 },
+});
+
+const V3_FORM_PRIORITY: Readonly<Record<FormStrategy, readonly V3PartiId[]>> = Object.freeze({
+  compact: ["compact_bar", "t_hub", "articulated_l", "courtyard_ring"],
+  stepped_terraces: ["articulated_l", "t_hub", "compact_bar", "courtyard_ring"],
+  courtyard: ["courtyard_ring", "articulated_l", "t_hub", "compact_bar"],
+  articulated_wings: ["articulated_l", "t_hub", "courtyard_ring", "compact_bar"],
+});
+
+const V3_CLIMATE_TIE_BREAK: Readonly<Record<ClimateClass, Readonly<Partial<Record<V3PartiId, number>>>>> = Object.freeze({
+  hot_humid: { courtyard_ring: 0, articulated_l: 1, t_hub: 2, compact_bar: 3 },
+  hot_dry: { courtyard_ring: 0, articulated_l: 1, compact_bar: 2, t_hub: 3 },
+  temperate: { articulated_l: 0, t_hub: 1, compact_bar: 2, courtyard_ring: 3 },
+  cold_continental: { compact_bar: 0, t_hub: 1, articulated_l: 2, courtyard_ring: 3 },
+  mediterranean: { articulated_l: 0, courtyard_ring: 1, t_hub: 2, compact_bar: 3 },
+});
+
+export type V3PartiEligibility = {
+  eligible: V3PartiId[];
+  rejected: Array<{ partiId: V3PartiId; reason: "ENVELOPE_TOO_SMALL" }>;
+};
+
+/**
+ * V3 selection keeps the explicitly selected form in rank zero. Climate may order only the
+ * alternative rank; it can never displace the user's feasible primary form.
+ */
+export function evaluateV3Partis(input: {
+  requirements: Pick<CurrentBuildingRequirements, "architecture" | "seed">;
+  climateClass: ClimateClass;
+  envelope: Rectangle;
+}): V3PartiEligibility {
+  const configured = V3_FORM_PRIORITY[input.requirements.architecture.formStrategy];
+  const primary = configured[0];
+  const shortSide = Math.min(input.envelope.width, input.envelope.depth);
+  const longSide = Math.max(input.envelope.width, input.envelope.depth);
+  const feasible = configured.filter((partiId) => {
+    const definition = V3_PARTI_DEFINITIONS[partiId];
+    return shortSide >= definition.minimumShortSideMm && longSide >= definition.minimumLongSideMm;
+  });
+  const alternatives = feasible.filter((partiId) => partiId !== primary).sort((left, right) =>
+    (V3_CLIMATE_TIE_BREAK[input.climateClass][left] ?? 99) - (V3_CLIMATE_TIE_BREAK[input.climateClass][right] ?? 99)
+    || stableSeedRank(input.requirements.seed, left) - stableSeedRank(input.requirements.seed, right)
+    || left.localeCompare(right),
+  );
+  const eligible = feasible.includes(primary) ? [primary, ...alternatives] : alternatives;
+  return {
+    eligible,
+    rejected: configured
+      .filter((partiId) => !feasible.includes(partiId))
+      .map((partiId) => ({ partiId, reason: "ENVELOPE_TOO_SMALL" as const })),
+  };
+}
 
 /**
  * Eligibility never depends on seed. Seed is only a stable tie-break among partis with the same

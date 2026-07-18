@@ -30,7 +30,23 @@ describe("studyToDesignResult", () => {
     const building = { id: "building-1" } as unknown as Building;
     const validation = { score: 92 } as unknown as ValidationReport;
     const costEstimate = { status: "available" } as unknown as CostEstimate;
-    const result = studyToDesignResult(studyFixture({ building, validation, costEstimate }));
+    const capabilities = {
+      canView: true,
+      canReadAssets: true,
+      canDelete: true,
+      canApplyAiSuggestion: false,
+      canSelectScheme: false,
+      canGenerateRender: false,
+      canRetryRender: false,
+    };
+    const result = studyToDesignResult(studyFixture({
+      building,
+      validation,
+      costEstimate,
+      projectStatus: "ready",
+      capabilityProfile: "legacy_view_only",
+      capabilities,
+    }));
 
     expect(result).toMatchObject({
       projectId: "project-1",
@@ -38,6 +54,9 @@ describe("studyToDesignResult", () => {
       version: 3,
       title: "Courtyard house",
       selectedSchemeId: "scheme-1",
+      projectStatus: "ready",
+      capabilityProfile: "legacy_view_only",
+      capabilities,
     });
     expect(result?.building).toBe(building);
     expect(result?.validation).toBe(validation);

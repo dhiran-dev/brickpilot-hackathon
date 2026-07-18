@@ -1,0 +1,193 @@
+- generic [active] [ref=f1e1]:
+  - button "Open Next.js Dev Tools" [ref=f1e445] [cursor=pointer]
+  - alert [ref=f1e449]
+  - main [ref=f1e996]:
+    - generic [ref=f1e997]:
+      - generic [ref=f1e998]:
+        - generic [ref=f1e999]:
+          - link "BrickPilot" [ref=f1e1000] [cursor=pointer]:
+            - /url: /workspace
+          - paragraph [ref=f1e1002]: My family home 3 · immutable v1
+        - paragraph [ref=f1e1003]: Signed in as BrickPilot Owner
+      - navigation "Design workflow" [ref=f1e1005]:
+        - list [ref=f1e1006]:
+          - listitem [ref=f1e1007]:
+            - link "Directions" [ref=f1e1008] [cursor=pointer]:
+              - /url: /workspace?design=28183da8-1a6e-4217-b2fb-e204ad295efc&step=directions
+          - listitem [ref=f1e1013]:
+            - link "2D plan" [ref=f1e1014] [cursor=pointer]:
+              - /url: /workspace?design=28183da8-1a6e-4217-b2fb-e204ad295efc&step=plan
+          - listitem [ref=f1e1019]:
+            - generic [ref=f1e1020]:
+              - generic [ref=f1e1021]: "03"
+              - generic [ref=f1e1022]: 3D massing
+          - listitem [ref=f1e1024]:
+            - link "Render" [ref=f1e1025] [cursor=pointer]:
+              - /url: "#render-gallery"
+    - generic [ref=f1e1030]:
+      - generic [ref=f1e1031]:
+        - generic [ref=f1e1032]:
+          - generic [ref=f1e1033]:
+            - paragraph [ref=f1e1034]: Step 3 · 3D massing · deterministic
+            - heading "My family home 3" [level=1] [ref=f1e1035]
+          - generic [ref=f1e1036]:
+            - generic [ref=f1e1037]: Geometry verified
+            - link "View Deck" [ref=f1e1041] [cursor=pointer]:
+              - /url: /workspace/designs/28183da8-1a6e-4217-b2fb-e204ad295efc/deck
+            - link "Back to 2D plan" [ref=f1e1045] [cursor=pointer]:
+              - /url: /workspace?design=28183da8-1a6e-4217-b2fb-e204ad295efc&step=plan
+        - generic [ref=f1e1048]:
+          - complementary [ref=f1e1049]:
+            - paragraph [ref=f1e1050]: Floors
+            - generic [ref=f1e1051]:
+              - button [ref=f1e1052]
+              - button "Ground floor +0.00 m" [ref=f1e1056]:
+                - generic [ref=f1e1061]:
+                  - generic [ref=f1e1062]: Ground floor
+                  - generic [ref=f1e1063]: +0.00 m
+              - button "Floor 1 +3.10 m" [ref=f1e1064]:
+                - generic [ref=f1e1069]:
+                  - generic [ref=f1e1070]: Floor 1
+                  - generic [ref=f1e1071]: +3.10 m
+              - button "Floor 2 +6.20 m" [ref=f1e1072]:
+                - generic [ref=f1e1077]:
+                  - generic [ref=f1e1078]: Floor 2
+                  - generic [ref=f1e1079]: +6.20 m
+            - generic [ref=f1e1080]:
+              - generic [ref=f1e1081]:
+                - generic [ref=f1e1082]: Explode
+                - generic [ref=f1e1083]: 0%
+              - slider "Explode floor stack" [ref=f1e1084]: "0"
+            - generic [ref=f1e1085]:
+              - button [pressed] [ref=f1e1086]
+              - button [pressed] [ref=f1e1093]
+              - button [pressed] [ref=f1e1098]
+              - button [pressed] [ref=f1e1104]
+              - button [pressed] [ref=f1e1110]
+            - generic [ref=f1e1119]:
+              - paragraph [ref=f1e1120]: Drag to rotate
+              - paragraph [ref=f1e1125]: Wheel or pinch to zoom
+              - paragraph [ref=f1e1129]: Right-drag to pan
+          - generic [ref=f1e1135]:
+            - img "Interactive deterministic three-dimensional massing model. Drag to rotate, use the mouse wheel to zoom and right-drag to pan." [ref=f1e1136]
+            - generic [ref=f1e1138]:
+              - generic [ref=f1e1139]:
+                - button "Rotate" [ref=f1e1140]
+                - button "Pan" [ref=f1e1146]
+                - button "Zoom" [ref=f1e1153]
+                - button "Fit" [ref=f1e1158]
+              - generic [ref=f1e1165]:
+                - button "front" [ref=f1e1166]
+                - button "rear" [ref=f1e1167]
+                - button "left" [ref=f1e1168]
+                - button "right" [ref=f1e1169]
+                - button "iso" [ref=f1e1170]
+                - button "top" [ref=f1e1171]
+            - generic [ref=f1e1172]:
+              - generic [ref=f1e1173]:
+                - generic [ref=f1e1174]: TOP
+                - generic [ref=f1e1175]: FRONT
+                - generic [ref=f1e1176]: RIGHT
+              - generic [ref=f1e1177]: Canonical mm → scene metres
+          - complementary [ref=f1e1178]:
+            - paragraph [ref=f1e1179]: Model evidence
+            - paragraph [ref=f1e1180]: Geometry verified
+            - generic [ref=f1e1184]:
+              - generic [ref=f1e1185]:
+                - definition [ref=f1e1190]: "3"
+                - term [ref=f1e1191]: storeys
+              - generic [ref=f1e1192]:
+                - definition [ref=f1e1199]: 9.3 m
+                - term [ref=f1e1200]: height
+              - generic [ref=f1e1201]:
+                - definition [ref=f1e1208]: 577.5 m²
+                - term [ref=f1e1209]: built area
+              - generic [ref=f1e1210]:
+                - definition [ref=f1e1214]: "56"
+                - term [ref=f1e1215]: openings
+              - generic [ref=f1e1216]:
+                - definition [ref=f1e1220]: Aligned
+                - term [ref=f1e1221]: stair core
+            - generic [ref=f1e1222]:
+              - paragraph [ref=f1e1224]: Reference captures
+              - generic [ref=f1e1225]:
+                - generic [ref=f1e1226]: front
+                - generic [ref=f1e1232]: collage
+                - generic [ref=f1e1238]: top
+              - button "Prepare reference set" [ref=f1e1244]
+            - generic [ref=f1e1248]:
+              - text: Interior source
+              - combobox "Interior source" [ref=f1e1249]:
+                - option "Attached bathroom 1 · Ground floor"
+                - option "Bedroom 1 · Ground floor" [selected]
+                - option "Kitchen · Ground floor"
+                - option "Utility · Ground floor"
+                - option "Pooja · Ground floor"
+                - option "Entry foyer · Ground floor"
+                - option "Living / dining hall · Ground floor"
+                - option "L1 Attached bathroom 1 · Floor 1"
+                - option "L1 Bedroom 1 · Floor 1"
+                - option "L1 Bedroom 2 · Floor 1"
+                - option "L1 Bathroom 2 · Floor 1"
+                - option "L1 Bathroom 3 · Floor 1"
+                - option "L1 Bedroom 3 · Floor 1"
+                - option "Family lounge · Floor 1"
+                - option "L2 Attached bathroom 1 · Floor 2"
+                - option "L2 Bedroom 1 · Floor 2"
+                - option "L2 Bedroom 2 · Floor 2"
+                - option "Study / office · Floor 2"
+                - option "L2 Bathroom 2 · Floor 2"
+                - option "Sky family lounge · Floor 2"
+            - paragraph [ref=f1e1250]: The marked interior plan and three fixed 3:2 camera sources ground four separate image-edit jobs. References remain in this browser until confirmation.
+        - generic [ref=f1e1251]:
+          - generic [ref=f1e1258]:
+            - paragraph [ref=f1e1259]: All four grounded concepts are ready.
+            - paragraph [ref=f1e1260]: Concept visualization only. Geometry remains authoritative in the 2D and massing views.
+          - generic [ref=f1e1261]:
+            - paragraph [ref=f1e1262]: Front + collage + top + interior
+            - paragraph [ref=f1e1266]: Four camera-locked async edits
+          - link "View final concepts" [ref=f1e1270] [cursor=pointer]:
+            - /url: "#render-gallery"
+      - generic [ref=f1e1274]:
+        - generic [ref=f1e1275]:
+          - generic [ref=f1e1276]:
+            - paragraph [ref=f1e1277]: Step 4 · Render
+            - heading "Concept renders grounded in your plan" [level=2] [ref=f1e1278]
+          - paragraph [ref=f1e1279]: Materials, furnishing and lighting are generative assumptions. Floor count, footprint and openings are constrained by the canonical references.
+        - generic [ref=f1e1280]:
+          - article [ref=f1e1281]:
+            - generic [ref=f1e1282]:
+              - img "Front / road perspective · Courtyard Villa · Scheme A" [ref=f1e1283]
+              - generic [ref=f1e1284]: Front / road perspective · Courtyard Villa · Scheme A
+            - generic [ref=f1e1285]:
+              - img "Front / road perspective exact submitted source" [ref=f1e1286]
+              - paragraph [ref=f1e1287]:
+                - strong [ref=f1e1288]: Exact submitted source
+                - text: Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.
+          - article [ref=f1e1289]:
+            - generic [ref=f1e1290]:
+              - img "Four-view collage · Courtyard Villa · Scheme A" [ref=f1e1291]
+              - generic [ref=f1e1292]: Four-view collage · Courtyard Villa · Scheme A
+            - generic [ref=f1e1293]:
+              - img "Four-view collage exact submitted source" [ref=f1e1294]
+              - paragraph [ref=f1e1295]:
+                - strong [ref=f1e1296]: Exact submitted source
+                - text: Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.
+          - article [ref=f1e1297]:
+            - generic [ref=f1e1298]:
+              - img "High front-right perspective · Courtyard Villa · Scheme A" [ref=f1e1299]
+              - generic [ref=f1e1300]: High front-right perspective · Courtyard Villa · Scheme A
+            - generic [ref=f1e1301]:
+              - img "High front-right perspective exact submitted source" [ref=f1e1302]
+              - paragraph [ref=f1e1303]:
+                - strong [ref=f1e1304]: Exact submitted source
+                - text: Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.
+          - article [ref=f1e1305]:
+            - generic [ref=f1e1306]:
+              - img "Furnished interior concept · Courtyard Villa · Scheme A" [ref=f1e1307]
+              - generic [ref=f1e1308]: Furnished interior concept · Courtyard Villa · Scheme A
+            - generic [ref=f1e1309]:
+              - img "Furnished interior concept exact submitted source" [ref=f1e1310]
+              - paragraph [ref=f1e1311]:
+                - strong [ref=f1e1312]: Exact submitted source
+                - text: Camera and geometry are locked to this canonical reference; only materials, shallow elevation treatment, lighting and landscape may change.

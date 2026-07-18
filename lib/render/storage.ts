@@ -1,10 +1,15 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
 
 const MAX_REFERENCE_BYTES = 1_000_000;
 const MAX_RENDER_BYTES = 20_000_000;
 const DATA_URI_PATTERN = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/;
 
-type StoredAsset = { storageKey: string; url: string; contentType: string; bytes: number };
+export type StoredAsset = { storageKey: string; url: string; contentType: string; bytes: number; checksum: string };
+export type AssetWriteResult<T> = {
+  stored: Array<{ index: number; value: T }>;
+  failures: Array<{ index: number; reason: unknown }>;
+};
 
 function config() {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -36,7 +41,11 @@ async function put(storageKey: string, body: Uint8Array, contentType: string): P
   const key = safeStorageKey(storageKey);
   await client().send(new PutObjectCommand({ Bucket: value.bucket, Key: key, Body: body, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }));
   const path = key.split("/").map(encodeURIComponent).join("/");
-  return { storageKey: key, url: `/api/assets/${path}`, contentType, bytes: body.byteLength };
+  return { storageKey: key, url: `/api/assets/${path}`, contentType, bytes: body.byteLength, checksum: sha256Hex(body) };
+}
+
+export function sha256Hex(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function decodeReferenceDataUri(dataUri: string) {
@@ -75,4 +84,44 @@ export async function readStoredAsset(storageKey: string) {
   const bytes = new Uint8Array(await response.Body.transformToByteArray());
   if (bytes.byteLength === 0 || bytes.byteLength > MAX_RENDER_BYTES) throw new Error("Stored asset is empty or too large");
   return { bytes, contentType: response.ContentType ?? "application/octet-stream", etag: response.ETag };
+}
+
+export async function settleAssetWrites<T>(writes: Array<() => Promise<T>>): Promise<AssetWriteResult<T>> {
+  const settled = await Promise.allSettled(writes.map((write) => write()));
+  return settled.reduce<AssetWriteResult<T>>((result, item, index) => {
+    if (item.status === "fulfilled") result.stored.push({ index, value: item.value });
+    else result.failures.push({ index, reason: item.reason });
+    return result;
+  }, { stored: [], failures: [] });
+}
+
+export async function deleteStoredAssetExact(storageKey: string) {
+  const value = config();
+  const key = safeStorageKey(storageKey);
+  await client().send(new DeleteObjectCommand({ Bucket: value.bucket, Key: key }));
+  return key;
+}
+
+export async function deleteStoredAssetsExact(
+  storageKeys: readonly string[],
+  deleteOne: (storageKey: string) => Promise<unknown> = deleteStoredAssetExact,
+) {
+  const keys = [...new Set(storageKeys)].sort();
+  const settled = await Promise.allSettled(keys.map(async (key) => {
+    safeStorageKey(key);
+    await deleteOne(key);
+    return key;
+  }));
+  return settled.reduce<{ deleted: string[]; failed: Array<{ storageKey: string; reason: string }> }>((result, item, index) => {
+    if (item.status === "fulfilled") result.deleted.push(item.value);
+    else result.failed.push({
+      storageKey: keys[index],
+      reason: item.reason instanceof Error ? item.reason.message : String(item.reason),
+    });
+    return result;
+  }, { deleted: [], failed: [] });
+}
+
+export async function compensateStoredAssets(assets: readonly Pick<StoredAsset, "storageKey">[]) {
+  return deleteStoredAssetsExact(assets.map((asset) => asset.storageKey));
 }

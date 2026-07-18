@@ -117,5 +117,17 @@ describe("select-scheme database transaction", () => {
     const activeConflict = await selectSchemeForOwner(request(firstId, true), layoutVersionId, ownerId, { review });
     expect(activeConflict.status).toBe(409);
     expect(reviewCalls.count).toBe(1);
+
+    await db.update(projects).set({ capabilityProfile: "legacy_view_only", status: "ready" }).where(eq(projects.id, projectId));
+    const legacyDenied = await selectSchemeForOwner(request(firstId, true), layoutVersionId, ownerId, { review });
+    expect(legacyDenied.status).toBe(409);
+    expect(await legacyDenied.json()).toMatchObject({ code: "PROJECT_VIEW_ONLY" });
+    expect(reviewCalls.count).toBe(1);
+
+    await db.update(projects).set({ capabilityProfile: "current_v3", status: "deleting" }).where(eq(projects.id, projectId));
+    const deletingDenied = await selectSchemeForOwner(request(firstId, true), layoutVersionId, ownerId, { review });
+    expect(deletingDenied.status).toBe(409);
+    expect(await deletingDenied.json()).toMatchObject({ code: "PROJECT_DELETING" });
+    expect(reviewCalls.count).toBe(1);
   }, 30_000);
 });

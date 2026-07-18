@@ -1,4 +1,14 @@
-import { buildingRequirementsSchema, squareMetresToMm2, type BuildingRequirements, type RoomType } from "@/lib/building/requirements";
+import {
+  buildingRequirementsSchema,
+  currentBuildingRequirementsSchema,
+  squareMetresToMm2,
+  type BuildingRequirements,
+  type CurrentBuildingRequirements,
+  type EntryRequirements,
+  type ReadableBuildingRequirements,
+  type ShadeStructureRequirement,
+  type RoomType,
+} from "@/lib/building/requirements";
 import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
 import { regionalIntakePrefill } from "@/lib/design/regional-packs";
 
@@ -35,6 +45,11 @@ export type IntakeDraft = {
   includePooja: boolean;
   includeCourtyard: boolean;
   includeParking: boolean;
+  includeVerandah: boolean;
+  currentEntry: EntryRequirements;
+  shadeStructures: ShadeStructureRequirement[];
+  aboveParkingUse: CurrentBuildingRequirements["aboveParkingUse"];
+  maxExteriorPedestrianEntryCount: number;
   qualityTier: "essential" | "standard" | "premium";
   budgetLowMajor: number;
   budgetHighMajor: number;
@@ -79,6 +94,15 @@ export const DEFAULT_INTAKE_DRAFT: IntakeDraft = {
   includePooja: true,
   includeCourtyard: false,
   includeParking: true,
+  includeVerandah: false,
+  currentEntry: {
+    primarySide: { value: "auto_road_side", source: "inferred" },
+    secondaryEntry: { value: "auto", source: "default" },
+    primaryDoorClearWidthMm: 1200,
+  },
+  shadeStructures: [],
+  aboveParkingUse: { value: "auto", source: "default" },
+  maxExteriorPedestrianEntryCount: 2,
   qualityTier: "standard",
   budgetLowMajor: 5_500_000,
   budgetHighMajor: 7_500_000,
@@ -199,6 +223,7 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
   const includeCourtyard = draft.includeCourtyard || draft.formStrategy === "courtyard";
   if (includeCourtyard) addRoom({ id: "courtyard", name: "Courtyard", type: "courtyard", floorId: "F0", privacy: "semi_private", mustBeExterior: true, preferredZone: "center" });
   if (draft.includeParking) addRoom({ id: "parking", name: "Covered parking", type: "parking", floorId: "F0", privacy: "service", preferredZone: primaryRoadEdge, mustBeExterior: true });
+  if (draft.includeVerandah) addRoom({ id: "verandah", name: "Covered verandah", type: "verandah", floorId: "F0", privacy: "semi_private", preferredZone: primaryRoadEdge, mustBeExterior: true });
   relationships.push({ type: "must_connect", fromRoomId: "foyer", toRoomId: "living" });
   if (socialSpaceMode === "combined") {
     relationships.push({ type: "prefer_near", fromRoomId: "living", toRoomId: "kitchen" });
@@ -245,8 +270,7 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
       if (index === 0) firstBathroomByFloor.push(id);
     }
     for (let index = 0; index < program.studies; index += 1) addRoom({ id: `study-f${level}-${index + 1}`, name: index ? `Study ${index + 1}` : "Study / office", type: "study", floorId, privacy: "private", mustBeExterior: true });
-    const articulatedUpperFloor = level > 0 && ["stepped_terraces", "articulated_wings"].includes(draft.formStrategy ?? DEFAULT_INTAKE_DRAFT.formStrategy);
-    if (level > 0 && (program.balcony || articulatedUpperFloor)) addRoom({ id: `balcony-f${level}`, name: articulatedUpperFloor ? "Shaded balcony / terrace edge" : "Balcony", type: "balcony", floorId, privacy: "semi_private", mustBeExterior: true });
+    if (level > 0 && program.balcony) addRoom({ id: `balcony-f${level}`, name: "Balcony", type: "balcony", floorId, privacy: "semi_private", mustBeExterior: true });
   }
 
   for (let index = 1; index < firstBathroomByFloor.length; index += 1) relationships.push({ type: "stack_with", fromRoomId: firstBathroomByFloor[index], toRoomId: firstBathroomByFloor[index - 1] });
@@ -294,7 +318,78 @@ export function createRequirements(draft: IntakeDraft): BuildingRequirements {
   return buildingRequirementsSchema.parse(raw);
 }
 
-export function draftFromRequirements(value: BuildingRequirements): IntakeDraft {
+export type CurrentRequirementIntent = {
+  entry?: EntryRequirements;
+  shadeStructures?: ShadeStructureRequirement[];
+  aboveParkingUse?: CurrentBuildingRequirements["aboveParkingUse"];
+  maxExteriorPedestrianEntryCount?: number;
+};
+
+/** Pure state transition used by the architecture-step shade selector and its interaction tests. */
+export function applyShadeStructureChoice(
+  draft: IntakeDraft,
+  location: ShadeStructureRequirement["location"],
+  type: ShadeStructureRequirement["type"] | "none",
+): IntakeDraft {
+  const shadeStructures = draft.shadeStructures.filter((shade) => shade.location !== location);
+  if (type !== "none") shadeStructures.push({
+    id: `${location.replaceAll("_", "-")}-${type.replaceAll("_", "-")}`,
+    location,
+    type,
+    source: "user",
+  });
+  return { ...draft, shadeStructures };
+}
+
+/**
+ * Additive v3 intake adapter. The existing createRequirements path remains the frozen v2 contract
+ * until lifecycle rollout selects v3 explicitly.
+ */
+export function createCurrentRequirements(
+  draft: IntakeDraft,
+  intent: CurrentRequirementIntent = {},
+): CurrentBuildingRequirements {
+  const legacy = createRequirements(draft);
+  const primaryRoadSide = draft.roadEdges.includes(draft.facing) ? draft.facing : draft.roadEdges[0];
+  const parkingRoom = legacy.rooms.find((room) => room.type === "parking");
+  const outdoorAreas = legacy.rooms
+    .filter((room) => room.type === "balcony" || room.type === "verandah")
+    .map((room) => ({
+      id: `outdoor-${room.id}`,
+      floorId: room.floorId,
+      type: room.type as "balcony" | "verandah",
+      targetAreaMm2: room.targetAreaMm2,
+      minimumAreaMm2: room.minAreaMm2,
+      maximumAreaMm2: Math.max(room.targetAreaMm2 * 2, room.minAreaMm2),
+      source: "user" as const,
+    }));
+  const current = {
+    ...legacy,
+    requirementSchemaVersion: 3 as const,
+    entry: intent.entry ?? (draft.currentEntry.primarySide.source === "inferred"
+      ? { ...draft.currentEntry, primarySide: { value: primaryRoadSide ?? "auto_road_side", source: "inferred" as const } }
+      : draft.currentEntry),
+    parking: {
+      vehicleCount: parkingRoom ? 1 : 0,
+      targetAreaMm2: parkingRoom?.targetAreaMm2,
+      minimumAreaMm2: parkingRoom?.minAreaMm2,
+      maximumAreaMm2: parkingRoom ? Math.round(parkingRoom.targetAreaMm2 * 1.5) : undefined,
+      preferredSide: { value: primaryRoadSide ?? "auto_road_side", source: "inferred" as const },
+    },
+    outdoorAreas,
+    courtyard: {
+      value: draft.includeCourtyard || draft.formStrategy === "courtyard" ? "open_to_sky" as const : "none" as const,
+      source: draft.includeCourtyard ? "user" as const : draft.formStrategy === "courtyard" ? "inferred" as const : "default" as const,
+    },
+    roof: { value: draft.roofCharacter, source: "user" as const },
+    shadeStructures: intent.shadeStructures ?? draft.shadeStructures,
+    aboveParkingUse: intent.aboveParkingUse ?? draft.aboveParkingUse,
+    maxExteriorPedestrianEntryCount: intent.maxExteriorPedestrianEntryCount ?? draft.maxExteriorPedestrianEntryCount,
+  };
+  return currentBuildingRequirementsSchema.parse(current);
+}
+
+export function draftFromRequirements(value: ReadableBuildingRequirements): IntakeDraft {
   const unitFactor = value.displayUnit === "metric" ? 1000 : 304.8;
   const programs = DEFAULT_INTAKE_DRAFT.programs.map((program, level) => {
     const floorId = `F${level}`;
@@ -347,6 +442,11 @@ export function draftFromRequirements(value: BuildingRequirements): IntakeDraft 
     includePooja: value.rooms.some((room) => room.type === "pooja"),
     includeCourtyard: value.rooms.some((room) => room.type === "courtyard"),
     includeParking: value.rooms.some((room) => room.type === "parking"),
+    includeVerandah: value.rooms.some((room) => room.type === "verandah"),
+    currentEntry: value.requirementSchemaVersion === 3 ? value.entry : DEFAULT_INTAKE_DRAFT.currentEntry,
+    shadeStructures: value.requirementSchemaVersion === 3 ? value.shadeStructures : DEFAULT_INTAKE_DRAFT.shadeStructures,
+    aboveParkingUse: value.requirementSchemaVersion === 3 ? value.aboveParkingUse : DEFAULT_INTAKE_DRAFT.aboveParkingUse,
+    maxExteriorPedestrianEntryCount: value.requirementSchemaVersion === 3 ? value.maxExteriorPedestrianEntryCount : DEFAULT_INTAKE_DRAFT.maxExteriorPedestrianEntryCount,
     qualityTier: value.budget.qualityTier,
     budgetLowMajor: value.budget.targetLowMinor ? value.budget.targetLowMinor / factor : 0,
     budgetHighMajor: value.budget.targetHighMinor ? value.budget.targetHighMinor / factor : 0,

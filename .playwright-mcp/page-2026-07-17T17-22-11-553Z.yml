@@ -1,0 +1,5 @@
+- generic [active] [ref=f7e1]:
+  - main [ref=f7e2]:
+    - generic [ref=f7e3]: Loading canonical model
+  - button "Open Next.js Dev Tools" [ref=f7e11] [cursor=pointer]
+  - alert [ref=f7e15]

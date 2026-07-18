@@ -4,7 +4,7 @@ import { useId, useMemo } from "react";
 import { Check, Pin } from "lucide-react";
 
 import { CadPlan } from "@/components/cad-plan";
-import type { PersistedScheme } from "@/lib/design/persisted-study";
+import type { ReadablePersistedScheme } from "@/lib/design/persisted-study";
 import { buildDrawing } from "@/lib/drawing/build-drawing";
 import { visibilityForPreset } from "@/lib/drawing/schema";
 
@@ -13,7 +13,7 @@ export function shouldShowSchemeRack(schemeCount: number, evidenceGateEnabled: b
 }
 
 function SchemeOption({ scheme, active, pending, name, disabled, onChange }: {
-  scheme: PersistedScheme;
+  scheme: ReadablePersistedScheme;
   active: boolean;
   pending: boolean;
   name: string;
@@ -33,7 +33,7 @@ function SchemeOption({ scheme, active, pending, name, disabled, onChange }: {
 }
 
 export function SchemeRack({ schemes, selectedSchemeId, pendingSchemeId, disabled = false, onChange, className }: {
-  schemes: readonly PersistedScheme[];
+  schemes: readonly ReadablePersistedScheme[];
   selectedSchemeId: string | null | undefined;
   pendingSchemeId: string | null | undefined;
   disabled?: boolean;

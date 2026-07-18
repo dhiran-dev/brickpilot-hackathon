@@ -1,10 +1,10 @@
-import type { BuildingRequirements } from "@/lib/building/requirements";
-import type { Building } from "@/lib/building/schema";
+import type { ReadableBuildingRequirements } from "@/lib/building/requirements";
+import type { ReadableBuilding } from "@/lib/building/schema";
 import type { CostEstimate } from "@/lib/cost/schema";
-import type { PersistedScheme } from "@/lib/design/persisted-study";
+import type { ReadablePersistedScheme } from "@/lib/design/persisted-study";
 import type { DrawingFloorArtifact } from "@/lib/drawing/schema";
 import type { ArchitecturalReviewResult } from "@/lib/ai/schema";
-import type { ValidationReport } from "@/lib/validation";
+import type { ReadableValidationReport } from "@/lib/validation";
 
 export type DeckRenderAsset = {
   id: string;
@@ -24,12 +24,12 @@ export type DeckPayload = {
   title: string;
   location: string;
   generatedAt: string;
-  requirements: BuildingRequirements;
-  building: Building;
-  validation: ValidationReport;
+  requirements: ReadableBuildingRequirements;
+  building: ReadableBuilding;
+  validation: ReadableValidationReport;
   costEstimate: CostEstimate;
   aiReview: ArchitecturalReviewResult | null;
-  scheme: PersistedScheme;
+  scheme: ReadablePersistedScheme;
   intentAssumptions: string[];
   renders: DeckRenders;
 };

@@ -1,6 +1,12 @@
 import { requirementDeltaSchema, type RequirementDelta } from "@/lib/ai/schema";
 import { roomAreaDefaultsMm2 } from "@/lib/building/room-defaults";
-import { buildingRequirementsSchema, hasMinimumResidentialRoomProgram, type BuildingRequirements } from "@/lib/building/requirements";
+import {
+  currentBuildingRequirementsSchema,
+  legacyBuildingRequirementsSchema,
+  type CurrentBuildingRequirements,
+  type LegacyBuildingRequirements,
+  type ReadableBuildingRequirements,
+} from "@/lib/building/requirements";
 
 export class InvalidRequirementDeltaError extends Error {
   constructor(message: string, readonly cause?: unknown) {
@@ -11,14 +17,21 @@ export class InvalidRequirementDeltaError extends Error {
 
 const RESIZE_FACTOR = { increase: 1.2, decrease: 0.85 } as const;
 
-function validateResult(value: BuildingRequirements) {
-  const parsed = buildingRequirementsSchema.safeParse(value);
+function validateResult<T extends ReadableBuildingRequirements>(value: T): T {
+  const parsed = value.requirementSchemaVersion === 3
+    ? currentBuildingRequirementsSchema.safeParse(value)
+    : legacyBuildingRequirementsSchema.safeParse(value);
   if (!parsed.success) throw new InvalidRequirementDeltaError("The proposed change does not produce valid building requirements.", parsed.error);
-  if (!hasMinimumResidentialRoomProgram(parsed.data)) throw new InvalidRequirementDeltaError("A residential brief must retain at least one bedroom and one bathroom.");
-  return parsed.data;
+  if (!parsed.data.rooms.some((room) => room.type === "bedroom") || !parsed.data.rooms.some((room) => room.type === "bathroom")) {
+    throw new InvalidRequirementDeltaError("A residential brief must retain at least one bedroom and one bathroom.");
+  }
+  return parsed.data as T;
 }
 
-export function applyRequirementDelta(requirements: BuildingRequirements, input: RequirementDelta): BuildingRequirements {
+export function applyRequirementDelta(requirements: LegacyBuildingRequirements, input: RequirementDelta): LegacyBuildingRequirements;
+export function applyRequirementDelta(requirements: CurrentBuildingRequirements, input: RequirementDelta): CurrentBuildingRequirements;
+export function applyRequirementDelta(requirements: ReadableBuildingRequirements, input: RequirementDelta): ReadableBuildingRequirements;
+export function applyRequirementDelta(requirements: ReadableBuildingRequirements, input: RequirementDelta): ReadableBuildingRequirements {
   const parsedDelta = requirementDeltaSchema.safeParse(input);
   if (!parsedDelta.success) throw new InvalidRequirementDeltaError("The AI suggestion is incomplete or malformed.", parsedDelta.error);
   const delta = parsedDelta.data;

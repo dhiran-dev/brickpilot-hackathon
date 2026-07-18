@@ -5,9 +5,47 @@ import { generateBuilding } from "@/lib/building/generate";
 import { MAIN_ENTRY_CLEAR_WIDTH_MM } from "@/lib/building/openings";
 import { partiStairAnchor } from "@/lib/building/partis";
 import { analyzeCoverage } from "@/lib/building/topology";
-import { applyRegionalPrefill, assessBriefCapacity, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
+import { applyRegionalPrefill, applyShadeStructureChoice, assessBriefCapacity, createCurrentRequirements, createRequirements, DEFAULT_INTAKE_DRAFT, draftFromRequirements, floorProgramBrief, normalizeFloorProgram, updateFloorProgramBrief, upgradeLegacyFloorProgram, type FloorProgram, type IntakeDraft } from "@/components/guided-intake/model";
 
 describe("guided intake mapping", () => {
+  test("turns the open-pergola selector into one provenance-aware requirement and removes it when cleared", () => {
+    const selected = applyShadeStructureChoice(DEFAULT_INTAKE_DRAFT, "parking", "open_pergola");
+    expect(selected.shadeStructures).toEqual([{
+      id: "parking-open-pergola",
+      location: "parking",
+      type: "open_pergola",
+      source: "user",
+    }]);
+    expect(createCurrentRequirements(selected).shadeStructures).toEqual(selected.shadeStructures);
+    expect(applyShadeStructureChoice(selected, "parking", "none").shadeStructures).toEqual([]);
+  });
+
+  test("round-trips explicit v3 entry, pergola and above-parking provenance", () => {
+    const requirements = createCurrentRequirements({
+      ...DEFAULT_INTAKE_DRAFT,
+      currentEntry: {
+        primarySide: { value: "south", source: "user" },
+        secondaryEntry: { value: "rear", source: "user" },
+        primaryDoorClearWidthMm: 1400,
+      },
+      shadeStructures: [{ id: "parking-open-pergola", type: "open_pergola", location: "parking", source: "user" }],
+      aboveParkingUse: { value: "occupied_rooms", source: "user" },
+      maxExteriorPedestrianEntryCount: 2,
+    });
+
+    expect(requirements).toMatchObject({
+      requirementSchemaVersion: 3,
+      entry: { primarySide: { value: "south", source: "user" }, primaryDoorClearWidthMm: 1400 },
+      shadeStructures: [{ type: "open_pergola", location: "parking", source: "user" }],
+      aboveParkingUse: { value: "occupied_rooms", source: "user" },
+    });
+    expect(draftFromRequirements(requirements)).toMatchObject({
+      currentEntry: requirements.entry,
+      shadeStructures: requirements.shadeStructures,
+      aboveParkingUse: requirements.aboveParkingUse,
+    });
+  });
+
   test("emits a schema-valid structured ground-floor brief", () => {
     const requirements = createRequirements(DEFAULT_INTAKE_DRAFT);
     expect(buildingRequirementsSchema.safeParse(requirements).success).toBe(true);
@@ -370,6 +408,16 @@ describe("guided intake mapping", () => {
       materialDirection: "earthy_textured",
       includeCourtyard: true,
     });
+  });
+
+  test("does not infer a balcony from an articulated form when every floor toggle is off", () => {
+    const programs = DEFAULT_INTAKE_DRAFT.programs.map((program) => ({ ...program, balcony: false }));
+    const draft = { ...DEFAULT_INTAKE_DRAFT, floorCount: 3, formStrategy: "articulated_wings" as const, programs };
+    const legacy = createRequirements(draft);
+    const current = createCurrentRequirements(draft);
+    expect(legacy.rooms.some((room) => room.type === "balcony")).toBe(false);
+    expect(current.rooms.some((room) => room.type === "balcony")).toBe(false);
+    expect(current.outdoorAreas).toEqual([]);
   });
 
   test("prefills regional suggestions while round-tripping every editable architecture field", () => {

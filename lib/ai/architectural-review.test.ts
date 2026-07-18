@@ -3,7 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { reviewBuilding } from "@/lib/ai/architectural-review";
 import { AiProviderError } from "@/lib/ai/client";
 import { BUILDING_FIXTURES } from "@/lib/building/fixtures";
+import { V3_OUTPUT_CONSUMER_BUILDING } from "@/lib/building/fixtures/v3-output-consumer";
 import { generateBuilding } from "@/lib/building/generate";
+import { createCurrentRequirements, DEFAULT_INTAKE_DRAFT } from "@/components/guided-intake/model";
 
 const fixture = BUILDING_FIXTURES[0];
 const generated = generateBuilding(fixture.requirements);
@@ -99,5 +101,34 @@ describe("reviewBuilding", () => {
     );
     expect(calls).toBe(2);
     expect(result.status).toBe("reviewed");
+  });
+
+  test("grounds v3 physical-system concerns to canonical evidence without adapting geometry", async () => {
+    let serialized = "";
+    const result = await reviewBuilding({
+      requirements: createCurrentRequirements({ ...DEFAULT_INTAKE_DRAFT, roofCharacter: "sloped" }),
+      building: V3_OUTPUT_CONSUMER_BUILDING,
+      validation: {
+        schemaVersion: "validation-report-v3",
+        rulePackVersion: "rules-v3-fixture",
+        valid: true,
+        score: 100,
+        counts: { error: 0, warning: 0, info: 0 },
+        findings: [],
+      },
+    }, {
+      complete: async (request) => {
+        serialized = JSON.stringify(request.userPayload);
+        return {
+          concurs: true,
+          confidence: "high",
+          citedConcerns: [{ objectIds: ["roof-main"], evidenceIds: ["roof:roof-main"], topic: "other", whyItMatters: "The pitched roof is a defining physical-system choice.", recommendation: "Retain the canonical roof geometry through design development.", whatItSaves: "Avoids losing the selected roof intent." }],
+          requirementDeltas: [],
+        };
+      },
+    });
+    expect(result.status).toBe("reviewed");
+    expect(serialized).toContain('"evidenceId":"roof:roof-main"');
+    expect(serialized).not.toContain('"vertices"');
   });
 });

@@ -1,5 +1,6 @@
 import type { RoomType } from "@/lib/building/requirements";
-import type { Building, Floor, Opening, Point, Rectangle, Space, WallSegment } from "@/lib/building/schema";
+import type { Building, CurrentBuilding, CurrentFloor, Floor, Opening, Point, ReadableBuilding, Rectangle, Segment2, Space, WallSegment } from "@/lib/building/schema";
+import { orthogonalPolygonAreaMm2, orthogonalPolygonBounds } from "@/lib/building/orthogonal-partition";
 import { isVerandahSpace } from "@/lib/building/space-semantics";
 import { EXTERIOR, isPerimeterOpenSpace, isVerandahOpenEdgeWall } from "@/lib/building/topology";
 
@@ -345,6 +346,7 @@ function floorArtifact(building: Building, floor: Floor, options: DrawingBuildOp
   const wallById = new Map(floor.walls.map((wall) => [wall.id, wall]));
 
   return {
+    artifactSchemaVersion: 2,
     id: `${building.candidate.geometryHash}-${floor.id}-${RENDERER_VERSION}`,
     rendererVersion: RENDERER_VERSION,
     buildingId: building.candidate.geometryHash,
@@ -393,8 +395,119 @@ function floorArtifact(building: Building, floor: Floor, options: DrawingBuildOp
   };
 }
 
-export function buildDrawing(building: Building, options: DrawingBuildOptions = {}): BuildingDrawing {
+function projectedRidges(planes: Array<{ vertices: Array<{ x: number; y: number; z: number }> }>): Segment2[] {
+  const vertices = planes.flatMap((plane) => plane.vertices);
+  const maximum = Math.max(...vertices.map((point) => point.z));
+  const high = [...new Map(vertices.filter((point) => point.z === maximum).map((point) => [`${point.x}:${point.y}`, point])).values()];
+  return high.length === 2 ? [{ start: { x: high[0].x, y: high[0].y }, end: { x: high[1].x, y: high[1].y } }] : [];
+}
+
+function legacyDrawingAdapter(building: CurrentBuilding, floor: CurrentFloor): { building: Building; floor: Floor } {
+  const spaces: Space[] = floor.spaces.map((space) => {
+    const region = floor.regions.find((candidate) => candidate.id === space.regionId);
+    if (!region) throw new Error(`DRAWING_REGION_MISSING:${space.id}`);
+    const bounds = orthogonalPolygonBounds(region.polygon);
+    return {
+      id: space.id,
+      floorId: floor.id,
+      name: space.name,
+      type: space.type,
+      planningCellPolygon: region.polygon,
+      bounds,
+      areaMm2: orthogonalPolygonAreaMm2(region.polygon),
+      occupied: region.kind === "interior",
+      accessible: space.accessible,
+      perimeterOpen: space.perimeterOpen,
+    };
+  });
+  const legacyFloor: Floor = {
+    id: floor.id,
+    label: floor.label,
+    level: floor.level,
+    elevationMm: floor.elevationMm,
+    floorHeightMm: floor.floorHeightMm,
+    envelope: orthogonalPolygonBounds(floor.envelope),
+    spaces,
+    walls: floor.walls,
+    openings: floor.openings,
+  };
   return {
+    floor: legacyFloor,
+    building: {
+      buildingSchemaVersion: 2,
+      algorithmVersion: building.algorithmVersion,
+      rulePackVersion: building.rulePackVersion,
+      rendererVersion: building.rendererVersion,
+      seed: building.seed,
+      candidate: building.candidate as Building["candidate"],
+      site: building.site,
+      floors: [legacyFloor],
+      verticalConnectors: building.verticalConnectors,
+      structuralConcept: building.structuralConcept,
+    },
+  };
+}
+
+function currentFloorArtifact(building: CurrentBuilding, floor: CurrentFloor, options: DrawingBuildOptions): DrawingFloorArtifact {
+  const adapter = legacyDrawingAdapter(building, floor);
+  const artifact = floorArtifact(adapter.building, adapter.floor, options);
+  const openingById = new Map(floor.openings.map((opening) => [opening.id, opening]));
+  const floorSpaceIds = new Set(floor.spaces.map((space) => space.id));
+  const roofOverlay = building.roofSystems.flatMap((roof) => {
+    const onFloor = roof.kind === "open_pergola" ? roof.hostFloorId === floor.id : roof.servesSpaceIds.some((id) => floorSpaceIds.has(id));
+    if (!onFloor) return [];
+    return [{
+      id: roof.id,
+      kind: roof.kind,
+      footprint: roof.footprint.points,
+      planes: roof.kind === "open_pergola" ? [] : roof.planes.map((plane) => ({ id: plane.id, vertices: plane.vertices })),
+      ridges: roof.kind === "open_pergola" ? [] : projectedRidges(roof.planes),
+    }];
+  });
+  return {
+    ...artifact,
+    artifactSchemaVersion: 3,
+    envelope: orthogonalPolygonBounds(floor.envelope),
+    openings: artifact.openings.map((opening) => {
+      const source = openingById.get(opening.id);
+      return { ...opening, role: source?.role, isMainEntry: source?.role === "main_entry", isEntrance: source?.role === "main_entry" || source?.role === "secondary_entry" || source?.role === "service_entry" };
+    }),
+    floorRegions: floor.regions.map((region) => ({ id: region.id, kind: region.kind, polygon: region.polygon.points, spaceId: region.spaceId })),
+    // V3 schedules use every canonical space region. Circulation and stair are
+    // constructed floor area; only explicit non-space regions such as
+    // intentional_unbuilt are absent. Keep the historical v2 filter frozen.
+    areaSchedule: artifact.rooms.map((room, index) => {
+      const targetAreaMm2 = options.targetAreaByRoomId?.[room.id];
+      return {
+        ref: `R${String(index + 1).padStart(2, "0")}`,
+        roomId: room.id,
+        name: room.name,
+        achievedAreaMm2: room.areaMm2,
+        targetAreaMm2,
+        underTarget: Boolean(targetAreaMm2 && room.areaMm2 < targetAreaMm2 * 0.85),
+      };
+    }),
+    constructedFootprints: floor.regions.filter((region) => region.kind === "interior" || region.kind === "covered_outdoor").map((region) => region.polygon.points),
+    intentionalUnbuiltRegions: floor.regions.filter((region) => region.kind === "intentional_unbuilt").map((region) => ({ id: region.id, polygon: region.polygon.points })),
+    roofOverlay,
+    supports: [
+      ...building.structuralConcept.columns.filter((column) => column.servedFloorIds.includes(floor.id)).map((column) => ({ id: column.id, role: "primary_column" as const, geometry: column.center })),
+      ...building.secondaryRoofSupports.filter((support) => support.floorId === floor.id).map((support) => ({ id: support.id, role: support.role, geometry: support.geometry })),
+    ],
+    guards: building.edgeProtections.filter((guard) => guard.floorId === floor.id).map((guard) => ({ id: guard.id, edge: guard.edge, kind: guard.kind, heightMm: guard.heightMm })),
+    mainEntryId: floor.openings.find((opening) => opening.role === "main_entry")?.id,
+  };
+}
+
+export function buildDrawing(building: ReadableBuilding, options: DrawingBuildOptions = {}): BuildingDrawing {
+  if (building.buildingSchemaVersion === 3) return {
+    artifactSchemaVersion: 3,
+    rendererVersion: RENDERER_VERSION,
+    buildingId: building.candidate.geometryHash,
+    floors: building.floors.map((floor) => currentFloorArtifact(building, floor, options)),
+  };
+  return {
+    artifactSchemaVersion: 2,
     rendererVersion: RENDERER_VERSION,
     buildingId: building.candidate.geometryHash,
     floors: building.floors.map((floor) => floorArtifact(building, floor, options)),
