@@ -4,7 +4,10 @@ import { DENSE_COURTYARD_CURRENT_REQUIREMENTS } from "@/lib/building/fixtures/de
 import { generateV3AllocationStage } from "@/lib/building/generate-v3-allocation";
 import { generateV3CirculationStage } from "@/lib/building/generate-v3-circulation";
 import { generateV3PhysicalStage } from "@/lib/building/generate-v3-physical";
+import { orthogonalPolygonBounds } from "@/lib/building/orthogonal-partition";
+import { rectangleIntersectionArea } from "@/lib/building/topology";
 import { runDesignPipelineV3 } from "@/lib/server/design-pipeline";
+import { validateBuildingV3 } from "@/lib/validation/validate-v3";
 
 function allocationFingerprint() {
   const result = generateV3AllocationStage(DENSE_COURTYARD_CURRENT_REQUIREMENTS);
@@ -43,6 +46,60 @@ describe("v3 zoned allocation regression", () => {
 
   test("is deterministic for identical requirements", () => {
     expect(allocationFingerprint()).toEqual(allocationFingerprint());
+  });
+
+  test("produces three distinct preview directions with coordinated lower support", () => {
+    const physical = generateV3PhysicalStage(DENSE_COURTYARD_CURRENT_REQUIREMENTS);
+    expect(physical.schemes).toHaveLength(3);
+    const groundGeometry = physical.schemes.map(({ building }) => JSON.stringify(
+      building.floors[0].regions.map((region) => ({
+        kind: region.kind,
+        points: region.polygon.points,
+      })),
+    ));
+    expect(new Set(groundGeometry).size).toBe(physical.schemes.length);
+
+    for (const { building } of physical.schemes) {
+      const floors = [...building.floors].sort((left, right) => left.level - right.level);
+      for (let upperIndex = 1; upperIndex < floors.length; upperIndex += 1) {
+        const lowerIntentional = floors[upperIndex - 1].regions
+          .filter((region) => region.kind === "intentional_unbuilt");
+        const upperConstructed = floors[upperIndex].regions
+          .filter((region) => region.kind === "interior" || region.kind === "covered_outdoor");
+        const unsupportedAreaMm2 = upperConstructed.reduce((sum, upperRegion) =>
+          sum + lowerIntentional.reduce((lowerSum, lowerRegion) =>
+            lowerSum + rectangleIntersectionArea(
+              orthogonalPolygonBounds(upperRegion.polygon),
+              orthogonalPolygonBounds(lowerRegion.polygon),
+            ), 0), 0);
+        expect(unsupportedAreaMm2).toBe(0);
+      }
+      expect(building.floors.flatMap((floor) => floor.spaces)
+        .some((space) => space.id.includes("-stacked-support-space-"))).toBe(true);
+      expect(validateBuildingV3(building, DENSE_COURTYARD_CURRENT_REQUIREMENTS).findings
+        .some((finding) => finding.ruleId === "FLOATING_VOLUME")).toBe(false);
+    }
+  });
+
+  test("keeps every open-to-sky region a full vertical void beneath all higher construction", () => {
+    const physical = generateV3PhysicalStage(DENSE_COURTYARD_CURRENT_REQUIREMENTS);
+    expect(physical.schemes.length).toBeGreaterThan(0);
+    for (const { building } of physical.schemes) {
+      const floors = [...building.floors].sort((left, right) => left.level - right.level);
+      const openToSky = floors.flatMap((floor) => floor.regions
+        .filter((region) => region.kind === "open_to_sky")
+        .map((region) => ({ level: floor.level, bounds: orthogonalPolygonBounds(region.polygon) })));
+      expect(openToSky.length).toBeGreaterThan(0);
+      const overlapAreaMm2 = openToSky.reduce((sum, voidCell) =>
+        sum + floors.filter((floor) => floor.level > voidCell.level)
+          .flatMap((floor) => floor.regions
+            .filter((region) => region.kind === "interior" || region.kind === "covered_outdoor"))
+          .reduce((floorSum, region) => floorSum + rectangleIntersectionArea(
+            orthogonalPolygonBounds(region.polygon),
+            voidCell.bounds,
+          ), 0), 0);
+      expect(overlapAreaMm2).toBe(0);
+    }
   });
 
   test("realizes protected circulation without parking or open-outdoor relay", () => {

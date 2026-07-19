@@ -212,7 +212,6 @@ function enclosureSupportReference(
     const columns = structuralConcept.columns.filter((column) => column.servedFloorIds.includes(floor.floorId) && (pointOnSegment(column.center, segment)));
     return columns.length >= 2 ? [{ id: `${roof.id}-bearing-${index + 1}`, segment, role: "perimeter" as const, bearingWallIds: [], structuralColumnIds: columns.map((column) => column.id), secondarySupportIds: [] }] : [];
   });
-  if (lines.length > 0) return { roofSystemId: roof.id, bearingLines: lines };
   // A small setback fragment can sit wholly inside the lower room outline, so none of the
   // fragment's cut edges is itself a wall. Bind that fragment to the nearest authoritative wall
   // of the served room as an interior bearing/ledger line instead of inventing a free-standing
@@ -226,17 +225,25 @@ function enclosureSupportReference(
       x: orthogonalPolygonBounds(roof.footprint).x + orthogonalPolygonBounds(roof.footprint).width / 2,
       y: orthogonalPolygonBounds(roof.footprint).y + orthogonalPolygonBounds(roof.footprint).depth / 2,
     }, wallSegment(right)) || left.id.localeCompare(right.id))[0];
-  if (!fallbackWall) throw new Error(`ROOF_SUPPORT_INCOMPLETE:${roof.id}:NO_BEARING_LINE`);
+  if (!fallbackWall && lines.length === 0) throw new Error(`ROOF_SUPPORT_INCOMPLETE:${roof.id}:NO_BEARING_LINE`);
+  const fallbackAlreadyReferenced = fallbackWall
+    ? lines.some((line) => line.bearingWallIds.includes(fallbackWall.id))
+    : true;
   return {
     roofSystemId: roof.id,
-    bearingLines: [{
-      id: `${roof.id}-bearing-interior-ledger`,
-      segment: wallSegment(fallbackWall),
-      role: "interior",
-      bearingWallIds: [fallbackWall.id],
-      structuralColumnIds: [],
-      secondarySupportIds: [],
-    }],
+    bearingLines: [
+      ...lines,
+      ...fallbackWall && !fallbackAlreadyReferenced
+        ? [{
+            id: `${roof.id}-bearing-interior-ledger`,
+            segment: wallSegment(fallbackWall),
+            role: "interior" as const,
+            bearingWallIds: [fallbackWall.id],
+            structuralColumnIds: [],
+            secondarySupportIds: [],
+          }]
+        : [],
+    ],
   };
 }
 
@@ -397,11 +404,16 @@ function pergolaForRequirement(
   bounds: Rectangle,
   preserveHostClearZone = false,
 ): OpenPergolaSystem {
-  const targetArea = requirement.targetAreaM2 ? Math.round(requirement.targetAreaM2 * 1_000_000) : bounds.width * bounds.depth;
+  const coversHost = requirement.location !== "front_entry";
+  const targetArea = coversHost
+    ? bounds.width * bounds.depth
+    : requirement.targetAreaM2
+      ? Math.round(requirement.targetAreaM2 * 1_000_000)
+      : bounds.width * bounds.depth;
   // Parking shade may not introduce a post line through the vehicle clear zone.
   // Treat its requested area as a minimum and span the complete parking bay so
   // every post remains on the canonical parking perimeter.
-  const depth = preserveHostClearZone
+  const depth = coversHost || preserveHostClearZone
     ? bounds.depth
     : Math.max(1200, Math.min(bounds.depth, Math.round(targetArea / Math.max(1, bounds.width))));
   const footprintBounds = { ...bounds, depth };
@@ -449,15 +461,19 @@ function solidCanopyForRequirement(
   hostSpaceId: string,
   hostBounds: Rectangle,
 ): EnclosureRoofSystem {
-  const side = scheme.arrivalRealization.primaryRoadSide;
-  const targetAreaMm2 = Math.round((requirement.targetAreaM2 ?? 4) * 1_000_000);
-  const width = Math.min(side === "north" || side === "south" ? hostBounds.width : 1800, Math.max(1800, Math.round(Math.sqrt(targetAreaMm2 * 1.8))));
-  const depth = Math.max(1200, Math.round(targetAreaMm2 / width));
   let rectangle: Rectangle;
-  if (side === "north") rectangle = { x: hostBounds.x, y: Math.max(0, hostBounds.y - depth), width: Math.min(width, hostBounds.width), depth };
-  else if (side === "south") rectangle = { x: hostBounds.x, y: Math.min(requirements.site.depthMm - depth, rectangleBottom(hostBounds)), width: Math.min(width, hostBounds.width), depth };
-  else if (side === "west") rectangle = { x: Math.max(0, hostBounds.x - depth), y: hostBounds.y, width: depth, depth: Math.min(width, hostBounds.depth) };
-  else rectangle = { x: Math.min(requirements.site.widthMm - depth, rectangleRight(hostBounds)), y: hostBounds.y, width: depth, depth: Math.min(width, hostBounds.depth) };
+  if (requirement.location !== "front_entry") {
+    rectangle = { ...hostBounds };
+  } else {
+    const side = scheme.arrivalRealization.primaryRoadSide;
+    const targetAreaMm2 = Math.round((requirement.targetAreaM2 ?? 4) * 1_000_000);
+    const width = Math.min(side === "north" || side === "south" ? hostBounds.width : 1800, Math.max(1800, Math.round(Math.sqrt(targetAreaMm2 * 1.8))));
+    const depth = Math.max(1200, Math.round(targetAreaMm2 / width));
+    if (side === "north") rectangle = { x: hostBounds.x, y: Math.max(0, hostBounds.y - depth), width: Math.min(width, hostBounds.width), depth };
+    else if (side === "south") rectangle = { x: hostBounds.x, y: Math.min(requirements.site.depthMm - depth, rectangleBottom(hostBounds)), width: Math.min(width, hostBounds.width), depth };
+    else if (side === "west") rectangle = { x: Math.max(0, hostBounds.x - depth), y: hostBounds.y, width: depth, depth: Math.min(width, hostBounds.depth) };
+    else rectangle = { x: Math.min(requirements.site.widthMm - depth, rectangleRight(hostBounds)), y: hostBounds.y, width: depth, depth: Math.min(width, hostBounds.depth) };
+  }
   const eaveHeightMm = floor.elevationMm + floor.floorHeightMm;
   return {
     id: requirement.id,
@@ -473,9 +489,11 @@ function solidCanopyForRequirement(
 function pergolaSupports(roof: OpenPergolaSystem, floor: V3CirculatedFloor) {
   const footprintEdges = polygonSegments(roof.footprint);
   const hostSpaceId = roof.hostSpaceId;
-  const ledgerEdges = hostSpaceId ? footprintEdges.filter((edge) => floor.walls.some((wall) => wall.type === "interior"
-    && wall.adjacentSpaceIds.includes(hostSpaceId)
-    && collinearOverlap(edge, wallSegment(wall)))) : [];
+  // Any wall bordering the host space can carry a pergola ledger, except a wall with a
+  // vehicle aperture: that edge keeps perimeter posts flanking the vehicle clear zone.
+  const ledgerEdges = hostSpaceId ? footprintEdges.filter((edge) => floor.walls.some((wall) => wall.adjacentSpaceIds.includes(hostSpaceId)
+    && collinearOverlap(edge, wallSegment(wall))
+    && !floor.openings.some((opening) => opening.wallId === wall.id && opening.usage === "vehicle"))) : [];
   const ledgers: SecondaryRoofSupport[] = ledgerEdges.map((edge, index) => ({
     id: `${roof.id}-ledger-${index + 1}`,
     role: "ledger",
@@ -555,9 +573,10 @@ export function deriveV3RoofSystems(
   }));
   const explicitlyShadedHostIds = new Set([...shadeHosts.values()].map((host) => host.space.id));
   for (const floor of orderedFloors) {
-    const upperBounds = orderedFloors
-      .filter((upper) => upper.level > floor.level)
-      .flatMap((upper) => upper.regions.filter((region) => region.kind === "interior" || region.kind === "covered_outdoor").map((region) => orthogonalPolygonBounds(region.polygon)));
+    const immediateUpper = orderedFloors.find((upper) => upper.level === floor.level + 1);
+    const upperBounds = immediateUpper?.regions
+      .filter((region) => region.kind === "interior" || region.kind === "covered_outdoor")
+      .map((region) => orthogonalPolygonBounds(region.polygon)) ?? [];
     let fragmentIndex = 0;
     for (const region of floor.regions.filter((candidate) => candidate.kind === "interior" || candidate.kind === "covered_outdoor")) {
       const space = floor.spaces.find((candidate) => candidate.id === region.spaceId);
@@ -568,7 +587,7 @@ export function deriveV3RoofSystems(
       const roofFragments = region.kind === "covered_outdoor" && exposedFragments.length === 0
         // A fully occupied upper floor still needs an explicit supported transfer
         // slab over the covered outdoor space; it is not a roofless overlap.
-        ? [regionBounds]
+        ? space.id.includes("-stacked-support-space-") ? [] : [regionBounds]
         : exposedFragments;
       for (const exposed of roofFragments) {
         const id = `${floor.floorId}-roof-${space.id}-${fragmentIndex + 1}`;

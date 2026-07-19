@@ -2,6 +2,7 @@ import type { CurrentBuildingRequirements } from "@/lib/building/requirements";
 import { currentBuildingSchema, type CurrentBuilding, type CurrentFloor, type FacadeZone, type IntentRealization, type VerticalConnector, type WallSegment } from "@/lib/building/schema";
 import { generateV3CirculationStage, type V3CirculationDiagnostics } from "@/lib/building/generate-v3-circulation";
 import type { V3CirculatedScheme } from "@/lib/building/candidates/v3-circulation";
+import { coordinateStackedSupportPlates } from "@/lib/building/candidates/v3-allocation";
 import { buildV3StructuralConcept } from "@/lib/building/structure";
 import { deriveV3RoofSystems, evaluateRoofSupportCompleteness } from "@/lib/building/roofs";
 import { deriveV3EdgeProtections } from "@/lib/building/edge-protection";
@@ -241,9 +242,28 @@ function intentRealizations(
 }
 
 export function realizeV3PhysicalScheme(requirements: CurrentBuildingRequirements, scheme: V3CirculatedScheme, index = 0): CurrentBuilding {
-  const floors = currentFloors(scheme);
+  const coordinatedScheme: V3CirculatedScheme = {
+    ...scheme,
+    floors: scheme.floors.map((floor) => ({
+      ...floor,
+      regions: floor.regions.map((region) => ({
+        ...region,
+        polygon: { points: region.polygon.points.map((point) => ({ ...point })) },
+      })),
+      spaces: floor.spaces.map((space) => ({ ...space, bounds: { ...space.bounds } })),
+      constructedFootprints: floor.constructedFootprints.map((polygon) => ({
+        points: polygon.points.map((point) => ({ ...point })),
+      })),
+      intentionalUnbuiltRegions: floor.intentionalUnbuiltRegions.map((region) => ({
+        ...region,
+        polygon: { points: region.polygon.points.map((point) => ({ ...point })) },
+      })),
+    })),
+  };
+  coordinateStackedSupportPlates(coordinatedScheme.floors);
+  const floors = currentFloors(coordinatedScheme);
   const structuralConcept = buildV3StructuralConcept(floors);
-  const physicalRoofs = deriveV3RoofSystems(requirements, scheme, structuralConcept);
+  const physicalRoofs = deriveV3RoofSystems(requirements, coordinatedScheme, structuralConcept);
   const supportIssues = evaluateRoofSupportCompleteness({
     ...physicalRoofs,
     structuralConcept,
@@ -257,7 +277,7 @@ export function realizeV3PhysicalScheme(requirements: CurrentBuildingRequirement
     rulePackVersion: "concept-rulepack-v3",
     rendererVersion: "massing-v3-mesh-1",
     seed: requirements.seed,
-    candidate: { generatorId: scheme.partiId, index, score: Math.max(0, 100 - scheme.surplusPenalty), geometryHash: "pending" },
+    candidate: { generatorId: coordinatedScheme.partiId, index, score: Math.max(0, 100 - coordinatedScheme.surplusPenalty), geometryHash: "pending" },
     site: {
       widthMm: requirements.site.widthMm,
       depthMm: requirements.site.depthMm,
@@ -271,13 +291,13 @@ export function realizeV3PhysicalScheme(requirements: CurrentBuildingRequirement
       },
     },
     floors,
-    verticalConnectors: verticalConnectors(requirements, scheme),
+    verticalConnectors: verticalConnectors(requirements, coordinatedScheme),
     structuralConcept,
     ...physicalRoofs,
-    edgeProtections: deriveV3EdgeProtections(requirements, scheme),
-    facadeZones: facadeZones(requirements, floors, scheme),
+    edgeProtections: deriveV3EdgeProtections(requirements, coordinatedScheme),
+    facadeZones: facadeZones(requirements, floors, coordinatedScheme),
   };
-  const intent = intentRealizations(requirements, scheme, withoutIntent);
+  const intent = intentRealizations(requirements, coordinatedScheme, withoutIntent);
   const geometryHash = v3PhysicalGeometryHash(withoutIntent);
   return currentBuildingSchema.parse({ ...withoutIntent, candidate: { ...withoutIntent.candidate, geometryHash }, intentRealizations: intent });
 }

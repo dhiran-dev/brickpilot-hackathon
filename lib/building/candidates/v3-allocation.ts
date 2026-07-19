@@ -121,6 +121,14 @@ function overlapArea(left: Rectangle, right: Rectangle) {
     * Math.max(0, Math.min(left.y + left.depth, right.y + right.depth) - Math.max(left.y, right.y));
 }
 
+function rectangleIntersection(left: Rectangle, rightRectangle: Rectangle): Rectangle | undefined {
+  const x = Math.max(left.x, rightRectangle.x);
+  const y = Math.max(left.y, rightRectangle.y);
+  const right = Math.min(left.x + left.width, rightRectangle.x + rightRectangle.width);
+  const bottom = Math.min(left.y + left.depth, rightRectangle.y + rightRectangle.depth);
+  return right > x && bottom > y ? { x, y, width: right - x, depth: bottom - y } : undefined;
+}
+
 function polygonContainsPoint(polygon: OrthogonalPolygon, x: number, y: number) {
   let inside = false;
   for (let current = 0, previous = polygon.points.length - 1; current < polygon.points.length; previous = current, current += 1) {
@@ -197,6 +205,37 @@ function sharedBoundaryLength(left: Rectangle, right: Rectangle) {
     return Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
   }
   return 0;
+}
+
+function mergeAdjacentRectangles(left: Rectangle, right: Rectangle): Rectangle | undefined {
+  if (left.x === right.x && left.width === right.width) {
+    if (left.y + left.depth === right.y) return { ...left, depth: left.depth + right.depth };
+    if (right.y + right.depth === left.y) return { ...right, depth: left.depth + right.depth };
+  }
+  if (left.y === right.y && left.depth === right.depth) {
+    if (left.x + left.width === right.x) return { ...left, width: left.width + right.width };
+    if (right.x + right.width === left.x) return { ...right, width: left.width + right.width };
+  }
+  return undefined;
+}
+
+function coalesceRectangles(rectangles: readonly Rectangle[]) {
+  const result = rectangles.map((rectangle) => ({ ...rectangle }));
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let left = 0; left < result.length && !merged; left += 1) {
+      for (let right = left + 1; right < result.length; right += 1) {
+        const combined = mergeAdjacentRectangles(result[left], result[right]);
+        if (!combined) continue;
+        result.splice(right, 1);
+        result.splice(left, 1, combined);
+        merged = true;
+        break;
+      }
+    }
+  }
+  return result;
 }
 
 function placeRoom(input: {
@@ -410,6 +449,74 @@ function deriveWalls(
     else merged.push({ ...wall });
   }
   return merged.map((wall, index) => ({ ...wall, id: `${floorId}-wall-${index + 1}` }));
+}
+
+/**
+ * Converts incidental lower-floor gaps below constructed upper-floor regions into explicit,
+ * perimeter-open support bays. User-programmed open-to-sky areas are never consumed.
+ * Processing top-down propagates the supported plate through every lower storey.
+ */
+export function coordinateStackedSupportPlates(floors: V3AllocatedFloor[]) {
+  const ordered = [...floors].sort((left, right) => left.level - right.level || left.floorId.localeCompare(right.floorId));
+  for (let lowerIndex = ordered.length - 2; lowerIndex >= 0; lowerIndex -= 1) {
+    const lower = ordered[lowerIndex];
+    const upper = ordered[lowerIndex + 1];
+    const upperConstructed = upper.constructedFootprints.map(orthogonalPolygonBounds);
+    const replacementRegions: FloorRegion[] = [];
+    const replacedRegionIds = new Set<string>();
+    const supportRectangles: Rectangle[] = [];
+
+    for (const voidRegion of lower.regions.filter((region) => region.kind === "intentional_unbuilt")) {
+      const bounds = orthogonalPolygonBounds(voidRegion.polygon);
+      const intersections = upperConstructed
+        .map((upperBounds) => rectangleIntersection(bounds, upperBounds))
+        .filter((rectangle): rectangle is Rectangle => Boolean(rectangle));
+      if (intersections.length === 0) {
+        continue;
+      }
+      replacedRegionIds.add(voidRegion.id);
+      supportRectangles.push(...intersections);
+      const residuals = coalesceRectangles(residualRectangles(bounds, intersections));
+      replacementRegions.push(...residuals.map((rectangle, index): FloorRegion => ({
+        id: `${voidRegion.id}-coordinated-${index + 1}`,
+        kind: voidRegion.kind,
+        polygon: normalizeOrthogonalPolygon(rectangleToOrthogonalPolygon(rectangle)),
+      })));
+    }
+
+    if (supportRectangles.length === 0) continue;
+    const supportRegions = coalesceRectangles(supportRectangles).map((rectangle, index): FloorRegion => ({
+      id: `${lower.floorId}-stacked-support-region-${index + 1}`,
+      kind: "covered_outdoor",
+      polygon: normalizeOrthogonalPolygon(rectangleToOrthogonalPolygon(rectangle)),
+      spaceId: `${lower.floorId}-stacked-support-space-${index + 1}`,
+    }));
+    lower.regions = [
+      ...lower.regions.filter((region) => !replacedRegionIds.has(region.id)),
+      ...supportRegions,
+      ...replacementRegions,
+    ];
+    lower.intentionalUnbuiltRegions = lower.regions.filter((region) => region.kind === "intentional_unbuilt");
+    lower.constructedFootprints = [
+      ...lower.constructedFootprints,
+      ...supportRegions.map((region) => region.polygon),
+    ];
+    lower.spaces.push(...supportRegions.map((region, index): DerivedAllocatedSpace => {
+      const bounds = orthogonalPolygonBounds(region.polygon);
+      return {
+        id: region.spaceId!,
+        floorId: lower.floorId,
+        name: `Covered support bay ${index + 1}`,
+        type: "verandah",
+        regionId: region.id,
+        bounds,
+        areaMm2: bounds.width * bounds.depth,
+        accessible: false,
+      };
+    }));
+    lower.coverage = auditOrthogonalPartition(lower.envelope, lower.regions);
+    if (!lower.coverage.valid) throw new Error(`STACKED_SUPPORT_PARTITION_INVALID:${lower.floorId}`);
+  }
 }
 
 function resolvedAboveParkingUse(requirements: CurrentBuildingRequirements, floorId: string) {
@@ -679,7 +786,23 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
     const topologyFootprints = scheme.topology.occupiedFootprintsByFloor.find((floor) => floor.floorId === floorRequirement.id)?.polygons ?? [envelopePolygon];
     const occupied: Rectangle[] = [];
     const regionByRoom = new Map<string, FloorRegion>();
-    const forbidden: Rectangle[] = [];
+    // Courts, terraces, and an explicit unbuilt-above-parking request remain full vertical
+    // voids through every higher storey; they are never treated as cantilever opportunities.
+    const openToSkyVoidCells = floors.flatMap((priorFloor) => priorFloor.regions
+      .filter((region) => region.kind === "open_to_sky")
+      .map((region) => orthogonalPolygonBounds(region.polygon)));
+    const aboveParkingVoidCells = aboveParking
+      .filter((allocation) => allocation.use === "unbuilt")
+      .flatMap((allocation) => {
+        const priorFloor = floors.find((candidate) => candidate.floorId === allocation.floorId);
+        if (!priorFloor) return [];
+        const realizedRegionIds = new Set(allocation.realizedRegionIds);
+        return priorFloor.regions
+          .filter((region) => realizedRegionIds.has(region.id))
+          .map((region) => orthogonalPolygonBounds(region.polygon));
+      });
+    const verticalVoidCells = [...openToSkyVoidCells, ...aboveParkingVoidCells];
+    const forbidden: Rectangle[] = [...verticalVoidCells];
     const aboveUse = floorRequirement.level === 1 && groundParkingBounds
       ? resolvedAboveParkingUse(requirements, floorRequirement.id)
       : undefined;
@@ -697,18 +820,28 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
       ["aboveParkingUse"],
       `PROGRAM_AREA_INFEASIBLE:aboveParkingUse:${aboveUse}`,
     );
-    const reservationPriority = (room: RoomRequirement) => floorRequirement.level !== 0
+    const tightUpperEnvelope = orderedFloors.length >= 4
+      && floorRequirement.level > 0
+      && envelope.width <= 10_000
+      && envelope.depth <= 14_000;
+    const reservationPriority = (room: RoomRequirement) => floorRequirement.level === 0 && room.type === "courtyard"
+      ? 0
+      : floorRequirement.level !== 0
       ? room.type === "stair"
         ? 0
         : room.type === "circulation"
           ? 1
-          : room.type === "living" || room.type === "dining"
-            ? 2
-            : room.id === aboveTarget?.id
-              ? 3
-              : ["balcony", "verandah", "courtyard", "terrace"].includes(room.type)
-                ? 5
-                : 4
+          : room.type === "bedroom"
+            ? tightUpperEnvelope ? 2 : 4
+            : room.type === "bathroom"
+              ? tightUpperEnvelope ? 3 : 4
+              : room.id === aboveTarget?.id
+                ? tightUpperEnvelope ? 4 : 3
+                : room.type === "living" || room.type === "dining"
+                  ? tightUpperEnvelope ? 5 : 2
+                  : ["balcony", "verandah", "courtyard", "terrace"].includes(room.type)
+                    ? tightUpperEnvelope ? 7 : 5
+                    : tightUpperEnvelope ? 6 : 4
       : room.id === scheme.topology.foyerWallRunReservation.targetRoomId
         ? 0
         : room.id === scheme.topology.vehicleApertureReservation?.targetRoomId
@@ -817,6 +950,9 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
           rootRoomId: scheme.topology.mainEntry.targetRoomId,
           requiredBoundaryByRoom: zonedBoundaryByRoom,
           attachedBathroomBedroom,
+          preferredCentroidByRoom: new Map(
+            [...topologyRooms].map(([roomId, room]) => [roomId, room.centroid]),
+          ),
           minimumDimensionByRoom: new Map(roomOrder
             .filter((room) => room.type === "stair")
             .map((room) => [room.id, requirements.vertical.stairWidthMm])),
@@ -856,10 +992,10 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
         let lastZonedError: Error | undefined;
         for (const outdoorReservation of reservationAttempts) {
           const zonedForbidden = aboveUse === "unbuilt" && groundParkingBounds
-            ? [groundParkingBounds]
+            ? [...verticalVoidCells, groundParkingBounds]
             : outdoorReservation
-              ? [outdoorReservation]
-              : [];
+              ? [...verticalVoidCells, outdoorReservation]
+              : verticalVoidCells;
           try {
             zoned = allocateZonedUpperFloor({
               floorId: floorRequirement.id,
@@ -872,6 +1008,9 @@ export function allocateV3TopologyScheme(requirements: CurrentBuildingRequiremen
               attachedBathroomBedroom,
               fixedPlacements: new Map([[stair.id, verticalStairBounds]]),
               forbiddenRectangles: zonedForbidden,
+              preferredCentroidByRoom: new Map(
+                [...topologyRooms].map(([roomId, room]) => [roomId, room.centroid]),
+              ),
               minimumDimensionByRoom: new Map([[stair.id, requirements.vertical.stairWidthMm]]),
             });
             if (outdoorReservation) {

@@ -1,7 +1,7 @@
 import { minimumClearDimensionMm } from "@/lib/building/dimensions";
 import type { ResolvedRoomAreaPolicy } from "@/lib/building/area-policy-v3";
 import type { CardinalDirection, RoomRequirement } from "@/lib/building/requirements";
-import type { Rectangle } from "@/lib/building/schema";
+import type { Point, Rectangle } from "@/lib/building/schema";
 import { isExteriorPlanningZone, planningZoneClass } from "@/lib/building/planning-zones-v3";
 
 const GRID_MM = 100;
@@ -62,6 +62,7 @@ export type ZonedFloorAllocationInput = {
   fixedPlacements?: ReadonlyMap<string, Rectangle>;
   forbiddenRectangles?: readonly Rectangle[];
   minimumDimensionByRoom?: ReadonlyMap<string, number>;
+  preferredCentroidByRoom?: ReadonlyMap<string, Point>;
 };
 
 type LocalRectangle = { u: number; v: number; width: number; depth: number };
@@ -169,6 +170,28 @@ function fromGlobal(
     v: envelope.x + envelope.width - rectangle.x - rectangle.width,
     width: rectangle.depth,
     depth: rectangle.width,
+  };
+}
+
+function preferredLocalPoint(input: ZonedFloorAllocationInput, roomId: string) {
+  const point = input.preferredCentroidByRoom?.get(roomId);
+  if (!point) return undefined;
+  const local = fromGlobal(
+    { x: point.x, y: point.y, width: 0, depth: 0 },
+    input.envelope,
+    input.entrySide,
+  );
+  return { u: local.u, v: local.v };
+}
+
+function groupPreferredLocalPoint(input: ZonedFloorAllocationInput, group: RoomGroup) {
+  const points = group.rooms
+    .map((room) => preferredLocalPoint(input, room.id))
+    .filter((point): point is { u: number; v: number } => Boolean(point));
+  if (points.length === 0) return undefined;
+  return {
+    u: points.reduce((sum, point) => sum + point.u, 0) / points.length,
+    v: points.reduce((sum, point) => sum + point.v, 0) / points.length,
   };
 }
 
@@ -377,9 +400,9 @@ function forbiddenPlacementsCompatible(
 }
 
 /**
- * A deterministic arrival-band plus dual-loaded-spine solver. It is intentionally independent
- * from topology labels: every feasible topology may try it, then retain its own fingerprint and
- * downstream physical contract.
+ * A deterministic arrival-band plus dual-loaded-spine solver. Candidate legality is shared across
+ * partis, while topology-owned room centroids order the bounded search so distinct directions
+ * realize distinct physical arrangements instead of inheriting the same first feasible layout.
  */
 export function allocateZonedFloor(input: ZonedFloorAllocationInput): ZonedFloorAllocation {
   const rooms = input.rooms.filter((room) => room.floorId === input.floorId);
@@ -460,11 +483,18 @@ export function allocateZonedFloor(input: ZonedFloorAllocationInput): ZonedFloor
         }
 
         const totalFrontage = chosen.reduce((sum, item) => sum + item.width, 0);
-        for (const offset of [...new Set([
+        const preferredAnchorCentre = chosen.reduce((sum, item) =>
+          sum + (preferredLocalPoint(input, item.room.id)?.u ?? dimensions.frontage / 2), 0)
+          / Math.max(1, chosen.length);
+        const offsets = [...new Set([
           0,
           ceilGrid((dimensions.frontage - totalFrontage) / 2),
           dimensions.frontage - totalFrontage,
-        ])]) {
+        ])].sort((left, right) =>
+          Math.abs(left + totalFrontage / 2 - preferredAnchorCentre)
+            - Math.abs(right + totalFrontage / 2 - preferredAnchorCentre)
+          || left - right);
+        for (const offset of offsets) {
           if (offset < 0 || offset + totalFrontage > dimensions.frontage) continue;
           const localAnchors = new Map<string, LocalRectangle>();
           let cursor = offset;
@@ -505,7 +535,16 @@ export function allocateZonedFloor(input: ZonedFloorAllocationInput): ZonedFloor
             foyerRectangle.u + foyerRectangle.width - corridorWidth,
             dimensions.frontage - corridorWidth,
           );
+          const preferredCorridorU = (preferredLocalPoint(input, circulation.id)?.u
+            ?? foyerRectangle.u + foyerRectangle.width / 2) - corridorWidth / 2;
+          const corridorCandidates: number[] = [];
           for (let corridorU = ceilGrid(corridorStartMin); corridorU <= corridorStartMax; corridorU += GRID_MM) {
+            corridorCandidates.push(corridorU);
+          }
+          corridorCandidates.sort((left, right) =>
+            Math.abs(left - preferredCorridorU) - Math.abs(right - preferredCorridorU)
+            || left - right);
+          for (const corridorU of corridorCandidates) {
             const corridor: LocalRectangle = {
               u: corridorU,
               v: circulationStart,
@@ -576,6 +615,8 @@ export function allocateZonedFloor(input: ZonedFloorAllocationInput): ZonedFloor
                 const leftExterior = left.rooms.some((room) => room.mustBeExterior || isExteriorPlanningZone(room.type));
                 const rightExterior = right.rooms.some((room) => room.mustBeExterior || isExteriorPlanningZone(room.type));
                 return Number(rightExterior) - Number(leftExterior)
+                  || (groupPreferredLocalPoint(input, left)?.v ?? dimensions.inward / 2)
+                    - (groupPreferredLocalPoint(input, right)?.v ?? dimensions.inward / 2)
                   || left.id.localeCompare(right.id);
               });
 

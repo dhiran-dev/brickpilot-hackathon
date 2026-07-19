@@ -516,9 +516,10 @@ function horizontalPolygonPrimitive(input: {
   floorId: string;
   id: string;
   sourceId: string;
-  kind: "slab";
+  kind: "slab" | "roof";
   polygon: CurrentFloor["regions"][number]["polygon"];
   elevationM: number;
+  materialToken: string;
 }) {
   const topVertices = input.polygon.points.map((point) => {
     const [x, z] = planToScene(input.building, point.x, point.y);
@@ -530,7 +531,9 @@ function horizontalPolygonPrimitive(input: {
   const bottomTriangles = [...topTriangles].reverse().map((index) => index + count);
   const sideTriangles = topVertices.flatMap((_, index) => {
     const next = (index + 1) % count;
-    return [index, next, next + count, index, next + count, index + count];
+    // Plan polygons are clockwise in scene X/Z coordinates. This winding keeps each
+    // vertical fascia outward-facing for the viewer's front-face-only materials.
+    return [index, next + count, next, index, index + count, next + count];
   });
   return meshPrimitive({
     id: input.id,
@@ -538,7 +541,7 @@ function horizontalPolygonPrimitive(input: {
     semanticKind: input.kind,
     floorId: input.floorId,
     sourceId: input.sourceId,
-    materialToken: "slab.concrete",
+    materialToken: input.materialToken,
     vertices: [...topVertices, ...bottomVertices],
     triangleIndices: [...topTriangles, ...bottomTriangles, ...sideTriangles],
   });
@@ -567,26 +570,6 @@ function roofFloor(building: CurrentBuilding, roof: RoofSystem) {
   return building.floors.find((floor) => floor.spaces.some((space) => roof.servesSpaceIds.includes(space.id)));
 }
 
-function flatCompatibilityRoofPrimitive(
-  building: CurrentBuilding,
-  roof: Exclude<RoofSystem, { kind: "open_pergola" }>,
-  floorId: string,
-  explodeYM: number,
-) {
-  const vertices = roof.footprint.points.map((point) =>
-    scenePoint(building, { ...point, z: roof.eaveHeightMm }, explodeYM));
-  return meshPrimitive({
-    id: `${roof.id}-flat-policy`,
-    kind: "roof",
-    semanticKind: "roof",
-    floorId,
-    sourceId: roof.id,
-    materialToken: "roof.flat-mineral",
-    vertices,
-    triangleIndices: triangulateMassingPolygon(roof.footprint.points),
-  });
-}
-
 function buildCurrentMassingModel(building: CurrentBuilding, options: MassingOptions = {}): MassingModel {
   const visible = new Set(options.visibleFloorIds ?? building.floors.map((floor) => floor.id));
   const explodeM = Math.max(0, options.explodeM ?? 0);
@@ -607,7 +590,7 @@ function buildCurrentMassingModel(building: CurrentBuilding, options: MassingOpt
     const explodeYM = floor.level * explodeM;
     const baseYM = floor.elevationMm * MM_TO_M + explodeYM;
     if (includeSlabs) for (const region of floor.regions.filter((candidate) => candidate.kind === "interior" || candidate.kind === "covered_outdoor")) primitives.push(horizontalPolygonPrimitive({
-      building, floorId: floor.id, id: `${floor.id}-slab-${region.id}`, sourceId: region.id, kind: "slab", polygon: region.polygon, elevationM: baseYM,
+      building, floorId: floor.id, id: `${floor.id}-slab-${region.id}`, sourceId: region.id, kind: "slab", polygon: region.polygon, elevationM: baseYM, materialToken: "slab.concrete",
     }));
     primitives.push(...currentWallPrimitives(building, floor, explodeYM, includeInteriorWalls));
     if (includeColumns) for (const column of building.structuralConcept.columns.filter((candidate) => candidate.servedFloorIds.includes(floor.id))) primitives.push(rectanglePrimitive(
@@ -625,19 +608,20 @@ function buildCurrentMassingModel(building: CurrentBuilding, options: MassingOpt
         id: member.id, kind: "pergola", semanticKind: "pergola", floorId: floor.id, sourceId: roof.id,
         materialToken: "pergola.warm-timber", start: scenePoint(building, member.start, explodeYM), end: scenePoint(building, member.end, explodeYM), sectionMm: member.sectionMm,
       }));
-    } else if (roof.kind === "gable" || roof.kind === "hip" || roof.kind === "shed") {
-      // Saved v3 studies may contain the retired pitched-roof geometry. Keep the
-      // canonical record readable, but never expose those slopes in massing or
-      // captured render references.
-      primitives.push(flatCompatibilityRoofPrimitive(building, roof, floor.id, explodeYM));
-    } else for (const plane of roof.planes) {
-      const vertices = plane.vertices.map((point) => scenePoint(building, point, explodeYM));
-      primitives.push(meshPrimitive({
-        id: plane.id, kind: "roof", semanticKind: "roof", floorId: floor.id, sourceId: roof.id,
-        materialToken: roof.kind === "flat_slab" ? "roof.flat-mineral" : roof.kind === "solid_canopy" ? "roof.canopy" : "roof.warm-tile",
-        vertices, triangleIndices: Array.from({ length: Math.max(0, vertices.length - 2) }, (_, index) => [0, index + 1, index + 2]).flat(),
-      }));
-    }
+    } else primitives.push(horizontalPolygonPrimitive({
+      building,
+      floorId: floor.id,
+      id: `${roof.id}-closed-cap`,
+      sourceId: roof.id,
+      kind: "roof",
+      polygon: roof.footprint,
+      elevationM: roof.eaveHeightMm * MM_TO_M + explodeYM + SLAB_THICKNESS_M,
+      materialToken: roof.kind === "flat_slab"
+        ? "roof.flat-mineral"
+        : roof.kind === "solid_canopy"
+          ? "roof.canopy"
+          : "roof.warm-tile",
+    }));
   }
   if (includeColumns) for (const support of building.secondaryRoofSupports) {
     const floor = building.floors.find((candidate) => candidate.id === support.floorId);

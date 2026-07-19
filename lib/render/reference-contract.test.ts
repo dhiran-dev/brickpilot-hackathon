@@ -95,8 +95,11 @@ describe("reference render before-state contract", () => {
       .every((roof) => roof.kind === "flat_slab" || roof.kind === "solid_canopy")).toBe(true);
     const roofMeshes = massing.primitives.filter((primitive) => primitive.shape === "mesh" && primitive.semanticKind === "roof");
     expect(roofMeshes.length).toBeGreaterThan(0);
-    expect(roofMeshes.every((primitive) => primitive.shape === "mesh"
-      && new Set(primitive.vertices.map((vertex) => vertex[1])).size === 1)).toBe(true);
+    expect(roofMeshes.every((primitive) => {
+      if (primitive.shape !== "mesh") return false;
+      const yLevels = [...new Set(primitive.vertices.map((vertex) => vertex[1]))].sort((a, b) => a - b);
+      return yLevels.length === 2 && Math.abs(yLevels[1] - yLevels[0] - 0.18) < 1e-9;
+    })).toBe(true);
     const expectedPhysicalTopMm = Math.max(
       building.floors.at(-1)!.elevationMm + building.floors.at(-1)!.floorHeightMm,
       ...building.roofSystems.map((roof) => roof.kind === "open_pergola" ? roof.topElevationMm : roof.eaveHeightMm),
@@ -115,8 +118,10 @@ describe("reference render before-state contract", () => {
     const massing = buildMassingModel(saved);
     const displayed = massing.primitives.filter((primitive) => primitive.shape === "mesh" && primitive.sourceId === roof.id);
     expect(displayed).toHaveLength(1);
-    expect(displayed[0].id).toBe(`${roof.id}-flat-policy`);
-    expect(displayed[0].shape === "mesh" && new Set(displayed[0].vertices.map((vertex) => vertex[1])).size).toBe(1);
+    expect(displayed[0].id).toBe(`${roof.id}-closed-cap`);
+    expect(displayed[0].shape === "mesh"
+      && [...new Set(displayed[0].vertices.map((vertex) => vertex[1]))].sort((a, b) => a - b))
+      .toEqual([roof.eaveHeightMm / 1000, roof.eaveHeightMm / 1000 + 0.18]);
     const expectedPhysicalTopMm = Math.max(
       saved.floors.at(-1)!.elevationMm + saved.floors.at(-1)!.floorHeightMm,
       ...saved.roofSystems.map((candidate) => candidate.kind === "open_pergola" ? candidate.topElevationMm : candidate.eaveHeightMm),

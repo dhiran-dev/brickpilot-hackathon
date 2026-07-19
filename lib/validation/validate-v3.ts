@@ -14,6 +14,7 @@ import type {
   FloorRegion,
   OrthogonalPolygon,
   Point,
+  Rectangle,
   RoofPlane,
   Segment2,
   WallSegment,
@@ -22,6 +23,7 @@ import {
   auditOrthogonalPartition,
   orthogonalPolygonAreaMm2,
   orthogonalPolygonBounds,
+  residualRectangles,
 } from "@/lib/building/orthogonal-partition";
 import { evaluateRoofSupportCompleteness } from "@/lib/building/roofs";
 import { v3WindowPolicy } from "@/lib/building/opening-policy-v3";
@@ -80,6 +82,11 @@ export type V3SchemeSetValidation = {
 const EXTERIOR = "EXTERIOR";
 const PRIVATE_ROOM_TYPES = new Set(["bedroom", "bathroom"]);
 const OUTDOOR_ROOM_TYPES = new Set(["parking", "verandah"]);
+const STACKED_SUPPORT_SPACE_TOKEN = "-stacked-support-space-";
+
+function isStackedSupportSpace(spaceId: string) {
+  return spaceId.includes(STACKED_SUPPORT_SPACE_TOKEN);
+}
 
 function segmentKey(segment: Segment2) {
   const points = [segment.start, segment.end].sort((left, right) => left.x - right.x || left.y - right.y);
@@ -202,8 +209,8 @@ function areaFindings(building: CurrentBuilding, requirements: CurrentBuildingRe
   const findings: ValidationFindingV3[] = [];
   for (const requirement of requirements.rooms) {
     const floor = building.floors.find((candidate) => candidate.id === requirement.floorId);
-    const region = floor && regionForSpace(floor, requirement.id);
-    if (!floor || !region) {
+    const regions = floor?.regions.filter((region) => region.spaceId === requirement.id) ?? [];
+    if (!floor || regions.length === 0) {
       findings.push(findingV3(
         RULES.roomMinimumArea, "error", "planning", `Requested room ${requirement.name} is missing from canonical geometry.`,
         { floorId: requirement.floorId, objectIds: [requirement.id] }, "requirement_and_geometry",
@@ -215,10 +222,10 @@ function areaFindings(building: CurrentBuilding, requirements: CurrentBuildingRe
       room: requirement,
       usableFloorAreaMm2: orthogonalPolygonAreaMm2(floor.envelope),
     });
-    const area = orthogonalPolygonAreaMm2(region.polygon);
+    const area = regions.reduce((sum, region) => sum + orthogonalPolygonAreaMm2(region.polygon), 0);
     if (area < policy.minimumAreaMm2) findings.push(findingV3(
       RULES.roomMinimumArea, "error", "planning", `${requirement.name} is below its minimum area.`,
-      { floorId: floor.id, objectIds: [requirement.id, region.id], measured: { value: area, unit: "mm2" }, required: { min: policy.minimumAreaMm2, unit: "mm2" } }, "requirement_and_geometry",
+      { floorId: floor.id, objectIds: [requirement.id, ...regions.map((region) => region.id)], measured: { value: area, unit: "mm2" }, required: { min: policy.minimumAreaMm2, unit: "mm2" } }, "requirement_and_geometry",
     ));
     if (area > policy.warningMaximumAreaMm2) {
       const hard = area > policy.hardMaximumAreaMm2;
@@ -227,7 +234,7 @@ function areaFindings(building: CurrentBuilding, requirements: CurrentBuildingRe
         hard ? "error" : "warning",
         "planning",
         `${requirement.name} exceeds its ${hard ? "hard" : "warning"} area maximum.`,
-        { floorId: floor.id, objectIds: [requirement.id, region.id], measured: { value: area, unit: "mm2" }, required: { max: hard ? policy.hardMaximumAreaMm2 : policy.warningMaximumAreaMm2, unit: "mm2" } },
+        { floorId: floor.id, objectIds: [requirement.id, ...regions.map((region) => region.id)], measured: { value: area, unit: "mm2" }, required: { max: hard ? policy.hardMaximumAreaMm2 : policy.warningMaximumAreaMm2, unit: "mm2" } },
         "requirement_and_geometry",
       ));
     }
@@ -351,10 +358,52 @@ function openingAndAccessFindings(building: CurrentBuilding, requirements: Curre
       reached.add(current);
       queue.push(...[...(adjacency.get(current) ?? [])].filter((id) => !reached.has(id)));
     }
-    for (const space of floor.spaces.filter((candidate) => !["parking", "courtyard", "terrace"].includes(candidate.type))) {
+    for (const space of floor.spaces.filter((candidate) =>
+      !isStackedSupportSpace(candidate.id)
+      && !["parking", "courtyard", "terrace"].includes(candidate.type))) {
       if (!reached.has(space.id)) findings.push(findingV3(
         RULES.reachable, "error", "circulation", `${space.name} is not reachable through canonical pedestrian openings.`,
         { floorId: floor.id, objectIds: [space.id] },
+      ));
+    }
+  }
+  return findings;
+}
+
+function stackedSupportFindings(building: CurrentBuilding) {
+  const ordered = [...building.floors].sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  const findings: ValidationFindingV3[] = [];
+  for (let upperIndex = 1; upperIndex < ordered.length; upperIndex += 1) {
+    const lower = ordered[upperIndex - 1];
+    const upper = ordered[upperIndex];
+    const lowerVoids = lower.regions.filter((region) =>
+      region.kind === "open_to_sky" || region.kind === "intentional_unbuilt");
+    const upperConstructed = upper.regions.filter((region) =>
+      region.kind === "interior" || region.kind === "covered_outdoor");
+    for (const upperRegion of upperConstructed) for (const lowerVoid of lowerVoids) {
+      const upperBounds = orthogonalPolygonBounds(upperRegion.polygon);
+      const lowerBounds = orthogonalPolygonBounds(lowerVoid.polygon);
+      const x = Math.max(upperBounds.x, lowerBounds.x);
+      const y = Math.max(upperBounds.y, lowerBounds.y);
+      const right = Math.min(upperBounds.x + upperBounds.width, lowerBounds.x + lowerBounds.width);
+      const bottom = Math.min(upperBounds.y + upperBounds.depth, lowerBounds.y + lowerBounds.depth);
+      const overlapWidthMm = Math.max(0, right - x);
+      const overlapDepthMm = Math.max(0, bottom - y);
+      const overlapAreaMm2 = overlapWidthMm * overlapDepthMm;
+      if (overlapAreaMm2 <= AREA_TOLERANCE_MM2) continue;
+      findings.push(findingV3(
+        RULES.floatingVolume,
+        "error",
+        "vertical",
+        "An upper-floor region projects over an open cell on the floor immediately below.",
+        {
+          floorId: upper.id,
+          objectIds: [upperRegion.id, lowerVoid.id],
+          measured: { value: overlapAreaMm2, unit: "mm2" },
+          required: { max: AREA_TOLERANCE_MM2, unit: "mm2" },
+          suggestedAction: "Keep the upper region over constructed volume and preserve the lower open area as a continuous vertical void.",
+        },
+        "requirement_and_geometry",
       ));
     }
   }
@@ -408,6 +457,62 @@ function roofFindings(building: CurrentBuilding, requirements: CurrentBuildingRe
       RULES.roofSiteBoundaryConflict, "error", "site", "Roof footprint and overhang extend outside the modeled site boundary.",
       { objectIds: [roof.id] },
     ));
+  }
+  const orderedFloors = [...building.floors].sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  for (const floor of orderedFloors) {
+    const immediateUpper = orderedFloors.find((candidate) => candidate.level === floor.level + 1);
+    const upperBounds = immediateUpper?.regions
+      .filter((region) => region.kind === "interior" || region.kind === "covered_outdoor")
+      .map((region) => orthogonalPolygonBounds(region.polygon)) ?? [];
+    for (const region of floor.regions.filter((candidate) =>
+      candidate.kind === "interior" || candidate.kind === "covered_outdoor")) {
+      const spaceId = region.spaceId;
+      if (!spaceId) continue;
+      const regionBounds = orthogonalPolygonBounds(region.polygon);
+      const clipToRegion = (bounds: ReturnType<typeof orthogonalPolygonBounds>) => {
+        const x = Math.max(regionBounds.x, bounds.x);
+        const y = Math.max(regionBounds.y, bounds.y);
+        const right = Math.min(regionBounds.x + regionBounds.width, bounds.x + bounds.width);
+        const bottom = Math.min(regionBounds.y + regionBounds.depth, bounds.y + bounds.depth);
+        return right > x && bottom > y ? { x, y, width: right - x, depth: bottom - y } : undefined;
+      };
+      const exposedFragments = residualRectangles(
+        regionBounds,
+        upperBounds.map(clipToRegion).filter((bounds): bounds is Rectangle => Boolean(bounds)),
+      );
+      const coveringRoofs = building.roofSystems.filter((roof) =>
+        roof.kind === "open_pergola"
+          ? region.kind === "covered_outdoor" && roof.hostSpaceId === spaceId
+          : roof.servesSpaceIds.includes(spaceId));
+      const uncoveredAreaMm2 = exposedFragments.reduce((sum, fragment) => {
+        const clippedRoofs = coveringRoofs
+          .map((roof) => {
+            const roofBounds = orthogonalPolygonBounds(roof.footprint);
+            const x = Math.max(fragment.x, roofBounds.x);
+            const y = Math.max(fragment.y, roofBounds.y);
+            const right = Math.min(fragment.x + fragment.width, roofBounds.x + roofBounds.width);
+            const bottom = Math.min(fragment.y + fragment.depth, roofBounds.y + roofBounds.depth);
+            return right > x && bottom > y ? { x, y, width: right - x, depth: bottom - y } : undefined;
+          })
+          .filter((bounds): bounds is Rectangle => Boolean(bounds));
+        return sum + residualRectangles(fragment, clippedRoofs)
+          .reduce((fragmentSum, rectangle) => fragmentSum + rectangle.width * rectangle.depth, 0);
+      }, 0);
+      if (uncoveredAreaMm2 <= AREA_TOLERANCE_MM2) continue;
+      findings.push(findingV3(
+        RULES.roofGeometryInvalid,
+        "error",
+        "geometry",
+        "An exposed constructed floor region is missing complete roof coverage.",
+        {
+          floorId: floor.id,
+          objectIds: [region.id, ...coveringRoofs.map((roof) => roof.id)],
+          measured: { value: uncoveredAreaMm2, unit: "mm2" },
+          required: { max: AREA_TOLERANCE_MM2, unit: "mm2" },
+        },
+        "requirement_and_geometry",
+      ));
+    }
   }
   const supportIssues = evaluateRoofSupportCompleteness({
     roofSystems: building.roofSystems,
@@ -621,11 +726,13 @@ function verticalAndStructuralFindings(building: CurrentBuilding) {
 }
 
 function topologyFingerprint(building: CurrentBuilding): SchemeTopologyFingerprint {
-  const spaces = building.floors.flatMap((floor) => floor.spaces.map((space) => {
+  const spaces = building.floors.flatMap((floor) => floor.spaces
+    .filter((space) => !isStackedSupportSpace(space.id))
+    .map((space) => {
     const region = regionForSpace(floor, space.id);
     if (!region) throw new Error(`SCHEME_FINGERPRINT_REGION_MISSING:${space.id}`);
     return { id: space.id, floorId: floor.id, roomType: space.type, centroid: regionCentroid(region) };
-  }));
+    }));
   const known = new Set(spaces.map((space) => space.id));
   const adjacencyEdges = building.floors.flatMap((floor) => floor.openings
     .filter((opening) => opening.usage === "pedestrian")
@@ -721,6 +828,7 @@ export function validateBuildingV3(
     ...areaFindings(building, requirements),
     ...openingAndAccessFindings(building, requirements),
     ...verticalAndStructuralFindings(building),
+    ...stackedSupportFindings(building),
     ...roofFindings(building, requirements),
     ...supportClearanceFindings(building),
     ...edgeProtectionFindings(building),
